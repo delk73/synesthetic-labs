@@ -1,0 +1,17 @@
+{
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python-envs.pythonProjects": [],
+    "workbench.colorCustomizations": {
+        "titleBar.activeBackground": "#b4248e",
+        "titleBar.activeForeground": "#ffffff",
+        "titleBar.inactiveBackground": "#b4248e",
+        "titleBar.inactiveForeground": "#ffffff"
+    },
+
+    // Skip noisy folders
+    "python.analysis.exclude": [
+        "scripts",
+        "tests"
+    ]
+}
