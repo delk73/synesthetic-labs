@@ -1,28 +1,29 @@
 # Synesthetic Labs Agents (v0.1) — Audit Snapshot
 
 ## Generator Agent
-- Loads prompts from repo-stored JSON and supports config + dataset context shaping (labs/agents/generator.py:63-128; meta/prompts/init.json:1-34).
-- Derives deterministic proposal IDs via config hash + timestamp and appends JSONL traces to meta/output (labs/agents/generator.py:64-92; labs/logging.py:6-15).
-- Pytest coverage locks prompt assembly, provenance fields, and log emission (tests/test_generator.py:11-53).
+- Loads JSON prompts from repo storage and shapes assets with config/dataset context (labs/agents/generator.py:33; labs/agents/generator.py:63; labs/agents/generator.py:121).
+- Derives deterministic proposal IDs from prompt, timestamp, and config hash before logging JSONL output (labs/agents/generator.py:67; labs/agents/generator.py:91).
+- Pytest fixture locks proposal structure, provenance fields, and log emission (tests/test_generator.py:11; tests/test_generator.py:49).
 
 ## Critic Agent
-- Reviews proposals, accumulates issues, and builds recommendations tied to proposal IDs (labs/agents/critic.py:36-79).
-- Accepts an injectable MCP validator callable; when unset it records a skipped validation issue rather than passing assets (labs/agents/critic.py:82-99).
-- Tests cover both failure detection and happy-path validation handoff (tests/test_critic.py:9-53).
+- Validates proposal structure, collects issues, and builds recommendations tied to proposal IDs (labs/agents/critic.py:36; labs/agents/critic.py:66; labs/agents/critic.py:102).
+- Accepts an injectable MCP validator callable, otherwise records a skipped validation issue (labs/agents/critic.py:29; labs/agents/critic.py:82).
+- Tests cover both failure detection and validator handoff happy path (tests/test_critic.py:9; tests/test_critic.py:25; tests/test_critic.py:52).
 
 ## Generator → Critic Workflow
-- run_pipeline orchestrates agents sequentially and writes combined records to meta/output/pipeline.log.jsonl (labs/lifecycle/pipeline.py:17-55).
-- Integration test asserts deterministic IDs, log creation, and MCP validator invocation (tests/test_pipeline.py:12-70).
+- run_pipeline orchestrates generator then critic and appends combined JSONL records (labs/lifecycle/pipeline.py:17; labs/lifecycle/pipeline.py:54).
+- Integration test asserts deterministic IDs, log creation, and validator invocation (tests/test_pipeline.py:28; tests/test_pipeline.py:54; tests/test_pipeline.py:68).
 
 ## CLI
-- Subcommands generate/critique/pipeline parse inline or file-backed JSON for prompts, configs, and proposals (labs/cli.py:20-90).
-- Current CLI wiring instantiates CriticAgent without an MCP validator, so default runs mark validation as skipped (labs/cli.py:66-90; labs/agents/critic.py:82-85).
+- Subcommands generate/critique/pipeline parse inline or file-backed JSON payloads (labs/cli.py:30; labs/cli.py:52; labs/cli.py:90).
+- Default CLI wiring instantiates CriticAgent without an MCP validator, so runs mark validation as skipped (labs/cli.py:81; labs/agents/critic.py:82).
+- Current pytest suite targets agents and pipeline but omits CLI coverage (tests/test_generator.py:11; tests/test_pipeline.py:12).
 
 ## Logging & Artefacts
-- log_jsonl helper centralises JSONL output with stable ordering to meta/output (labs/logging.py:6-15).
-- README documents logging expectations consistent with the lab spec (README.md:34-35; docs/labs_spec.md:35-37).
+- log_jsonl centralises JSONL emission with stable ordering under meta/output (labs/logging.py:6; labs/logging.py:11).
+- Agents and pipeline append structured traces for audit replay (labs/agents/generator.py:91; labs/agents/critic.py:59; labs/lifecycle/pipeline.py:54).
 
 ## Outstanding gaps
-- No synesthetic-schemas-backed validator module or dependency despite being called out in the spec (requirements.txt:1; labs/agents/critic.py:82-99).
-- MCP adapter configuration is absent from default CLI flows, leaving validation skipped unless callers inject their own validator (labs/cli.py:66-90).
-- CLI subcommands lack automated tests to guard argument handling and logging (tests/test_generator.py:11-53; tests/test_pipeline.py:12-70).
+- No synesthetic-schemas-backed validator module or dependency despite spec requirement (meta/prompts/init.json:7; requirements.txt:1).
+- MCP adapter configuration is absent from default CLI flows, leaving validation skipped unless callers inject their own validator (labs/cli.py:81; labs/agents/critic.py:82).
+- CLI subcommands lack automated tests to guard argument handling and logging (labs/cli.py:30; tests/test_generator.py:11).
