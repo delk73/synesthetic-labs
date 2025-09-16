@@ -1,79 +1,40 @@
-# synesthetic-labs
+# Synesthetic Labs
 
-Experimental lab environment for **Synesthetic System** research: asset generation, patch lifecycle, and reinforcement learning with human feedback (RLHF).
+Synesthetic Labs hosts the v0.1 experiment loop for generator → critic workflows that frontload MCP-backed validation. The repo provides small, deterministic Python agents, a CLI, and a container harness that mirrors CI execution.
 
-## Purpose
+## Requirements
+- Python 3.11+
+- Docker (for the canonical harness)
 
-Labs hosts experiments that complement the core **Synesthetic Engine** while MCP and the backend stay focused on validation and persistence.
+Install development dependencies with `pip install -r requirements.txt` when running locally.
 
-## Relationship to Other Repos
-
-```mermaid
-flowchart LR
-  RLHF["synesthetic-labs\n(RLHF + experiments)"]
-  MCP["synesthetic-mcp\n(Adapter: validation + diff + proxy)"]
-  BE["sdfk-backend\n(Python API & CRUD asset store)"]
-  SSOT["synesthetic-schemas\n(SSOT: Schemas + codegen)"]
-
-  RLHF --> |Generates assets\n→ validated by MCP| MCP
-  MCP --> |Validates + proxies| BE
-  BE --> |Imports schemas| SSOT
-  MCP --> |Uses schemas| SSOT
-  RLHF --> |Uses schemas| SSOT
-```
-
-## Repo Layout (planned)
-```text
-synesthetic-labs/
-├── labs/                 # Core lab modules
-│   ├── agents/           # Generator, critic, scorer agents
-│   ├── lifecycle/        # Patch lifecycle orchestration
-│   ├── datasets/         # Dataset management and replay
-│   └── __init__.py
-│
-├── tests/                # Pytest-based unit/integration tests
-│   ├── test_agents.py
-│   ├── test_lifecycle.py
-│   └── test_datasets.py
-│
-├── meta/
-│   ├── prompts/          # Canonical Codex/LLM prompts
-│   ├── output/           # Audit + experiment reports
-│   └── README.md
-│
-├── requirements.txt      # Runtime/test deps (pinned)
-├── Dockerfile            # Containerized runtime
-├── docker-compose.yml    # Local/CI harness
-├── test.sh               # Build + run tests inside container
-├── README.md             # (this file)
-└── .github/workflows/    # CI configs (pytest, lint, RLHF harnesses)
-```
-
-## Getting Started
-
-### Local (direct)
-
+## Quickstart
 ```bash
-git clone https://github.com/yourorg/synesthetic-labs
-cd synesthetic-labs
-
-# Install dependencies (TBD — likely mirrors backend dev flow)
-pip install -r requirements.txt
-
-# Run the lab CLI (placeholder)
+# Inspect available commands
 python -m labs.cli --help
+
+# Generate a proposal from a prompt stored under meta/prompts/
+python -m labs.cli generate init
+
+# Critique a proposal captured as JSON (inline or file path)
+python -m labs.cli critique '{"proposal_id": "..."}'
 ```
 
-### Containerized
+The CLI reads prompts from `meta/prompts/`, writes JSONL traces under `meta/output/`, and returns structured JSON to stdout.
 
+## Testing
 ```bash
-# Build container
-docker compose build
+# Fast local run
+pytest -q
 
-# Run tests in container
+# Containerised path-to-green (mirrors CI)
 ./test.sh
 ```
 
-Containerization is the default path for reproducible experiments. Local installs are supported for rapid iteration, but CI always runs in Docker.
+## Logging & Artefacts
+Structured traces for both agents live in `meta/output/`. Each generator → critic invocation appends JSON lines that capture proposals, critiques, and MCP validation responses for later audit.
 
-See `docs/labs_spec.md` for the v0.1 generator + critic details.
+## Further Reading
+- `docs/labs_spec.md` — authoritative scope for the v0.1 lab
+- `AGENTS.md` — generator and critic expectations
+- `meta/prompts/` — canonical prompt set used by the CLI and tests

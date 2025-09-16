@@ -1,48 +1,28 @@
-# Synesthetic Labs Agents (v0.1)
-
-The v0.1 lab focuses on a single loop: generator → critic with MCP-backed validation. This document summarizes what each agent is expected to do, how they interact, and the guardrails defined in `docs/labs_spec.md` and the initialization prompt.
-
-## Design Principles
-- Keep implementations simple, deterministic, and dependency-light (Python ≥3.11).
-- Treat MCP adapters and `synesthetic-schemas` as the single source of truth for schema validation.
-- Run agents through the containerized harness; the local `pytest` workflow must mirror Docker execution.
-- Persist experiment artefacts and traces under `meta/output/` with structured logging so every run is auditable.
+# Synesthetic Labs Agents (v0.1) — Audit Snapshot
 
 ## Generator Agent
-- **Goal**: propose candidate multimodal assets (e.g., shaders, tones, haptics) for critic review.
-- **Inputs**: configuration + prompts from `meta/prompts/`, optional dataset context, and CLI/runtime flags.
-- **Outputs**: structured proposals that include enough metadata for downstream validation and logging.
-- **Responsibilities**:
-  - Assemble reproducible prompts and seed data from repo-hosted sources.
-  - Attach provenance info (prompt ID, timestamp, config hash) to each proposal before logging to `meta/output/`.
-  - Hand off proposals to the critic without attempting schema validation locally.
-- **Implementation notes**:
-  - Provide a thin interface (class or protocol) to enable swapping generators as experiments evolve.
-  - Surface hooks for injecting MCP adapter stubs during tests.
-  - Ensure tests exercise prompt assembly and payload shaping (`tests/test_generator.py`).
+- Loads prompts from repo-stored JSON and supports config + dataset context shaping (labs/agents/generator.py:63-128; meta/prompts/init.json:1-34).
+- Derives deterministic proposal IDs via config hash + timestamp and appends JSONL traces to meta/output (labs/agents/generator.py:64-92; labs/logging.py:6-15).
+- Pytest coverage locks prompt assembly, provenance fields, and log emission (tests/test_generator.py:11-53).
 
 ## Critic Agent
-- **Goal**: analyse generator output, highlight issues, and prepare payloads ready for MCP validation.
-- **Inputs**: generator proposals plus any MCP adapter configuration provided by the runtime.
-- **Outputs**: critique notes, recommended actions, and validation-ready payloads for MCP adapters.
-- **Responsibilities**:
-  - Perform lightweight sanity checks while deferring authoritative validation to MCP.
-  - Generate structured feedback that maps back to the originating generator proposal.
-  - Invoke MCP validation hooks (or mocks in tests) and propagate pass/fail status to logs.
-  - Block or flag assets that fail MCP validation; never bypass schema enforcement.
-- **Implementation notes**:
-  - Maintain deterministic behaviour for reproducible test runs.
-  - Ensure critic logging captures references to both the generator artefact and MCP response.
-  - Cover review shaping and MCP handoff logic in `tests/test_critic.py`.
+- Reviews proposals, accumulates issues, and builds recommendations tied to proposal IDs (labs/agents/critic.py:36-79).
+- Accepts an injectable MCP validator callable; when unset it records a skipped validation issue rather than passing assets (labs/agents/critic.py:82-99).
+- Tests cover both failure detection and happy-path validation handoff (tests/test_critic.py:9-53).
 
 ## Generator → Critic Workflow
-1. CLI or lifecycle harness instantiates the generator with prompt/config context.
-2. Generator emits proposal package(s) and writes initial trace entries.
-3. Critic consumes proposals, attaches critiques, and calls MCP validation adapters.
-4. Final combined artefacts (proposal, critique, MCP result) are persisted under `meta/output/`.
-5. Integration tests (`tests/test_pipeline.py`) exercise the full path with mocked MCP responses.
+- run_pipeline orchestrates agents sequentially and writes combined records to meta/output/pipeline.log.jsonl (labs/lifecycle/pipeline.py:17-55).
+- Integration test asserts deterministic IDs, log creation, and MCP validator invocation (tests/test_pipeline.py:12-70).
 
-## Container & Tooling Expectations
-- `labs/cli.py` should expose a `--help` entry point for running the loop locally and inside Docker.
-- `test.sh` remains the source of truth for path-to-green; it must build the container and run pytest.
-- Keep agent interfaces stable enough for future lifecycle orchestration and dataset replay modules.
+## CLI
+- Subcommands generate/critique/pipeline parse inline or file-backed JSON for prompts, configs, and proposals (labs/cli.py:20-90).
+- Current CLI wiring instantiates CriticAgent without an MCP validator, so default runs mark validation as skipped (labs/cli.py:66-90; labs/agents/critic.py:82-85).
+
+## Logging & Artefacts
+- log_jsonl helper centralises JSONL output with stable ordering to meta/output (labs/logging.py:6-15).
+- README documents logging expectations consistent with the lab spec (README.md:34-35; docs/labs_spec.md:35-37).
+
+## Outstanding gaps
+- No synesthetic-schemas-backed validator module or dependency despite being called out in the spec (requirements.txt:1; labs/agents/critic.py:82-99).
+- MCP adapter configuration is absent from default CLI flows, leaving validation skipped unless callers inject their own validator (labs/cli.py:66-90).
+- CLI subcommands lack automated tests to guard argument handling and logging (tests/test_generator.py:11-53; tests/test_pipeline.py:12-70).
