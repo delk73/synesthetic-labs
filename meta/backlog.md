@@ -1,6 +1,6 @@
-# synesthetic-labs Backlog (v0.2+)
+# Synesthetic Labs Backlog
 
-- Integrate RLHF loops and scorer agents once generator/critic pipeline matures.
-- Expand lifecycle orchestration to cover patch application and dataset replay.
-- Wire real MCP adapters once synesthetic-schemas integration lands.
-- Add dataset tooling for multimodal asset fixtures and regression suites.
+- Replace the file-based JSONL sink with a pluggable logging backend.
+- Integrate schema validation once MCP adapters are available.
+- Extend the CLI with a pipeline command that chains generator and critic.
+- Add dataset fixtures to exercise more complex prompts and reviews.

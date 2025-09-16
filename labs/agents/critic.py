@@ -1,97 +1,67 @@
-"""Critic agent that reviews generator proposals and coordinates MCP validation."""
+"""Critic agent that validates generator proposals."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping, Optional, Protocol
+from datetime import datetime, timezone
+import logging
+from pathlib import Path
+from typing import Any
 
-from labs.agents.generator import GeneratorProposal
-from labs.logging import LogSink, NullLogSink
-
-
-class MCPAdapter(Protocol):
-    """Protocol for MCP validation adapters."""
-
-    def validate(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:  # pragma: no cover - structural
-        """Validate payload and return structured MCP response."""
+from labs.logging import log_jsonl
 
 
-@dataclass(frozen=True)
-class MCPValidationResult:
-    """Structured representation of MCP validation output."""
+class CriticAgent:
+    """Lightweight critic that performs structural checks on assets."""
 
-    passed: bool
-    details: Mapping[str, Any]
+    _REQUIRED_KEYS = ("id", "timestamp", "prompt", "provenance")
 
+    def __init__(self, log_path: str | Path | None = None) -> None:
+        """Create a critic agent.
 
-@dataclass(frozen=True)
-class CritiqueResult:
-    """Critic output that references the originating proposal."""
+        Args:
+            log_path: Optional path to the JSONL log file. When omitted the
+                agent stores entries under ``meta/output/critic.jsonl``.
+        """
 
-    proposal_id: str
-    prompt_id: str
-    notes: Iterable[str]
-    recommended_action: str
-    mcp: MCPValidationResult
-
-
-@dataclass(frozen=True)
-class CriticConfig:
-    """Runtime configuration for critic evaluations."""
-
-    minimum_required_fields: Iterable[str] = field(default_factory=lambda: ("task", "objective"))
-
-
-class Critic:
-    """Performs lightweight checks and defers validation to MCP adapters."""
-
-    def __init__(
-        self,
-        mcp_adapter: MCPAdapter,
-        log_sink: Optional[LogSink] = None,
-    ) -> None:
-        self._mcp = mcp_adapter
-        self._log = log_sink or NullLogSink()
-
-    def review(self, proposal: GeneratorProposal, config: Optional[CriticConfig] = None) -> CritiqueResult:
-        config = config or CriticConfig()
-        notes = list(self._sanity_checks(proposal, config))
-        recommended_action = "ready" if not notes else "revise"
-        mcp_response = self._mcp.validate(proposal.payload)
-        mcp_result = MCPValidationResult(
-            passed=bool(mcp_response.get("passed", False)),
-            details=mcp_response,
+        self._log_path = Path(log_path) if log_path is not None else Path(
+            "meta/output/critic.jsonl"
         )
-        if not mcp_result.passed and "MCP validation failed" not in notes:
-            notes.append("MCP validation failed")
-            recommended_action = "block"
-        record = {
+        self._logger = logging.getLogger(self.__class__.__name__)
+
+    def review(self, asset: dict[str, Any]) -> dict[str, Any]:
+        """Validate a generator asset and record the results."""
+
+        issues: list[str] = []
+        for key in self._REQUIRED_KEYS:
+            if key not in asset:
+                issues.append(f"missing required field: {key}")
+
+        prompt = asset.get("prompt")
+        if "prompt" in asset:
+            if not isinstance(prompt, str) or not prompt.strip():
+                issues.append("prompt must be a non-empty string")
+        if "timestamp" in asset and isinstance(asset.get("timestamp"), str):
+            try:
+                datetime.fromisoformat(asset["timestamp"].replace("Z", "+00:00"))
+            except ValueError:
+                issues.append("timestamp must be ISO-8601 formatted")
+
+        ok = not issues
+        review_record = {
             "event": "critic.review",
-            "proposal_id": proposal.proposal_id,
-            "prompt_id": proposal.prompt_id,
-            "notes": notes,
-            "recommended_action": recommended_action,
-            "mcp": {
-                "passed": mcp_result.passed,
-                "details": mcp_result.details,
-            },
+            "asset": asset,
+            "ok": ok,
+            "issues": issues,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        self._log.write(record)
-        return CritiqueResult(
-            proposal_id=proposal.proposal_id,
-            prompt_id=proposal.prompt_id,
-            notes=tuple(notes),
-            recommended_action=recommended_action,
-            mcp=mcp_result,
-        )
+        log_jsonl(self._log_path, review_record)
+        self._logger.info("Reviewed asset %s ok=%s", asset.get("id"), ok)
 
-    def _sanity_checks(
-        self, proposal: GeneratorProposal, config: CriticConfig
-    ) -> Iterable[str]:
-        payload_prompt = proposal.payload.get("prompt", {})
-        for field in config.minimum_required_fields:
-            if field not in payload_prompt:
-                yield f"Missing expected prompt field: {field}"
-        if not proposal.payload.get("parameters"):
-            yield "Proposal parameters are empty"
+        return {
+            "asset": asset,
+            "ok": ok,
+            "issues": issues,
+        }
 
+
+__all__ = ["CriticAgent"]

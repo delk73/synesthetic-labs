@@ -1,30 +1,35 @@
 # Synesthetic Labs Agents (v0.1)
 
-The v0.1 lab focuses on a single loop: generator → critic with MCP-backed validation. This snapshot reflects the current implementation in `labs/`.
+This snapshot captures the simplified generator → critic loop shipped in
+version 0.1. The code favours determinism, minimal dependencies, and structured
+JSONL logging so audits can replay activity from `meta/output/`.
 
-## Design Principles
-- Keep implementations simple, deterministic, and dependency-light (Python ≥3.11).
-- Treat MCP adapters and `synesthetic-schemas` as the single source of truth for schema validation; current CLI ships with a passthrough stub until integration lands.
-- Run agents through the containerized harness; `pytest` runs locally and via Docker for parity (`Dockerfile`, `docker-compose.yml`, `test.sh`).
-- Persist experiment artefacts and traces under `meta/output/` with structured logging for auditability.
+## Generator Agent
+- Module: `labs/agents/generator.py` exposing `GeneratorAgent`.
+- Behaviour: validates non-empty prompts, stamps UTC timestamps, assigns UUIDs,
+  and emits provenance describing the agent, version, and log destination.
+- Logging: appends `generator.propose` events via `labs.logging.log_jsonl`.
+- Tests: `tests/test_generator.py` ensures proposals include required keys and
+  that JSONL logging occurs.
 
-## Generator Agent (Implemented)
-- Module: `labs/agents/generator.py` exposes `Generator`, `GeneratorConfig`, `GeneratorProposal`, and `PromptRepository`.
-- Behaviour: loads prompts from `meta/prompts/`, hashes config, stamps UTC timestamps, and logs proposals via `labs.logging.FileLogSink`.
-- Extensibility: accepts injected clock and log sink for deterministic testing; prompt repository path exposed through `path_for` for provenance.
-- Tests: `tests/test_generator.py` covers provenance logging and missing prompt failures.
-
-## Critic Agent (Implemented)
-- Module: `labs/agents/critic.py` exposes `Critic`, `CriticConfig`, `CritiqueResult`, and `MCPValidationResult` plus `MCPAdapter` protocol.
-- Behaviour: performs minimal sanity checks, delegates validation to an injected MCP adapter, logs outcomes with proposal + MCP references.
-- Determinism: derives notes from static checks and adapter responses; accepts pluggable log sink.
-- Tests: `tests/test_critic.py` exercises empty-parameter warnings and MCP failure handling.
+## Critic Agent
+- Module: `labs/agents/critic.py` exposing `CriticAgent`.
+- Behaviour: verifies generator assets contain id, timestamp, prompt, and
+  provenance; validates timestamp format and non-empty prompt content.
+- Logging: appends `critic.review` events via `labs.logging.log_jsonl` and logs
+  outcomes through the standard library `logging` module.
+- Tests: `tests/test_critic.py` covers missing field detection and successful
+  reviews.
 
 ## Generator → Critic Workflow
-- CLI: `labs/cli.py` wires `PromptRepository`, `Generator`, and `Critic` with a default `PassthroughMCPAdapter` and writes JSONL traces to `meta/output/`.
-- Integration: `tests/test_pipeline.py` runs the combined pipeline with stub MCP responses and verifies end-to-end logging.
-- Logging utilities: `labs/logging.py` defines `FileLogSink` and `NullLogSink` used across agents.
+- CLI: `labs/cli.py` offers `generate` and `critique` subcommands for manual
+  operation, printing JSON payloads to stdout.
+- Integration: `tests/test_pipeline.py` exercises the round-trip pipeline with a
+  shared JSONL log file to confirm provenance and critic status propagation.
+- Runtime: The repo supplies Docker and GitHub Actions harnesses to run the
+  pytest suite consistently.
 
-## Backlog / Next Steps
-- Track upcoming work (real MCP adapter, RLHF loop, lifecycle orchestration, dataset tooling) in `meta/backlog.md`.
-- Replace the passthrough MCP stub with adapters wired to `synesthetic-schemas` once available.
+## Provenance
+- Prompt baseline defined in `meta/prompts/init.json` (immutable per spec).
+- Audit performed manually against `meta/prompts/audit.json` requirements on
+  2025-09-16T14:59:49Z and recorded in `meta/output/labs_state.md`.

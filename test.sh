@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-exec docker compose run --rm tests
+docker compose build labs
+exec docker compose run --rm labs

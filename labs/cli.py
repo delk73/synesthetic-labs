@@ -1,99 +1,85 @@
-"""Command-line entry point for running the generator → critic loop."""
+"""Command-line interface for the Synesthetic Labs agents."""
 
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+import json
+import logging
 from pathlib import Path
-from typing import Any, Mapping
+import sys
+from typing import Any
 
-from labs.agents.critic import Critic, CriticConfig
-from labs.agents.generator import Generator, GeneratorConfig, PromptRepository
-from labs.logging import FileLogSink
-
-
-class PassthroughMCPAdapter:
-    """Default MCP adapter stub that accepts every payload."""
-
-    def validate(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:  # pragma: no cover - trivial
-        _ = payload
-        return {"passed": True, "details": {"adapter": "passthrough"}}
-
-
-def _default_log_path(output_dir: Path) -> Path:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    return output_dir / f"run_{timestamp}.jsonl"
+from labs.agents import CriticAgent, GeneratorAgent
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the Synesthetic Labs generator → critic loop.")
-    parser.add_argument(
-        "--prompt-id",
-        default="init",
-        help="Prompt identifier (file stem under meta/prompts) to seed the generator.",
+    """Return the top-level argument parser."""
+
+    parser = argparse.ArgumentParser(
+        description="Run the Synesthetic Labs generator and critic agents."
     )
-    parser.add_argument(
-        "--prompts-dir",
-        default="meta/prompts",
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    generate_parser = subparsers.add_parser(
+        "generate", help="Create a proposal from a prompt."
+    )
+    generate_parser.add_argument("prompt", help="Prompt text for the generator.")
+    generate_parser.add_argument(
+        "--log",
         type=Path,
-        help="Directory containing generator prompt JSON files.",
+        default=Path("meta/output/generator.jsonl"),
+        help="Path to the JSONL file where generator events are appended.",
     )
-    parser.add_argument(
-        "--output-dir",
-        default="meta/output",
+
+    critique_parser = subparsers.add_parser(
+        "critique", help="Review an existing generator proposal."
+    )
+    critique_parser.add_argument(
+        "asset",
+        help="Path to a JSON file containing the asset or '-' to read from stdin.",
+    )
+    critique_parser.add_argument(
+        "--log",
         type=Path,
-        help="Directory where structured logs are written.",
+        default=Path("meta/output/critic.jsonl"),
+        help="Path to the JSONL file where critic reviews are appended.",
     )
-    parser.add_argument(
-        "--log-file",
-        type=Path,
-        default=None,
-        help="Optional explicit log file path (overrides timestamped default).",
-    )
-    parser.add_argument(
-        "--seed",
-        default=0,
-        type=int,
-        help="Seed value for deterministic generator outputs.",
-    )
+
     return parser
 
 
+def _load_asset(path: str) -> Any:
+    if path == "-":
+        return json.load(sys.stdin)
+    with Path(path).open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def main(argv: list[str] | None = None) -> int:
+    """Entry point for the CLI."""
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    prompts_dir: Path = args.prompts_dir
-    output_dir: Path = args.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
-    log_path = args.log_file or _default_log_path(output_dir)
+    if args.command == "generate":
+        agent = GeneratorAgent(log_path=args.log)
+        proposal = agent.propose(args.prompt)
+        json.dump(proposal, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 0
 
-    log_sink = FileLogSink(log_path)
-    prompt_repository = PromptRepository(prompts_dir)
-    generator = Generator(prompt_repository, log_sink=log_sink)
-    critic = Critic(PassthroughMCPAdapter(), log_sink=log_sink)
+    if args.command == "critique":
+        asset = _load_asset(args.asset)
+        agent = CriticAgent(log_path=args.log)
+        review = agent.review(asset)
+        json.dump(review, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 0
 
-    generator_config = GeneratorConfig(
-        prompt_id=args.prompt_id,
-        seed=args.seed,
-        prompt_parameters={"seed": args.seed},
-    )
-    proposal = generator.generate(generator_config)
-    critique = critic.review(proposal, CriticConfig())
-
-    log_sink.write(
-        {
-            "event": "pipeline.completed",
-            "proposal_id": proposal.proposal_id,
-            "prompt_id": proposal.prompt_id,
-            "recommended_action": critique.recommended_action,
-            "mcp_passed": critique.mcp.passed,
-        }
-    )
-
-    return 0
+    parser.error("Unknown command")
+    return 2
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
     raise SystemExit(main())
-

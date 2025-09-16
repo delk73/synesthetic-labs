@@ -1,51 +1,33 @@
-from dataclasses import dataclass
-from typing import Any, Mapping
+"""Tests for the critic agent."""
 
-import pytest
+from __future__ import annotations
 
-from labs.agents.critic import Critic, CriticConfig, MCPValidationResult
-from labs.agents.generator import GeneratorProposal
-from labs.logging import FileLogSink
+from pathlib import Path
 
-
-@dataclass
-class StubMCPAdapter:
-    passed: bool
-
-    def validate(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
-        return {"passed": self.passed, "details": {"echo": payload.get("parameters", {})}}
+from labs.agents.critic import CriticAgent
 
 
-def _proposal(parameters: Mapping[str, Any]) -> GeneratorProposal:
-    return GeneratorProposal(
-        proposal_id="proposal-1",
-        prompt_id="init",
-        timestamp="2024-01-01T00:00:00+00:00",
-        config_hash="abc",
-        payload={
-            "prompt": {"task": "demo", "objective": "ensure coverage"},
-            "parameters": dict(parameters),
-        },
-        provenance={},
-    )
+def test_critic_detects_missing_fields(tmp_path: Path) -> None:
+    critic = CriticAgent(log_path=tmp_path / "critic.jsonl")
+
+    result = critic.review({"id": "123"})
+
+    assert result["ok"] is False
+    assert any("missing required field" in issue for issue in result["issues"])
 
 
-def test_critic_flags_missing_parameters(tmp_path) -> None:
-    critic = Critic(StubMCPAdapter(passed=True), log_sink=FileLogSink(tmp_path / "crit.jsonl"))
+def test_critic_accepts_valid_asset(tmp_path: Path) -> None:
+    critic = CriticAgent(log_path=tmp_path / "critic.jsonl")
 
-    result = critic.review(_proposal(parameters={}))
+    asset = {
+        "id": "abc",
+        "timestamp": "2024-01-01T00:00:00+00:00",
+        "prompt": "demo",
+        "provenance": {"agent": "GeneratorAgent"},
+    }
 
-    assert "Proposal parameters are empty" in result.notes
-    assert result.recommended_action == "revise"
-    assert result.mcp == MCPValidationResult(passed=True, details={"passed": True, "details": {"echo": {}}})
+    result = critic.review(asset)
 
-
-def test_critic_blocks_failed_mcp(tmp_path) -> None:
-    critic = Critic(StubMCPAdapter(passed=False), log_sink=FileLogSink(tmp_path / "crit.jsonl"))
-
-    result = critic.review(_proposal(parameters={"mode": "demo"}))
-
-    assert result.recommended_action == "block"
-    assert any(note == "MCP validation failed" for note in result.notes)
-    assert result.mcp.passed is False
-
+    assert result["ok"] is True
+    assert result["issues"] == []
+    assert result["asset"] == asset
