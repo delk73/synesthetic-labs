@@ -1,6 +1,6 @@
 {
   "task": "Audit synesthetic-labs repo state (v0.1 Generator + Critic)",
-  "objective": "Compare implementation, tests, and docs against labs_spec.md. Report what is present, missing, or divergent.",
+  "objective": "Compare implementation, tests, and docs against labs_spec.md. Report what is present, missing, or divergent, and export an updated AGENTS.md snapshot.",
   "constraints": {
     "style": "deterministic, terse, Markdown headings with bullets/tables",
     "rules": [
@@ -34,11 +34,15 @@
     ]
   },
   "output": {
-    "path": "meta/output/labs_state.md",
+    "paths": [
+      "meta/output/labs_state.md",
+      "AGENTS.md"
+    ],
     "format": "Markdown"
   },
   "exit_criteria": [
     "meta/output/labs_state.md exists",
+    "AGENTS.md exists as a persistent baseline context",
     "Spec features mapped to Present / Missing / Divergent",
     "Test coverage summarized in a table",
     "Dependencies mapped to imports in a table",
