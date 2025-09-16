@@ -1,0 +1,29 @@
+{
+  "task": "Initialize synesthetic-labs repo (v0.1 Generator + Critic)",
+  "objective": "Stand up the repo skeleton and initial files per labs_spec.md.",
+  "constraints": {
+    "language": "Python (>=3.11, tested 3.11–3.13)",
+    "style": "KISS, deterministic, minimal deps",
+    "schemas": "Consume synesthetic-schemas submodule via MCP for validation",
+    "runtime": "Containerized dev/test harness with pytest",
+    "output_structure": [
+      "labs/ (agents, lifecycle, datasets, __init__.py)",
+      "tests/ (test_generator.py, test_critic.py, test_pipeline.py)",
+      "meta/prompts/, meta/output/, meta/backlog.md",
+      "requirements.txt (pinned runtime/test deps)",
+      "Dockerfile, docker-compose.yml, test.sh",
+      "README.md (minimal, points to docs/labs_spec.md)",
+      "docs/labs_spec.md (this spec)"
+    ],
+    "validation": "MCP adapter must remain authority for schema validation",
+    "tests": "pytest for unit, integration, end-to-end pipeline"
+  },
+  "exit_criteria": [
+    "Repo skeleton exists with all required dirs/files",
+    "Generator and critic agent stubs present under labs/",
+    "CLI stub in labs/cli.py runs with --help",
+    "Pytest discovers empty test stubs in tests/",
+    "Docker test harness builds and runs pytest green",
+    "README minimal, spec in docs/labs_spec.md"
+  ]
+}

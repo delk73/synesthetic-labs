@@ -1,0 +1,48 @@
+{
+  "task": "Audit synesthetic-labs repo state (v0.1 Generator + Critic)",
+  "objective": "Compare implementation, tests, and docs against labs_spec.md. Report what is present, missing, or divergent.",
+  "constraints": {
+    "style": "deterministic, terse, Markdown headings with bullets/tables",
+    "rules": [
+      "Ground all findings in visible code/tests/docs",
+      "Mark functionality not present as Missing",
+      "Mark intentional design differences as Divergent",
+      "No speculation about unseen behavior",
+      "Recommendations must be actionable code/test/doc changes only"
+    ],
+    "sections": [
+      "Summary of repo state",
+      "Top gaps & fixes (3–5 bullets)",
+      "Alignment with labs_spec.md (table: Spec item → Status → Evidence)",
+      "Test coverage (table: Feature → Tested? → Evidence)",
+      "Dependencies and runtime (table: Package → Used in → Required/Optional)",
+      "Environment variables (bullets: name, default, fallback behavior)",
+      "Documentation accuracy (bullets: README vs. labs_spec.md)",
+      "Detected divergences",
+      "Recommendations"
+    ]
+  },
+  "scope": {
+    "files": [
+      "README.md",
+      "docs/labs_spec.md",
+      "requirements.txt",
+      "labs/*.py",
+      "tests/*.py",
+      "meta/*",
+      ".github/workflows/*"
+    ]
+  },
+  "output": {
+    "path": "meta/output/labs_state.md",
+    "format": "Markdown"
+  },
+  "exit_criteria": [
+    "meta/output/labs_state.md exists",
+    "Spec features mapped to Present / Missing / Divergent",
+    "Test coverage summarized in a table",
+    "Dependencies mapped to imports in a table",
+    "Env vars listed with defaults and fallbacks",
+    "README cross-checked against labs_spec.md"
+  ]
+}
