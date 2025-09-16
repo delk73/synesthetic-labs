@@ -9,10 +9,9 @@
       "Mark intentional design differences as Divergent",
       "No speculation about unseen behavior",
       "Recommendations must cite evidence (file path + line/section) and be actionable code/test/doc changes only",
-      "Write the full audit report directly to meta/output/labs_state.md (overwrite if exists)",
-      "Write the updated agent snapshot directly to AGENTS.md (overwrite if exists)",
-      "Do not only print results to stdout — persist them into the specified output paths",
-      "File writes are mandatory; audit is incomplete if files are not created or overwritten"
+      "Always write the full audit report directly to meta/output/labs_state.md (overwrite if exists)",
+      "Always write the updated agent snapshot directly to AGENTS.md (overwrite if exists)",
+      "Stdout may mirror results, but audit is incomplete unless both output files are created or overwritten with non-empty content"
     ],
     "sections": [
       "Summary of repo state",
@@ -45,7 +44,8 @@
       "AGENTS.md"
     ],
     "format": "Markdown",
-    "must_write": true
+    "must_write": true,
+    "stdout_optional": true
   },
   "exit_criteria": [
     "meta/output/labs_state.md is written and non-empty",
