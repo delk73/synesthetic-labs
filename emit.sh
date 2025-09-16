@@ -9,7 +9,7 @@ codex exec \
   -m gpt-5-codex \
   -c model="gpt-5-codex" \
   --sandbox workspace-write \
-  meta/prompts/emit.json
+  meta/prompts/emit.json apply
 
 
 

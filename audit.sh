@@ -6,6 +6,6 @@ codex exec \
   -m gpt-5-codex \
   -c model="gpt-5-codex" \
   --sandbox workspace-write \
-  meta/prompts/audit.json
+  meta/prompts/audit.json apply
 
 
