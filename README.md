@@ -1,24 +1,10 @@
 # synesthetic-labs
 
-Experimental lab environment for **Synesthetic System** research:
-asset generation, patch lifecycle, and reinforcement learning with human feedback (RLHF).
-
----
+Experimental lab environment for **Synesthetic System** research: asset generation, patch lifecycle, and reinforcement learning with human feedback (RLHF).
 
 ## Purpose
 
-This repo is the experimental playground for features that don’t belong in the core stack but are critical for evolving the **Synesthetic Engine**:
-
-* **Asset generation pipelines** (shaders, tones, haptics, multimodal compositions).
-* **Patch lifecycle orchestration**: propose → validate → rate → persist.
-* **RLHF loops** with agents that generate, critique, and score.
-* **Dataset management** for training and evaluation.
-* **Integration hooks** to use the MCP adapter for validation before persistence.
-
-MCP and backend remain focused on *validation + persistence*.
-Labs is where new methods, experiments, and pipelines are developed.
-
----
+Labs hosts experiments that complement the core **Synesthetic Engine** while MCP and the backend stay focused on validation and persistence.
 
 ## Relationship to Other Repos
 
@@ -36,21 +22,7 @@ flowchart LR
   RLHF --> |Uses schemas| SSOT
 ```
 
----
-
-## Planned Features
-
-* **Agent pipelines** for proposing and rating patches.
-* **Patch lifecycle management** with JSON Patch (RFC 6902).
-* **Dataset building** for training and evaluation of multimodal assets.
-* **CLI tools** for generator → critic → scorer loops.
-* **Structured logging** and replay for reproducible experiments.
-* **Tight integration with MCP** for schema validation before backend persistence.
-
----
-
 ## Repo Layout (planned)
-
 ```text
 synesthetic-labs/
 ├── labs/                 # Core lab modules
@@ -77,8 +49,6 @@ synesthetic-labs/
 └── .github/workflows/    # CI configs (pytest, lint, RLHF harnesses)
 ```
 
----
-
 ## Getting Started
 
 ### Local (direct)
@@ -104,13 +74,6 @@ docker compose build
 ./test.sh
 ```
 
-Containerization is the default path for reproducible experiments.
-Local installs are supported for rapid iteration, but CI always runs in Docker.
+Containerization is the default path for reproducible experiments. Local installs are supported for rapid iteration, but CI always runs in Docker.
 
----
-
-## Status
-
-⚠️ **Early stage** — repo structure and interfaces are subject to change.
-This repo is the right place to experiment with RLHF-driven asset generation and patch lifecycle workflows. Core validation and persistence still live in `synesthetic-mcp` and `sdfk-backend`.
-
+See `docs/labs_spec.md` for the v0.1 generator + critic details.
