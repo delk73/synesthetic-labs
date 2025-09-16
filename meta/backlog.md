@@ -1,6 +1,6 @@
-# synesthetic-labs Backlog (v0.2+)
+# Synesthetic Labs Backlog
 
-- Integrate RLHF loops and scorer agents once generator/critic pipeline matures.
-- Expand lifecycle orchestration to cover patch application and dataset replay.
-- Wire real MCP adapters once synesthetic-schemas integration lands.
-- Add dataset tooling for multimodal asset fixtures and regression suites.
+- Add CLI integration tests to lock the JSON stdout interface.
+- Support optional experiment metadata (e.g., user, session) on proposals.
+- Provide sample prompt assets for integration exercises.
+- Evaluate packaging options for publishing the CLI as a standalone tool.

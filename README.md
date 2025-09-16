@@ -1,18 +1,15 @@
-# synesthetic-labs (v0.1)
+# Synesthetic Labs
 
-Synesthetic Labs hosts the v0.1 generator → critic workflow for multimodal asset experiments. The full requirements and design notes live in `docs/labs_spec.md`.
+Synesthetic Labs provides a minimal generator → critic workflow for experiments. The
+full specification for the v0.1 loop lives in [`docs/labs_spec.md`](docs/labs_spec.md).
 
 ## Quickstart
-- Install dependencies: `pip install -r requirements.txt`
-- Run the generator → critic CLI: `python -m labs.cli --help`
-- Execute tests locally: `pytest`
-- Use the container harness (mirrors CI): `./test.sh`
+1. Install dependencies: `pip install -r requirements.txt`
+2. Explore the CLI: `python -m labs.cli --help`
+3. Generate a proposal: `python -m labs.cli generate "hello world"`
+4. Critique a proposal from a file: `python -m labs.cli critique proposal.json`
+5. Run tests: `pytest -q`
+6. Use the container harness: `./test.sh`
 
-## Project Layout
-```
-labs/           # Agents, lifecycle, datasets stubs
-meta/           # Prompts, backlog, experiment artefacts
-tests/          # Pytest coverage for generator, critic, pipeline
-```
-
-Logs from runs are appended to JSONL files under `meta/output/` so each experiment remains auditable.
+Logs from both agents are written to JSONL files under `meta/output/` to
+keep each run auditable.

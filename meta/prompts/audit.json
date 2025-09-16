@@ -1,23 +1,22 @@
 {
   "task": "Audit synesthetic-labs repo state (v0.1 Generator + Critic)",
-  "objective": "Compare implementation, tests, and docs against labs_spec.md. Report what is present, missing, or divergent, and export an updated AGENTS.md snapshot.",
+  "objective": "Report current implementation, tests, and docs against docs/labs_spec.md and export findings to AGENTS.md and meta/output/labs_state.md.",
   "constraints": {
-    "style": "deterministic, terse, Markdown headings with bullets/tables",
+    "style": "Deterministic, concise Markdown with required sections",
     "rules": [
-      "Ground all findings in visible code/tests/docs",
-      "Mark functionality not present as Missing",
-      "Mark intentional design differences as Divergent",
-      "No speculation about unseen behavior",
-      "Recommendations must be actionable code/test/doc changes only"
+      "Ground findings in committed code/tests/docs",
+      "Mark missing functionality explicitly",
+      "Highlight divergences only when behaviour differs from the spec",
+      "Limit recommendations to actionable follow-up work"
     ],
     "sections": [
       "Summary of repo state",
-      "Top gaps & fixes (3–5 bullets)",
-      "Alignment with labs_spec.md (table: Spec item → Status → Evidence)",
-      "Test coverage (table: Feature → Tested? → Evidence)",
-      "Dependencies and runtime (table: Package → Used in → Required/Optional)",
-      "Environment variables (bullets: name, default, fallback behavior)",
-      "Documentation accuracy (bullets: README vs. labs_spec.md)",
+      "Top gaps & fixes",
+      "Alignment with labs_spec.md",
+      "Test coverage",
+      "Dependencies and runtime",
+      "Environment variables",
+      "Documentation accuracy",
       "Detected divergences",
       "Recommendations"
     ]
@@ -41,12 +40,9 @@
     "format": "Markdown"
   },
   "exit_criteria": [
-    "meta/output/labs_state.md exists",
-    "AGENTS.md exists as a persistent baseline context",
-    "Spec features mapped to Present / Missing / Divergent",
-    "Test coverage summarized in a table",
-    "Dependencies mapped to imports in a table",
-    "Env vars listed with defaults and fallbacks",
-    "README cross-checked against labs_spec.md"
+    "Summary, tables, and recommendations populated",
+    "Dependencies mapped to usage",
+    "Environment section documents required variables",
+    "README cross-checked against docs/labs_spec.md"
   ]
 }

@@ -34,3 +34,4 @@ Thumbs.db
 *.log
 meta/output/*
 !meta/output/.gitkeep
+!meta/output/labs_state.md

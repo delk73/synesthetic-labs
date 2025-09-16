@@ -1,29 +1,30 @@
 {
-  "task": "Initialize synesthetic-labs repo (v0.1 Generator + Critic)",
-  "objective": "Stand up the repo skeleton and initial files per labs_spec.md.",
+  "task": "Emit synesthetic-labs repo (v0.1 Generator + Critic)",
+  "objective": "Ship a runnable generator → critic loop with logging, CLI, tests, docs, and container harness.",
   "constraints": {
-    "language": "Python (>=3.11, tested 3.11–3.13)",
+    "language": "Python >=3.11",
     "style": "KISS, deterministic, minimal deps",
-    "schemas": "Consume synesthetic-schemas submodule via MCP for validation",
-    "runtime": "Containerized dev/test harness with pytest",
-    "output_structure": [
-      "labs/ (agents, lifecycle, datasets, __init__.py)",
-      "tests/ (test_generator.py, test_critic.py, test_pipeline.py)",
-      "meta/prompts/, meta/output/, meta/backlog.md",
-      "requirements.txt (pinned runtime/test deps)",
-      "Dockerfile, docker-compose.yml, test.sh",
-      "README.md (minimal, points to docs/labs_spec.md)",
-      "docs/labs_spec.md (this spec)"
-    ],
-    "validation": "MCP adapter must remain authority for schema validation",
-    "tests": "pytest for unit, integration, end-to-end pipeline"
+    "dependencies": ["argparse", "json", "logging", "datetime", "uuid", "pytest"],
+    "runtime": "pytest -q and Docker harness",
+    "logging": "All agent actions log to JSONL sinks under meta/output/",
+    "documentation": "README references docs/labs_spec.md"
+  },
+  "file_outlines": {
+    "labs/agents/generator.py": "GeneratorAgent.propose(prompt) -> {id,timestamp,prompt,provenance}",
+    "labs/agents/critic.py": "CriticAgent.review(asset) -> asset + ok/issues",
+    "labs/logging.py": "log_jsonl(path, record) helper",
+    "labs/cli.py": "argparse CLI with generate/critique subcommands",
+    "tests/": "pytest suite covering generator, critic, pipeline",
+    "Dockerfile": "python:3.11-slim running pytest -q",
+    "docker-compose.yml": "labs service invoking pytest -q",
+    "test.sh": "build image then run docker compose",
+    "docs/labs_spec.md": "Specification for v0.1 loop"
   },
   "exit_criteria": [
-    "Repo skeleton exists with all required dirs/files",
-    "Generator and critic agent stubs present under labs/",
-    "CLI stub in labs/cli.py runs with --help",
-    "Pytest discovers empty test stubs in tests/",
-    "Docker test harness builds and runs pytest green",
-    "README minimal, spec in docs/labs_spec.md"
+    "GeneratorAgent and CriticAgent implemented",
+    "CLI prints JSON for generate and critique subcommands",
+    "pytest -q passes",
+    "Docker harness builds and runs",
+    "Documentation and metadata updated"
   ]
 }

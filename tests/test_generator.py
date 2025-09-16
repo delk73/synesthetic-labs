@@ -1,64 +1,28 @@
+"""Tests for the generator agent."""
+
+from __future__ import annotations
+
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+import uuid
 
-import pytest
-
-from labs.agents.generator import Generator, GeneratorConfig, PromptRepository
-from labs.logging import FileLogSink
+from labs.agents.generator import GeneratorAgent
 
 
-class FixedClock:
-    def __init__(self) -> None:
-        self._now = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+def test_generator_produces_record_and_logs(tmp_path: Path) -> None:
+    """Generator should emit a proposal and write it to the log."""
 
-    def now(self) -> datetime:
-        return self._now
+    log_path = tmp_path / "generator.jsonl"
+    agent = GeneratorAgent(log_path=log_path)
+    proposal = agent.propose("demo prompt")
 
+    assert proposal["prompt"] == "demo prompt"
+    uuid.UUID(proposal["id"])  # Raises ValueError if invalid
+    datetime.fromisoformat(proposal["timestamp"])  # Should parse without error
+    assert proposal["provenance"]["log_path"] == str(log_path)
 
-@pytest.fixture
-def prompts_dir(tmp_path: Path) -> Path:
-    prompts = tmp_path / "prompts"
-    prompts.mkdir()
-    payload = {
-        "task": "demo",
-        "objective": "exercise generator",
-        "constraints": {"language": "python"},
-    }
-    (prompts / "init.json").write_text(json.dumps(payload), encoding="utf-8")
-    return prompts
-
-
-def test_generator_attaches_provenance_and_logs(tmp_path: Path, prompts_dir: Path) -> None:
-    log_path = tmp_path / "run.jsonl"
-    generator = Generator(
-        PromptRepository(prompts_dir),
-        log_sink=FileLogSink(log_path),
-        clock=FixedClock(),
-    )
-
-    config = GeneratorConfig(prompt_id="init", prompt_parameters={"mode": "test"}, seed=7)
-    proposal = generator.generate(config)
-
-    assert proposal.prompt_id == "init"
-    assert proposal.provenance["seed"] == 7
-    assert proposal.payload["prompt"]["task"] == "demo"
-    assert proposal.payload["parameters"] == {"mode": "test"}
-    assert proposal.timestamp == "2024-01-01T12:00:00+00:00"
-    assert proposal.provenance["prompt_path"].endswith("init.json")
-
-    log_lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    log_lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line]
     assert len(log_lines) == 1
-    assert "generator.proposal" in log_lines[0]
-
-
-def test_missing_prompt_raises(prompts_dir: Path) -> None:
-    generator = Generator(
-        PromptRepository(prompts_dir),
-        log_sink=FileLogSink(prompts_dir / "run.jsonl"),
-        clock=FixedClock(),
-    )
-
-    with pytest.raises(FileNotFoundError):
-        generator.generate(GeneratorConfig(prompt_id="unknown"))
-
+    logged_record = json.loads(log_lines[0])
+    assert logged_record == proposal

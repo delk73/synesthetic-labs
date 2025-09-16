@@ -1,14 +1,6 @@
-"""Entry points for the Synesthetic Labs package."""
+"""Synesthetic Labs package exposing generator and critic agents."""
 
-from .agents.generator import Generator, GeneratorConfig, GeneratorProposal
-from .agents.critic import Critic, CriticConfig, CritiqueResult, MCPValidationResult
+from .agents.generator import GeneratorAgent
+from .agents.critic import CriticAgent
 
-__all__ = [
-    "Generator",
-    "GeneratorConfig",
-    "GeneratorProposal",
-    "Critic",
-    "CriticConfig",
-    "CritiqueResult",
-    "MCPValidationResult",
-]
+__all__ = ["GeneratorAgent", "CriticAgent"]
