@@ -9,9 +9,10 @@
       "Mark intentional design differences as Divergent",
       "No speculation about unseen behavior",
       "Recommendations must cite evidence (file path + line/section) and be actionable code/test/doc changes only",
-      "Always write the full audit report to meta/output/labs_state.md (overwrite if exists)",
-      "Always update AGENTS.md with the new snapshot",
-      "Do not only print results to stdout — persist them into the specified output paths"
+      "Write the full audit report directly to meta/output/labs_state.md (overwrite if exists)",
+      "Write the updated agent snapshot directly to AGENTS.md (overwrite if exists)",
+      "Do not only print results to stdout — persist them into the specified output paths",
+      "File writes are mandatory; audit is incomplete if files are not created or overwritten"
     ],
     "sections": [
       "Summary of repo state",
@@ -43,11 +44,12 @@
       "meta/output/labs_state.md",
       "AGENTS.md"
     ],
-    "format": "Markdown"
+    "format": "Markdown",
+    "must_write": true
   },
   "exit_criteria": [
     "meta/output/labs_state.md is written and non-empty",
-    "AGENTS.md snapshot updated with current audit findings",    
+    "AGENTS.md snapshot updated with current audit findings",
     "Spec features mapped to Present / Missing / Divergent in table form",
     "Test coverage summarized in a table with evidence",
     "Dependencies mapped to imports in a table with evidence",
