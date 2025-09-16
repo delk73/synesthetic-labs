@@ -5,11 +5,12 @@ set -euo pipefail
 #!/usr/bin/env bash
 set -euo pipefail
 
-codex exec \
+cat meta/prompts/emit.json | codex exec \
   -m gpt-5-codex \
   -c model="gpt-5-codex" \
   --sandbox workspace-write \
-  meta/prompts/emit.json apply
+  apply
+
 
 
 
