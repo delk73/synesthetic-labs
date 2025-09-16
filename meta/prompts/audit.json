@@ -1,6 +1,6 @@
 {
   "task": "Audit synesthetic-labs repo state (v0.1 Generator + Critic)",
-  "objective": "Compare implementation, tests, and docs against labs_spec.md. Report what is present, missing, or divergent, and export an updated AGENTS.md snapshot.",
+  "objective": "Compare implementation, tests, and docs against labs_spec.md and init.json. Report what is present, missing, or divergent, and export an updated AGENTS.md snapshot.",
   "constraints": {
     "style": "deterministic, terse, Markdown headings with bullets/tables",
     "rules": [
@@ -8,12 +8,12 @@
       "Mark functionality not present as Missing",
       "Mark intentional design differences as Divergent",
       "No speculation about unseen behavior",
-      "Recommendations must be actionable code/test/doc changes only"
+      "Recommendations must cite evidence (file path + line/section) and be actionable code/test/doc changes only"
     ],
     "sections": [
       "Summary of repo state",
       "Top gaps & fixes (3–5 bullets)",
-      "Alignment with labs_spec.md (table: Spec item → Status → Evidence)",
+      "Alignment with labs_spec.md and init.json (table: Spec item → Status → Evidence)",
       "Test coverage (table: Feature → Tested? → Evidence)",
       "Dependencies and runtime (table: Package → Used in → Required/Optional)",
       "Environment variables (bullets: name, default, fallback behavior)",
@@ -29,8 +29,10 @@
       "requirements.txt",
       "labs/*.py",
       "tests/*.py",
-      "meta/*",
-      ".github/workflows/*"
+      "meta/",
+      "AGENTS.md",
+      ".github/workflows/",
+      ".env.example"
     ]
   },
   "output": {
@@ -41,12 +43,12 @@
     "format": "Markdown"
   },
   "exit_criteria": [
-    "meta/output/labs_state.md exists",
-    "AGENTS.md exists as a persistent baseline context",
-    "Spec features mapped to Present / Missing / Divergent",
-    "Test coverage summarized in a table",
-    "Dependencies mapped to imports in a table",
-    "Env vars listed with defaults and fallbacks",
-    "README cross-checked against labs_spec.md"
+    "meta/output/labs_state.md exists with all sections complete",
+    "AGENTS.md updated as persistent baseline context",
+    "Spec features mapped to Present / Missing / Divergent in table form",
+    "Test coverage summarized in a table with evidence",
+    "Dependencies mapped to imports in a table with evidence",
+    "Environment variables listed with defaults and fallbacks",
+    "README cross-checked against docs/labs_spec.md and init.json"
   ]
 }
