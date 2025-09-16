@@ -1,0 +1,109 @@
+{
+  "task": "Emit synesthetic-labs repo (v0.1 Generator + Critic, loop-enabled)",
+  "objective": "Generate a runnable repo per init.json and audit.json. Flesh out agents, CLI, tests, docs, metadata, CI, and env stubs in one deterministic pass. Iterate until audit passes cleanly, without modifying canon files.",
+  "constraints": {
+    "style": "KISS, deterministic, minimal deps",
+    "language": "Python (>=3.11)",
+    "runtime": "pytest + container harness",
+    "rules": [
+      "Every .py file must contain runnable code, not placeholders",
+      "Keep dependencies minimal (argparse, logging, json, datetime, pytest)",
+      "Follow PEP8 and include docstrings",
+      "Tests must run green with pytest -q",
+      "Document provenance in AGENTS.md and labs_state.md via audit.json",
+      "Treat meta/prompts/init.json, meta/prompts/audit.json, and docs/labs_spec.md as immutable canon; do not modify them",
+      "After generating repo files, immediately run audit.json",
+      "Treat Missing as failure. Treat Divergent as failure unless explicitly allowed by docs/labs_spec.md",
+      "Do not overwrite meta/output/labs_state.md with placeholders; it must contain a full audit report",
+      "CLI must support: python -m labs.cli generate <prompt> and python -m labs.cli critique <json>",
+      "pytest must auto-discover tests in tests/ and return 0",
+      "Stop when audit passes and pytest returns 0"
+    ]
+  },
+  "file_outlines": {
+    "labs/agents/generator.py": [
+      "Class: GeneratorAgent",
+      "Method: propose(prompt:str)->dict (returns {id,timestamp,prompt,provenance})",
+      "Uses uuid + datetime + logging",
+      "Writes proposal to JSONL sink (labs/logging.py)"
+    ],
+    "labs/agents/critic.py": [
+      "Class: CriticAgent",
+      "Method: review(asset:dict)->dict (checks keys, adds 'ok':True/False, 'issues':list)",
+      "Logs review and passes through asset"
+    ],
+    "labs/logging.py": [
+      "Function: log_jsonl(path:str, record:dict)",
+      "Appends record as JSON line with utf-8"
+    ],
+    "labs/cli.py": [
+      "argparse CLI with subcommands: generate, critique",
+      "generate → calls GeneratorAgent.propose",
+      "critique → calls CriticAgent.review",
+      "Prints JSON to stdout"
+    ],
+    "labs/__init__.py": [
+      "Expose GeneratorAgent, CriticAgent"
+    ],
+    "tests/test_generator.py": [
+      "Test that GeneratorAgent().propose('x') returns dict with id,timestamp,prompt",
+      "Assert log file is written"
+    ],
+    "tests/test_critic.py": [
+      "Test that CriticAgent().review({'id':1}) returns ok/False with issues",
+      "Test valid asset passes"
+    ],
+    "tests/test_pipeline.py": [
+      "Integration test: run GeneratorAgent→CriticAgent in sequence",
+      "Assert combined output contains provenance and ok flag"
+    ],
+    "requirements.txt": [
+      "pytest",
+      "no extra deps"
+    ],
+    "Dockerfile": [
+      "FROM python:3.11-slim",
+      "WORKDIR /app",
+      "COPY . .",
+      "RUN pip install -r requirements.txt",
+      "CMD ['pytest','-q']"
+    ],
+    "docker-compose.yml": [
+      "service: labs",
+      "build: .",
+      "command: pytest -q"
+    ],
+    "test.sh": [
+      "bash script that builds docker and runs pytest"
+    ],
+    "README.md": [
+      "# Synesthetic Labs",
+      "Quickstart (docker build, pytest)",
+      "Points to docs/labs_spec.md"
+    ],
+    ".github/workflows/ci.yml": [
+      "GitHub Actions workflow: on push/pull_request → run pytest"
+    ],
+    ".env.example": [
+      "# Template; v0.1 requires no vars"
+    ],
+    "meta/backlog.md": [
+      "List of future tasks"
+    ],
+    "AGENTS.md": [
+      "Agent roles and provenance snapshot"
+    ],
+    "meta/output/labs_state.md": [
+      "Audit report output"
+    ]
+  },
+  "exit_criteria": [
+    "Repo scaffolded per init.json",
+    "GeneratorAgent and CriticAgent implemented with working methods",
+    "CLI runs with --help and subcommands",
+    "pytest passes all tests",
+    "Docker harness builds and runs pytest green",
+    "AGENTS.md and labs_state.md written via audit.json",
+    "Audit confirms all features Present or intentional Divergent"
+  ]
+}
