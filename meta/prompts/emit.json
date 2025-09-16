@@ -17,7 +17,10 @@
       "Do not overwrite meta/output/labs_state.md with placeholders; it must contain a full audit report",
       "CLI must support: python -m labs.cli generate <prompt> and python -m labs.cli critique <json>",
       "pytest must auto-discover tests in tests/ and return 0",
-      "Stop when audit passes and pytest returns 0"
+      "Stop when audit passes and pytest returns 0",
+      "CriticAgent must attempt to use an MCP adapter for schema validation by default; if MCP is unavailable, clearly log 'validation skipped'",
+      "CLI subcommands must inject MCP validation into CriticAgent automatically, or raise a clear error if MCP is not running",
+      "All tests must include at least one case where validation is skipped and one case where validation passes through an injected stub"
     ]
   },
   "file_outlines": {
@@ -30,7 +33,8 @@
     "labs/agents/critic.py": [
       "Class: CriticAgent",
       "Method: review(asset:dict)->dict (checks keys, adds 'ok':True/False, 'issues':list)",
-      "Logs review and passes through asset"
+      "Logs review and passes through asset",
+      "Attempts MCP schema validation via adapter; logs 'validation skipped' if unavailable"
     ],
     "labs/logging.py": [
       "Function: log_jsonl(path:str, record:dict)",
@@ -40,6 +44,7 @@
       "argparse CLI with subcommands: generate, critique",
       "generate → calls GeneratorAgent.propose",
       "critique → calls CriticAgent.review",
+      "Injects MCP validator by default; raises clear error if not available",
       "Prints JSON to stdout"
     ],
     "labs/__init__.py": [
@@ -51,7 +56,8 @@
     ],
     "tests/test_critic.py": [
       "Test that CriticAgent().review({'id':1}) returns ok/False with issues",
-      "Test valid asset passes"
+      "Test valid asset passes",
+      "Test MCP unavailable case logs 'validation skipped'"
     ],
     "tests/test_pipeline.py": [
       "Integration test: run GeneratorAgent→CriticAgent in sequence",
@@ -79,7 +85,8 @@
     "README.md": [
       "# Synesthetic Labs",
       "Quickstart (docker build, pytest)",
-      "Points to docs/labs_spec.md"
+      "Points to docs/labs_spec.md",
+      "Note: MCP adapter must be running for validation; otherwise CriticAgent logs 'validation skipped'"
     ],
     ".github/workflows/ci.yml": [
       "GitHub Actions workflow: on push/pull_request → run pytest"

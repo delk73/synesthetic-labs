@@ -22,6 +22,11 @@ python -m labs.cli critique '{"proposal_id": "..."}'
 
 The CLI reads prompts from `meta/prompts/`, writes JSONL traces under `meta/output/`, and returns structured JSON to stdout.
 
+## MCP Integration
+The CLI defaults to `MCP_HOST=localhost` and `MCP_PORT=7000`. Launch the adapter via `synesthetic-mcp/serve.sh` and keep the backend reachable to enable validation.
+
+When the adapter is offline the critic logs `validation skipped`. If the adapter is reachable but the backend does not expose the required schemas it logs `backend unavailable` and continues without validation.
+
 ## Testing
 ```bash
 # Fast local run
