@@ -8,7 +8,10 @@
       "Mark functionality not present as Missing",
       "Mark intentional design differences as Divergent",
       "No speculation about unseen behavior",
-      "Recommendations must cite evidence (file path + line/section) and be actionable code/test/doc changes only"
+      "Recommendations must cite evidence (file path + line/section) and be actionable code/test/doc changes only",
+      "Always write the full audit report to meta/output/labs_state.md (overwrite if exists)",
+      "Always update AGENTS.md with the new snapshot",
+      "Do not only print results to stdout — persist them into the specified output paths"
     ],
     "sections": [
       "Summary of repo state",
@@ -43,8 +46,8 @@
     "format": "Markdown"
   },
   "exit_criteria": [
-    "meta/output/labs_state.md exists with all sections complete",
-    "AGENTS.md updated as persistent baseline context",
+    "meta/output/labs_state.md is written and non-empty",
+    "AGENTS.md snapshot updated with current audit findings",    
     "Spec features mapped to Present / Missing / Divergent in table form",
     "Test coverage summarized in a table with evidence",
     "Dependencies mapped to imports in a table with evidence",
