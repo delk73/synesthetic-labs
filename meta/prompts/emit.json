@@ -18,8 +18,9 @@
       "CLI must support: python -m labs.cli generate <prompt> and python -m labs.cli critique <json>",
       "pytest must auto-discover tests in tests/ and return 0",
       "Stop when audit passes and pytest returns 0",
-      "CriticAgent must attempt to use an MCP adapter for schema validation by default; if MCP is unavailable, clearly log 'validation skipped'",
-      "CLI subcommands must inject MCP validation into CriticAgent automatically, or raise a clear error if MCP is not running",
+      "CriticAgent must attempt to use an MCP adapter for schema validation by default; if MCP is unavailable, clearly log 'validation skipped' but still return a review",
+      "CriticAgent must capture and persist MCP response payloads in its review record when available",
+      "CLI subcommands must inject MCP validation into CriticAgent automatically, or gracefully fall back with 'validation skipped' if not reachable",
       "All tests must include at least one case where validation is skipped and one case where validation passes through an injected stub"
     ]
   },
@@ -32,7 +33,7 @@
     ],
     "labs/agents/critic.py": [
       "Class: CriticAgent",
-      "Method: review(asset:dict)->dict (checks keys, adds 'ok':True/False, 'issues':list)",
+      "Method: review(asset:dict)->dict (checks keys, adds 'ok':True/False, 'issues':list, 'mcp_response':optional)",
       "Logs review and passes through asset",
       "Attempts MCP schema validation via adapter; logs 'validation skipped' if unavailable"
     ],
@@ -44,11 +45,17 @@
       "argparse CLI with subcommands: generate, critique",
       "generate → calls GeneratorAgent.propose",
       "critique → calls CriticAgent.review",
-      "Injects MCP validator by default; raises clear error if not available",
+      "Injects MCP validator by default; if unreachable, fall back with 'validation skipped'",
       "Prints JSON to stdout"
     ],
     "labs/__init__.py": [
       "Expose GeneratorAgent, CriticAgent"
+    ],
+    "labs/lifecycle/__init__.py": [
+      "Stub package for orchestration hooks"
+    ],
+    "labs/datasets/__init__.py": [
+      "Stub package for dataset hooks"
     ],
     "tests/test_generator.py": [
       "Test that GeneratorAgent().propose('x') returns dict with id,timestamp,prompt",
@@ -57,11 +64,12 @@
     "tests/test_critic.py": [
       "Test that CriticAgent().review({'id':1}) returns ok/False with issues",
       "Test valid asset passes",
-      "Test MCP unavailable case logs 'validation skipped'"
+      "Test MCP unavailable case logs 'validation skipped'",
+      "Test MCP stub validator returns payload and is persisted in review"
     ],
     "tests/test_pipeline.py": [
       "Integration test: run GeneratorAgent→CriticAgent in sequence",
-      "Assert combined output contains provenance and ok flag"
+      "Assert combined output contains provenance, ok flag, and MCP response field"
     ],
     "requirements.txt": [
       "pytest",
@@ -86,13 +94,16 @@
       "# Synesthetic Labs",
       "Quickstart (docker build, pytest)",
       "Points to docs/labs_spec.md",
-      "Note: MCP adapter must be running for validation; otherwise CriticAgent logs 'validation skipped'"
+      "Note: CriticAgent attempts MCP validation; if MCP is not running, it logs 'validation skipped' and still returns a review"
     ],
     ".github/workflows/ci.yml": [
       "GitHub Actions workflow: on push/pull_request → run pytest"
     ],
     ".env.example": [
-      "# Template; v0.1 requires no vars"
+      "MCP_HOST=localhost",
+      "MCP_PORT=7000",
+      "SYN_SCHEMAS_DIR=",
+      "SYN_EXAMPLES_DIR="
     ],
     "meta/backlog.md": [
       "List of future tasks"
@@ -111,6 +122,7 @@
     "pytest passes all tests",
     "Docker harness builds and runs pytest green",
     "AGENTS.md and labs_state.md written via audit.json",
-    "Audit confirms all features Present or intentional Divergent"
+    "Audit confirms all features Present or intentional Divergent",
+    "labs/lifecycle and labs/datasets stubs exist"
   ]
 }

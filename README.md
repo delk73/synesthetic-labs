@@ -1,45 +1,27 @@
 # Synesthetic Labs
 
-Synesthetic Labs hosts the v0.1 experiment loop for generator → critic workflows that frontload MCP-backed validation. The repo provides small, deterministic Python agents, a CLI, and a container harness that mirrors CI execution.
-
-## Requirements
-- Python 3.11+
-- Docker (for the canonical harness)
-
-Install development dependencies with `pip install -r requirements.txt` when running locally.
+Synesthetic Labs delivers the v0.1 generator → critic workflow with deterministic Python agents and a container harness that mirrors CI.
 
 ## Quickstart
 ```bash
-# Inspect available commands
-python -m labs.cli --help
+# Build and test inside Docker
+docker build -t synesthetic-labs .
+docker run --rm synesthetic-labs
 
-# Generate a proposal from a prompt stored under meta/prompts/
-python -m labs.cli generate init
-
-# Critique a proposal captured as JSON (inline or file path)
-python -m labs.cli critique '{"proposal_id": "..."}'
-```
-
-The CLI reads prompts from `meta/prompts/`, writes JSONL traces under `meta/output/`, and returns structured JSON to stdout.
-
-## MCP Integration
-The CLI defaults to `MCP_HOST=localhost` and `MCP_PORT=7000`. Launch the adapter via `synesthetic-mcp/serve.sh` and keep the backend reachable to enable validation.
-
-When the adapter is offline the critic logs `validation skipped`. If the adapter is reachable but the backend does not expose the required schemas it logs `backend unavailable` and continues without validation.
-
-## Testing
-```bash
-# Fast local run
-pytest -q
-
-# Containerised path-to-green (mirrors CI)
+# Convenience wrapper
 ./test.sh
+
+# Local test suite without Docker
+pytest -q
 ```
 
-## Logging & Artefacts
-Structured traces for both agents live in `meta/output/`. Each generator → critic invocation appends JSON lines that capture proposals, critiques, and MCP validation responses for later audit.
+Run `python -m labs.cli --help` to explore the CLI. The generator subcommand accepts free-form prompts. The critic subcommand requires a JSON payload and attempts to reach an MCP adapter before running validation.
+Note: CriticAgent defaults to MCP schema validation, logs `validation skipped` if the adapter cannot be reached, and records validator responses in the review when validation succeeds. `.env.example` documents MCP_HOST, MCP_PORT, and SYN_* overrides for local setups.
+
+## MCP Adapter
+The CLI expects an MCP adapter at `localhost:7000`. When the adapter is unavailable the CriticAgent records `validation skipped` while still emitting a review payload. Provide a stub validator in tests when a sandboxed environment prevents network access.
 
 ## Further Reading
-- `docs/labs_spec.md` — authoritative scope for the v0.1 lab
-- `AGENTS.md` — generator and critic expectations
-- `meta/prompts/` — canonical prompt set used by the CLI and tests
+- `docs/labs_spec.md` — canonical scope for this release
+- `AGENTS.md` — generator and critic provenance
+- `meta/prompts/` — canonical prompt set and audit requests

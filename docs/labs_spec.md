@@ -25,6 +25,8 @@
 | Critic agent | Analyze generator output, surface issues, and prepare artifacts for MCP validation while recognizing MCP as the final schema authority. | Receives generator output; emits critique notes and validation-ready payloads handed to MCP adapters. |
 | Labs CLI (placeholder) | Entry point for running generator → critic experiments locally or in container. | MVP flow runs generator → critic → logging pipeline and exposes structured logging hooks. |
 
+- Critic agent must attempt MCP schema validation by default, log `validation skipped` when the adapter is unavailable, and persist successful validator responses inside the review payload.
+
 ## Planned Features (v0.1)
 - Configurable generator prompts housed under `meta/prompts/` for reproducible experiments.
 - Critic prepares assets and calls MCP validation hooks before persistence.
