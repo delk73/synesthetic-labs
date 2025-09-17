@@ -1,0 +1,10 @@
+version: '3.9'
+services:
+  labs:
+    build: .
+    command: pytest -q
+    environment:
+      - MCP_HOST=${MCP_HOST:-localhost}
+      - MCP_PORT=${MCP_PORT:-7000}
+      - SYN_SCHEMAS_DIR=${SYN_SCHEMAS_DIR:-}
+      - SYN_EXAMPLES_DIR=${SYN_EXAMPLES_DIR:-}

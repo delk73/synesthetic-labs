@@ -11,6 +11,7 @@
       "Recommendations must cite evidence (file path + line/section) and be actionable code/test/doc changes only",
       "Always write the full audit report directly to meta/output/labs_state.md (overwrite if exists)",
       "Always write the updated agent snapshot directly to AGENTS.md (overwrite if exists)",
+      "Labs must fail clearly if MCP is unavailable; fallback schema validation is not expected",
       "Stdout may mirror results, but audit is incomplete unless both output files are created or overwritten with non-empty content"
     ],
     "sections": [
@@ -19,7 +20,7 @@
       "Alignment with labs_spec.md and init.json (table: Spec item → Status → Evidence)",
       "Test coverage (table: Feature → Tested? → Evidence)",
       "Dependencies and runtime (table: Package → Used in → Required/Optional)",
-      "Environment variables (bullets: name, default, fallback behavior)",
+      "Environment variables (bullets: name, default, behavior when missing/unreachable MCP)",
       "Documentation accuracy (bullets: README vs. labs_spec.md)",
       "Detected divergences",
       "Recommendations"
@@ -53,7 +54,7 @@
     "Spec features mapped to Present / Missing / Divergent in table form",
     "Test coverage summarized in a table with evidence",
     "Dependencies mapped to imports in a table with evidence",
-    "Environment variables listed with defaults and fallbacks",
+    "Environment variables listed with defaults and clear behavior when MCP is unreachable",
     "README cross-checked against docs/labs_spec.md and init.json"
   ]
 }
