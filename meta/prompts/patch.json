@@ -1,0 +1,29 @@
+{
+  "task": "Add MCP env defaults with optional fail-fast toggle",
+  "objective": "Keep current safe behavior while allowing developers to enable strict fail-fast MCP validation with LABS_FAIL_FAST=1. Always apply sensible defaults for MCP_HOST/MCP_PORT/SYN_SCHEMAS_DIR.",
+  "constraints": {
+    "repo": "synesthetic-labs",
+    "style": "KISS, minimal diff, deterministic behavior",
+    "files_to_edit": [
+      "labs/cli.py",
+      "labs/agents/critic.py",
+      "tests/test_critic.py",
+      "tests/test_pipeline.py",
+      "README.md"
+    ]
+  },
+  "steps": [
+    "1. In labs/cli.py _build_validator: if MCP_HOST/PORT/SYN_SCHEMAS_DIR are missing from os.environ, set defaults (MCP_HOST=localhost, MCP_PORT=7000, SYN_SCHEMAS_DIR=libs/synesthetic-schemas).",
+    "2. Preserve current 'validation skipped' behavior by default, so existing e2e continues to pass.",
+    "3. In labs/cli.py critique command and labs/agents/critic.py: if LABS_FAIL_FAST=1 and validator is None or raises MCPUnavailableError, then mark ok=false, validation_status='failed', and exit non-zero.",
+    "4. Add tests in tests/test_critic.py to simulate MCPUnavailableError and assert: ok=false when LABS_FAIL_FAST=1, ok=true when not set.",
+    "5. Add tests in tests/test_pipeline.py to simulate unset env vars: confirm defaults (localhost:7000 etc.) are applied; confirm CLI exits 1 when LABS_FAIL_FAST=1 and MCP unreachable.",
+    "6. Update README.md to document: defaults are applied automatically, and fail-fast can be enabled via LABS_FAIL_FAST=1."
+  ],
+  "expected_outcome": {
+    "default_mode": "Behavior remains as before: MCP unreachable logs 'validation skipped' and continues.",
+    "fail_fast_mode": "When LABS_FAIL_FAST=1, unreachable MCP causes ok=false and CLI exits 1.",
+    "env_defaults": "localhost:7000 and libs/synesthetic-schemas are applied when env unset.",
+    "tests": "Coverage added for both modes and env defaults."
+  }
+}

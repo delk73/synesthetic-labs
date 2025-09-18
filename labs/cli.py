@@ -49,6 +49,10 @@ class SocketMCPValidator:
             raise MCPUnavailableError(f"invalid MCP response: {exc}") from exc
 
 
+def _fail_fast_enabled() -> bool:
+    return os.getenv("LABS_FAIL_FAST") == "1"
+
+
 def _configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -63,24 +67,38 @@ def _load_asset(value: str) -> Dict[str, Any]:
 
 def _build_validator() -> Optional[Any]:
     host = os.getenv("MCP_HOST")
-    port_value = os.getenv("MCP_PORT")
-    if not host or not port_value:
-        _LOGGER.info("MCP validation skipped: MCP_HOST/MCP_PORT not configured")
-        return None
+    if not host:
+        host = "localhost"
+        os.environ["MCP_HOST"] = host
 
-    try:
-        port = int(port_value)
-    except ValueError:
-        _LOGGER.warning("MCP validation skipped: invalid MCP_PORT %s", port_value)
-        return None
+    port_value = os.getenv("MCP_PORT")
+    if not port_value:
+        port_value = "7000"
+        os.environ["MCP_PORT"] = port_value
 
     schemas_dir = os.getenv("SYN_SCHEMAS_DIR")
     if not schemas_dir:
-        _LOGGER.info("MCP validation skipped: SYN_SCHEMAS_DIR not configured")
+        schemas_dir = os.path.join("libs", "synesthetic-schemas")
+        os.environ["SYN_SCHEMAS_DIR"] = schemas_dir
+
+    try:
+        port = int(port_value)
+    except ValueError as exc:
+        message = f"invalid MCP_PORT {port_value}"
+        if _fail_fast_enabled():
+            raise MCPUnavailableError(message) from exc
+        _LOGGER.warning("MCP validation skipped: %s", message)
+        return None
+
+    if not schemas_dir:
+        message = "SYN_SCHEMAS_DIR not configured"
+        if _fail_fast_enabled():
+            raise MCPUnavailableError(message)
+        _LOGGER.info("MCP validation skipped: %s", message)
         return None
 
     validator = SocketMCPValidator(host, port)
-    _LOGGER.debug("Configured MCP validator for %s:%s", host, port)
+    _LOGGER.debug("Configured MCP validator for %s:%s (schemas=%s)", host, port, schemas_dir)
     return validator.validate
 
 
@@ -108,10 +126,20 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.command == "critique":
         asset = _load_asset(args.asset)
-        validator_callback = _build_validator()
+        try:
+            validator_callback = _build_validator()
+        except MCPUnavailableError as exc:
+            _LOGGER.error("MCP unavailable: %s", exc)
+            validator_callback = None
+
         critic = CriticAgent(validator=validator_callback)
         review = critic.review(asset)
         print(json.dumps(review, indent=2))
+
+        if _fail_fast_enabled() and not review.get("ok"):
+            _LOGGER.error("Critique failed: MCP validation did not pass")
+            return 1
+
         return 0
 
     parser.error("Unknown command")

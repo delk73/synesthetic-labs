@@ -19,7 +19,8 @@ def base_asset() -> dict:
     }
 
 
-def test_missing_fields_flagged(tmp_path) -> None:
+def test_missing_fields_flagged(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
     critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
     review = critic.review({"id": "only"})
 
@@ -29,7 +30,9 @@ def test_missing_fields_flagged(tmp_path) -> None:
     assert review["mcp_response"] is None
 
 
-def test_successful_validation(tmp_path, base_asset) -> None:
+def test_successful_validation(tmp_path, base_asset, monkeypatch) -> None:
+    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
+
     def validator(payload: dict) -> dict:
         return {"status": "ok", "asset_id": payload["id"]}
 
@@ -42,7 +45,9 @@ def test_successful_validation(tmp_path, base_asset) -> None:
     assert review["mcp_response"] == {"status": "ok", "asset_id": "proposal-1"}
 
 
-def test_validation_skipped_logs_message(tmp_path, base_asset, caplog) -> None:
+def test_validation_skipped_without_fail_fast(tmp_path, base_asset, monkeypatch, caplog) -> None:
+    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
+
     def validator(_: dict) -> dict:
         raise MCPUnavailableError("adapter offline")
 
@@ -51,11 +56,32 @@ def test_validation_skipped_logs_message(tmp_path, base_asset, caplog) -> None:
     with caplog.at_level(logging.WARNING):
         review = critic.review(base_asset)
 
+    assert review["ok"] is True
+    assert review["issues"] == []
     assert review["validation_status"] == "skipped"
-    assert any("validation skipped" in message for message in caplog.messages)
+    assert any("MCP validation unavailable" in message for message in caplog.messages)
 
 
-def test_validation_failure_records_issue(tmp_path, base_asset) -> None:
+def test_validation_failure_with_fail_fast(tmp_path, base_asset, monkeypatch, caplog) -> None:
+    monkeypatch.setenv("LABS_FAIL_FAST", "1")
+
+    def validator(_: dict) -> dict:
+        raise MCPUnavailableError("adapter offline")
+
+    critic = CriticAgent(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
+
+    with caplog.at_level(logging.ERROR):
+        review = critic.review(base_asset)
+
+    assert review["ok"] is False
+    assert review["validation_status"] == "failed"
+    assert any("MCP validation unavailable" in issue for issue in review["issues"])
+    assert any("MCP validation failed" in message or "MCP validation unavailable" in message for message in caplog.messages)
+
+
+def test_validation_failure_records_issue(tmp_path, base_asset, monkeypatch) -> None:
+    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
+
     def validator(_: dict) -> dict:
         raise RuntimeError("schema mismatch")
 

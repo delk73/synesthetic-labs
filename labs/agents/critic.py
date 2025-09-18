@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
+import os
 from typing import Any, Callable, Dict, List, Optional
 
 from labs.logging import log_jsonl
@@ -37,8 +38,9 @@ class CriticAgent:
         """Inspect *asset* and return a review payload.
 
         Validation is attempted through the configured MCP validator. If the
-        validator is missing or reports unavailability, the review records a
-        skipped validation and still returns actionable feedback.
+        validator is missing or reports unavailability, behaviour depends on
+        the ``LABS_FAIL_FAST`` environment toggle: skipped when disabled,
+        treated as a failure when enabled.
         """
 
         if not isinstance(asset, dict):
@@ -49,20 +51,37 @@ class CriticAgent:
             if key not in asset:
                 issues.append(f"missing required field: {key}")
 
+        fail_fast = os.getenv("LABS_FAIL_FAST") == "1"
+
         validation_status = "skipped"
         mcp_response: Optional[Dict[str, Any]] = None
 
         if self._validator is None:
-            self._logger.info("MCP validation skipped: no validator configured")
+            message = "MCP validation skipped: no validator configured"
+            log_level = logging.ERROR if fail_fast else logging.INFO
+            self._logger.log(log_level, message)
+            if fail_fast:
+                validation_status = "failed"
+                issues.append("MCP validation unavailable: no validator configured")
         else:
             try:
                 response = self._validator(asset)
                 mcp_response = response
                 validation_status = "passed"
             except MCPUnavailableError as exc:
-                self._logger.warning("MCP validation skipped: %s", exc)
+                message = f"MCP validation unavailable: {exc}"
+                log_level = logging.ERROR if fail_fast else logging.WARNING
+                self._logger.log(log_level, message)
+                if fail_fast:
+                    validation_status = "failed"
+                    issues.append(message)
             except ConnectionError as exc:  # pragma: no cover - defensive fallback
-                self._logger.warning("MCP validation skipped: %s", exc)
+                message = f"MCP validation unavailable: {exc}"
+                log_level = logging.ERROR if fail_fast else logging.WARNING
+                self._logger.log(log_level, message)
+                if fail_fast:
+                    validation_status = "failed"
+                    issues.append(message)
             except Exception as exc:  # pragma: no cover - unexpected failures
                 validation_status = "failed"
                 message = f"MCP validation error: {exc}"
