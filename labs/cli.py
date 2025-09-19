@@ -36,17 +36,31 @@ class SocketMCPValidator:
             with socket.create_connection((self.host, self.port), timeout=self.timeout) as conn:
                 conn.sendall(message)
                 conn.shutdown(socket.SHUT_WR)
-                payload = conn.recv(65536)
+
+                chunks: list[bytes] = []
+                while True:
+                    part = conn.recv(65536)
+                    if not part:
+                        break
+                    chunks.append(part)
         except OSError as exc:
             raise MCPUnavailableError(str(exc)) from exc
+
+        payload = b"".join(chunks)
 
         if not payload:
             raise MCPUnavailableError("no response from MCP adapter")
 
+        text = payload.decode("utf-8").strip()
+
+        if not text:
+            raise MCPUnavailableError("empty response from MCP adapter")
+
         try:
-            return json.loads(payload.decode("utf-8"))
+            return json.loads(text)
         except json.JSONDecodeError as exc:  # pragma: no cover - defensive fallback
-            raise MCPUnavailableError(f"invalid MCP response: {exc}") from exc
+            snippet = text[:200]
+            raise MCPUnavailableError(f"invalid MCP response: {exc}: {snippet}") from exc
 
 
 def _fail_fast_enabled() -> bool:
