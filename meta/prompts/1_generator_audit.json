@@ -1,0 +1,30 @@
+{
+  "task": "Audit Stage 1 component generators",
+  "objective": "Verify new component generator stubs (ShaderGenerator, ToneGenerator, HapticGenerator, ControlGenerator, ModulationGenerator, RuleBundleGenerator, MetaGenerator) are schema-valid, imported cleanly, and covered by tests.",
+  "constraints": {
+    "repo": "synesthetic-labs",
+    "style": "deterministic, minimal, human-holdable",
+    "files_to_check": [
+      "labs/generators/shader_generator.py",
+      "labs/generators/tone_generator.py",
+      "labs/generators/haptic_generator.py",
+      "labs/generators/control_generator.py",
+      "labs/generators/modulation_generator.py",
+      "labs/generators/rule_bundle_generator.py",
+      "labs/generators/meta_generator.py",
+      "tests/test_generators.py"
+    ]
+  },
+  "checks": [
+    "Confirm each generator defines a class or function that returns a dict with required keys (name, description, input_parameters, etc.)",
+    "Verify all modules import without errors (no missing symbols, no circular imports).",
+    "Run schema validation against a sample from each generator (using MCP or SSOT).",
+    "Ensure tests/test_generators.py calls each generator and asserts schema validity.",
+    "Confirm naming and paths are consistent with docs/generator_spec.md (no drift)."
+  ],
+  "expected_outcome": {
+    "status": "Audit report generated",
+    "coverage": "List of generators checked, whether schema valid, whether tested",
+    "action_items": "List any missing tests, broken imports, or invalid schema sections"
+  }
+}
