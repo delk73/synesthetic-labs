@@ -1,0 +1,36 @@
+{
+  "task": "Implement Generator v0.2 Stage 1 — Component Generators",
+  "objective": "Add skeleton classes for component generators (shader, tone, haptic, control, modulation, rule_bundle, meta). Each returns a minimal schema-valid section. Include unit tests that validate their outputs against MCP.",
+  "constraints": {
+    "repo": "synesthetic-labs",
+    "style": "KISS, deterministic, minimal deps",
+    "files_to_add": [
+      "labs/generator/__init__.py",
+      "labs/generator/shader.py",
+      "labs/generator/tone.py",
+      "labs/generator/haptic.py",
+      "labs/generator/control.py",
+      "labs/generator/modulation.py",
+      "labs/generator/rule_bundle.py",
+      "labs/generator/meta.py",
+      "tests/test_generator_components.py"
+    ]
+  },
+  "steps": [
+    "1. Create labs/generator/ package with one file per component generator.",
+    "2. Implement ShaderGenerator: returns CircleSDF shader with u_px/u_py/u_r parameters and uniforms.",
+    "3. Implement ToneGenerator: returns canonical Tone.Synth baseline (volume, detune, envelope, portamento).",
+    "4. Implement HapticGenerator: returns generic device with intensity + frequency parameters.",
+    "5. Implement ControlGenerator: maps mouse.x→shader.u_px, mouse.y→shader.u_py, Shift+mouse→tone.detune.",
+    "6. Implement ModulationGenerator: returns simple LFOs (triangle on shader.u_r, sine on haptic.intensity, triangle on tone.detune).",
+    "7. Implement RuleBundleGenerator: returns a grid-cell mapping that triggers note + haptic pulse + radius nudge.",
+    "8. Implement MetaGenerator: returns description, category, complexity, and tags.",
+    "9. Add tests/test_generator_components.py: for each generator, call .generate() and assert returned JSON is schema-valid using MCP (skip gracefully if MCP unavailable).",
+    "10. Ensure pytest -q passes and ./test.sh continues to run cleanly."
+  ],
+  "expected_outcome": {
+    "code": "Minimal component generator classes in labs/generator/, each returning schema-valid sections.",
+    "tests": "Unit tests confirm each generator produces schema-valid JSON.",
+    "foundation": "Ready for Stage 2 assembler/wiring implementation."
+  }
+}

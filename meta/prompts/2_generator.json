@@ -1,0 +1,41 @@
+{
+  "task": "Implement Generator v0.2 Stage 2 — Assembler & E2E Wiring",
+  "objective": "Add AssetAssembler that wires together component outputs (shader, tone, haptic, controls, modulations, rule_bundle, meta), enforces cross-references, stamps provenance, and validates with MCP. Extend integration and E2E tests.",
+  "constraints": {
+    "repo": "synesthetic-labs",
+    "style": "KISS, deterministic, minimal deps",
+    "files_to_edit": [
+      "labs/generator/__init__.py"
+    ],
+    "files_to_add": [
+      "labs/generator/assembler.py",
+      "tests/test_generator_assembler.py",
+      "tests/test_generator_e2e.py"
+    ]
+  },
+  "steps": [
+    "1. Create labs/generator/assembler.py with AssetAssembler class.",
+    "2. AssetAssembler.generate(prompt, seed=None):",
+    "   - Calls each component generator (shader, tone, haptic, control, modulation, rule_bundle, meta).",
+    "   - Collects all input_parameters across shader/tone/haptic.",
+    "   - Rewrites/drops control mappings that target nonexistent parameters.",
+    "   - Rewrites/drops modulations that target nonexistent parameters.",
+    "   - Rewrites/drops rule_bundle effects that reference invalid targets.",
+    "   - Adds provenance (uuid4, ISO timestamp, prompt, seed).",
+    "   - Returns full Synesthetic asset JSON object.",
+    "3. In labs/generator/__init__.py export AssetAssembler for CLI/experiments.",
+    "4. Add tests/test_generator_assembler.py:",
+    "   - Unit test AssetAssembler returns schema-valid JSON when MCP available (skip if unavailable).",
+    "   - Assert all references (controls/modulations/rules) point to real parameters.",
+    "5. Add tests/test_generator_e2e.py:",
+    "   - End-to-end test: AssetAssembler → CriticAgent → MCP validation.",
+    "   - Persist outputs to meta/output/test_generator/asset.json and JSONL log.",
+    "   - Assert ok=true when MCP responds successfully.",
+    "6. Ensure pytest -q passes and ./test.sh runs cleanly."
+  ],
+  "expected_outcome": {
+    "assembler": "AssetAssembler that produces full schema-valid Synesthetic assets.",
+    "integration": "Unit + integration tests ensure no dangling references and MCP validation passes.",
+    "e2e": "Generator → Critic → MCP pipeline confirmed, assets persisted under meta/output/"
+  }
+}
