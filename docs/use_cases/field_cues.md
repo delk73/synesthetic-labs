@@ -71,3 +71,23 @@ This use case demonstrates the OS’s capacity to:
 * Operate as a **perception-layer instrument** for social as well as creative contexts.
 * Map abstract interpersonal states into **simple multimodal cues**.
 * Enable adaptive field management without verbal negotiation, enhancing flow and resilience of collective work.
+
+---
+
+## **Design Principle: Prosthetic Cue Resolution**
+
+Synesthetic OS must function as a **prosthetic sense organ for the field**. Natural perception varies — hearing loss, vision changes, or cognitive overload reduce access to subtle cues. The system’s role is to restore and extend perception, always seeking higher resolution.
+
+**Guidelines:**
+
+* **Redundancy Across Modalities**: every cue mirrored in at least two channels (visual + audio, audio + haptic).
+* **Scalable Resolution**: ambient low-res by default, with ability to increase fidelity (timing, intensity, gradients) when needed.
+* **Transparency of Field**: make group states explicit, never reliant on micro-cues that only some participants catch.
+* **Embodied Feedback First**: prioritize rhythm and haptics for immediate, pre-cognitive alignment.
+* **Adaptive Mapping**: users can route cues to the modality that best fits their perceptual strengths.
+
+**Outcome:**
+
+* Participants with degraded or uneven senses are not disadvantaged.
+* Group dynamics become **legible, embodied, and resilient**.
+* The system fulfills its role as a perception-layer extension — turning implicit signals into shared, higher-resolution feedback.
