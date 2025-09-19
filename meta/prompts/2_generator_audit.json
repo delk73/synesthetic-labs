@@ -1,0 +1,21 @@
+{
+  "task": "Audit Assembler + Wiring implementation",
+  "objective": "Verify that the new Assembler correctly wires shader, tone, haptic, control, modulation, and rule_bundle sections into schema-valid SynestheticAssets.",
+  "constraints": {
+    "repo": "synesthetic-labs",
+    "style": "deterministic, minimal, KISS"
+  },
+  "checks": [
+    "Assembler gathers input_parameters from shader/tone/haptic and injects them into controls and modulations.",
+    "ControlGenerator references only valid parameters from other sections.",
+    "ModulationGenerator produces targets that exist in shader/tone/haptic.",
+    "RuleBundleGenerator effects reference valid parameters.",
+    "Final asset passes MCP schema validation when run through CriticAgent.",
+    "Integration tests assert no dangling references (e.g., invalid shader param).",
+    "E2E harness (generator → assembler → critic → MCP) runs successfully and logs outputs."
+  ],
+  "expected_outcome": {
+    "audit_report": "Markdown summary under meta/output/AUDIT_STAGE2.md",
+    "status": "Pass if all references resolve and end-to-end validation succeeds."
+  }
+}
