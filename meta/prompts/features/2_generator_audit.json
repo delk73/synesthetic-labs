@@ -1,6 +1,6 @@
 {
-  "task": "Audit Assembler + Wiring implementation",
-  "objective": "Verify that the new Assembler correctly wires shader, tone, haptic, control, modulation, and rule_bundle sections into schema-valid SynestheticAssets.",
+  "task": "Audit Assembler + CLI Wiring",
+  "objective": "Verify that AssetAssembler output flows all the way through CLI generation, schema validation, and persistence into meta/output/experiments/ as complete SynestheticAssets.",
   "constraints": {
     "repo": "synesthetic-labs",
     "style": "deterministic, minimal, KISS"
@@ -10,12 +10,14 @@
     "ControlGenerator references only valid parameters from other sections.",
     "ModulationGenerator produces targets that exist in shader/tone/haptic.",
     "RuleBundleGenerator effects reference valid parameters.",
-    "Final asset passes MCP schema validation when run through CriticAgent.",
+    "labs/cli.py generate calls AssetAssembler and produces a complete SynestheticAsset, not just a log entry.",
+    "Final asset is persisted to meta/output/experiments/<id>.json alongside generator.jsonl provenance.",
+    "Final asset passes MCP schema validation when run through CriticAgent (skip if MCP unreachable).",
     "Integration tests assert no dangling references (e.g., invalid shader param).",
     "E2E harness (generator → assembler → critic → MCP) runs successfully and logs outputs."
   ],
   "expected_outcome": {
     "audit_report": "Markdown summary under meta/output/AUDIT_STAGE2.md",
-    "status": "Pass if all references resolve and end-to-end validation succeeds."
+    "status": "Pass if CLI + assembler wiring produces persisted, schema-valid assets with no dangling references."
   }
 }
