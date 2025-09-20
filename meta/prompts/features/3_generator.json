@@ -1,0 +1,21 @@
+{
+  "task": "Generator v0.3 Stage 3 — CLI + Persistence Wiring",
+  "objective": "Ensure labs/cli.py generate produces complete SynestheticAssets via AssetAssembler, validates them through CriticAgent+MCP, and persists results under meta/output/experiments/.",
+  "constraints": {
+    "repo": "synesthetic-labs",
+    "style": "deterministic, minimal, KISS",
+    "fail_fast": true
+  },
+  "checks": [
+    "CLI generation path calls AssetAssembler instead of GeneratorAgent.propose.",
+    "Generated assets are handed to CriticAgent for schema validation (fail fast if MCP reachable).",
+    "Assembled asset JSON is persisted to meta/output/experiments/<id>.json alongside provenance in generator.jsonl.",
+    "Provenance in generator.jsonl links cleanly to the persisted experiment file.",
+    "Integration tests include a CLI-driven run that produces and validates a real asset (skipping MCP only when unreachable).",
+    "End-to-end harness (cli → assembler → critic → mcp → persist) runs successfully and produces durable outputs."
+  ],
+  "expected_outcome": {
+    "audit_report": "Markdown summary under meta/output/AUDIT_STAGE3.md",
+    "status": "Pass only if CLI emits persisted, schema-validated assets end-to-end."
+  }
+}
