@@ -22,3 +22,35 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     assert len(lines) == 1
     logged = json.loads(lines[0])
     assert logged["id"] == proposal["id"]
+
+
+def test_record_experiment_logs_experiment_path(tmp_path) -> None:
+    log_path = tmp_path / "generator.jsonl"
+    agent = GeneratorAgent(log_path=str(log_path))
+
+    asset = {
+        "id": "asset-123",
+        "prompt": "synthwave pulse",
+        "timestamp": "2024-01-01T00:00:00+00:00",
+    }
+    review = {
+        "ok": True,
+        "issues": [],
+        "validation_status": "passed",
+        "reviewed_at": "2024-01-01T00:00:10+00:00",
+    }
+
+    record = agent.record_experiment(
+        asset=asset,
+        review=review,
+        experiment_path="meta/output/experiments/asset-123.json",
+    )
+
+    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    logged = json.loads(lines[0])
+
+    assert logged == record
+    assert record["asset_id"] == "asset-123"
+    assert record["experiment_path"] == "meta/output/experiments/asset-123.json"
+    assert record["validation"]["status"] == "passed"

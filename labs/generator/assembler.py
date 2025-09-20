@@ -1,4 +1,4 @@
-"""Asset assembler for Generator v0.2."""
+"""Asset assembler for Generator v0.3."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class AssetAssembler:
     def __init__(
         self,
         *,
-        version: str = "v0.2",
+        version: str = "v0.3",
         shader_generator: Optional[ShaderGenerator] = None,
         tone_generator: Optional[ToneGenerator] = None,
         haptic_generator: Optional[HapticGenerator] = None,

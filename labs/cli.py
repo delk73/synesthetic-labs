@@ -12,8 +12,12 @@ from typing import Any, Dict, Optional
 
 from labs.agents.generator import GeneratorAgent
 from labs.agents.critic import CriticAgent, MCPUnavailableError
+from labs.generator.assembler import AssetAssembler
 
 _LOGGER = logging.getLogger("labs.cli")
+
+_EXPERIMENTS_DIR_ENV = "LABS_EXPERIMENTS_DIR"
+_DEFAULT_EXPERIMENTS_DIR = os.path.join("meta", "output", "experiments")
 
 
 class SocketMCPValidator:
@@ -79,6 +83,31 @@ def _load_asset(value: str) -> Dict[str, Any]:
             return json.load(handle)
 
 
+def _experiments_dir() -> str:
+    return os.getenv(_EXPERIMENTS_DIR_ENV, _DEFAULT_EXPERIMENTS_DIR)
+
+
+def _persist_asset(asset: Dict[str, Any]) -> str:
+    if "id" not in asset:
+        raise ValueError("asset must include an 'id'")
+
+    experiments_dir = _experiments_dir()
+    os.makedirs(experiments_dir, exist_ok=True)
+
+    path = os.path.join(experiments_dir, f"{asset['id']}.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(asset, handle, sort_keys=True, indent=2)
+        handle.write("\n")
+    return path
+
+
+def _relativize(path: str) -> str:
+    try:
+        return os.path.relpath(path, start=os.getcwd())
+    except ValueError:
+        return path
+
+
 def _build_validator() -> Optional[Any]:
     host = os.getenv("MCP_HOST")
     if not host:
@@ -133,10 +162,44 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "generate":
-        agent = GeneratorAgent()
-        proposal = agent.propose(args.prompt)
-        print(json.dumps(proposal, indent=2))
-        return 0
+        assembler = AssetAssembler()
+        asset = assembler.generate(args.prompt)
+
+        fail_fast = _fail_fast_enabled()
+
+        try:
+            validator_callback = _build_validator()
+        except MCPUnavailableError as exc:
+            _LOGGER.error("MCP unavailable: %s", exc)
+            if fail_fast:
+                return 1
+            validator_callback = None
+
+        critic = CriticAgent(validator=validator_callback)
+        review = critic.review(asset)
+
+        experiment_path: Optional[str] = None
+        if review.get("ok"):
+            persisted_path = _persist_asset(asset)
+            experiment_path = _relativize(persisted_path)
+        else:
+            _LOGGER.error("Generation failed validation; asset not persisted")
+
+        generator_logger = GeneratorAgent()
+        generator_logger.record_experiment(
+            asset=asset,
+            review=review,
+            experiment_path=experiment_path,
+        )
+
+        output_payload = {
+            "asset": asset,
+            "review": review,
+            "experiment_path": experiment_path,
+        }
+
+        print(json.dumps(output_payload, indent=2))
+        return 0 if review.get("ok") else 1
 
     if args.command == "critique":
         asset = _load_asset(args.asset)
