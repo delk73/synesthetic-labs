@@ -21,15 +21,16 @@ Run `python -m labs.cli --help` to explore the CLI:
 * `python -m labs.cli generate "describe the asset"`
 * `python -m labs.cli critique '{"id": "abc", ...}'`
 
-The critic subcommand looks for `MCP_HOST`, `MCP_PORT`, and `SYN_SCHEMAS_DIR`,
-falling back to `localhost:7000` and `libs/synesthetic-schemas` when they are
-unset. MCP validation is mandatory: if the adapter is unreachable or
-misconfigured the CLI exits non-zero and records the failure in the review
-payload. When validation succeeds, the CriticAgent records the MCP response for
-provenance. `.env.example` documents the environment variables.
+Configure the STDIO MCP adapter by exporting `MCP_ADAPTER_CMD` (for example,
+`python -m synesthetic_schemas.mcp`). Optional variables such as
+`SYN_SCHEMAS_DIR` are forwarded to the subprocess. MCP validation is mandatory:
+if the adapter command fails the CLI exits non-zero and records the failure in
+the review payload. When validation succeeds, the CriticAgent records the MCP
+response for provenance. `.env.example` documents the environment variables.
 
 Generator and critic logs live under `meta/output/labs/`, and validated assets
-persist to `meta/output/labs/experiments/` when generation succeeds.
+persist to `meta/output/labs/experiments/` when generation succeeds. Modulation
+and rule bundle generators are deferred to v0.2+.
 
 ## Further Reading
 

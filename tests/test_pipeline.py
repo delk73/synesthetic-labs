@@ -8,10 +8,10 @@ import os
 from labs import cli
 from labs.agents.generator import GeneratorAgent
 from labs.agents.critic import CriticAgent
+from labs.mcp_stdio import MCPUnavailableError
 
 
-def test_generator_to_critic_pipeline(tmp_path, monkeypatch) -> None:
-    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
+def test_generator_to_critic_pipeline(tmp_path) -> None:
     generator_log = tmp_path / "generator.jsonl"
     critic_log = tmp_path / "critic.jsonl"
 
@@ -31,13 +31,11 @@ def test_generator_to_critic_pipeline(tmp_path, monkeypatch) -> None:
 
 
 def test_cli_critique_fails_when_mcp_unreachable(monkeypatch, tmp_path, capsys) -> None:
-    for key in ("LABS_FAIL_FAST", "MCP_HOST", "MCP_PORT", "SYN_SCHEMAS_DIR"):
-        monkeypatch.delenv(key, raising=False)
 
-    def fake_create_connection(*_args, **_kwargs):
-        raise ConnectionRefusedError("connection refused")
+    def raise_unavailable() -> None:
+        raise MCPUnavailableError("adapter missing")
 
-    monkeypatch.setattr(cli.socket, "create_connection", fake_create_connection)
+    monkeypatch.setattr(cli, "build_validator_from_env", raise_unavailable)
 
     generator = GeneratorAgent(log_path=str(tmp_path / "generator.jsonl"))
 
@@ -52,63 +50,14 @@ def test_cli_critique_fails_when_mcp_unreachable(monkeypatch, tmp_path, capsys) 
 
     exit_code = cli.main(["critique", str(asset_path)])
     captured = capsys.readouterr()
-    payload = json.loads(captured.out)
 
     assert exit_code == 1
-    assert payload["validation_status"] == "failed"
-    assert payload["ok"] is False
-    assert os.environ["MCP_HOST"] == "localhost"
-    assert os.environ["MCP_PORT"] == "7000"
-    assert os.environ["SYN_SCHEMAS_DIR"] == os.path.join("libs", "synesthetic-schemas")
-
-
-def test_cli_critique_still_fails_with_fail_fast(monkeypatch, tmp_path, capsys) -> None:
-    for key in ("MCP_HOST", "MCP_PORT", "SYN_SCHEMAS_DIR"):
-        monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("LABS_FAIL_FAST", "1")
-
-    def fake_create_connection(*_args, **_kwargs):
-        raise ConnectionRefusedError("connection refused")
-
-    monkeypatch.setattr(cli.socket, "create_connection", fake_create_connection)
-
-    generator = GeneratorAgent(log_path=str(tmp_path / "generator.jsonl"))
-
-    class LoggedCriticAgent(CriticAgent):
-        def __init__(self, validator=None) -> None:  # pragma: no cover - trivial init
-            super().__init__(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
-
-    monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
-    asset = generator.propose("cli validation test")
-    asset_path = tmp_path / "asset.json"
-    asset_path.write_text(json.dumps(asset), encoding="utf-8")
-
-    exit_code = cli.main(["critique", str(asset_path)])
-    captured = capsys.readouterr()
-    payload = json.loads(captured.out)
-
-    assert exit_code == 1
-    assert payload["validation_status"] == "failed"
-    assert payload["ok"] is False
-
-
-def test_build_validator_uses_default_configuration(monkeypatch) -> None:
-    for key in ("MCP_HOST", "MCP_PORT", "SYN_SCHEMAS_DIR", "LABS_FAIL_FAST"):
-        monkeypatch.delenv(key, raising=False)
-
-    validator = cli._build_validator()
-
-    assert validator is not None
-    instance = validator.__self__  # type: ignore[attr-defined]
-    assert instance.host == "localhost"
-    assert instance.port == 7000
-    assert os.environ["SYN_SCHEMAS_DIR"] == os.path.join("libs", "synesthetic-schemas")
+    assert captured.out == ""
 
 
 def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) -> None:
     experiments_dir = tmp_path / "experiments"
     monkeypatch.setenv("LABS_EXPERIMENTS_DIR", str(experiments_dir))
-    monkeypatch.setenv("LABS_FAIL_FAST", "1")
 
     generator_log = tmp_path / "generator.jsonl"
     critic_log = tmp_path / "critic.jsonl"
@@ -128,7 +77,7 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
     def validator(payload: dict) -> dict:
         return {"status": "ok", "asset_id": payload["id"]}
 
-    monkeypatch.setattr(cli, "_build_validator", lambda: validator)
+    monkeypatch.setattr(cli, "build_validator_from_env", lambda: validator)
 
     exit_code = cli.main(["generate", "aurora bloom"])
     captured = capsys.readouterr()

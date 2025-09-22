@@ -7,12 +7,9 @@ import logging
 from typing import Any, Callable, Dict, List, Optional
 
 from labs.logging import log_jsonl
+from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
 
 _DEFAULT_LOG_PATH = "meta/output/labs/critic.jsonl"
-
-
-class MCPUnavailableError(RuntimeError):
-    """Raised when the MCP validator cannot be reached."""
 
 
 ValidatorType = Callable[[Dict[str, Any]], Dict[str, Any]]
@@ -51,14 +48,19 @@ class CriticAgent:
 
         validation_status = "failed"
         mcp_response: Optional[Dict[str, Any]] = None
-
-        if self._validator is None:
-            message = "MCP validation unavailable: no validator configured"
-            issues.append(message)
-            self._logger.error(message)
-        else:
+        validator = self._validator
+        if validator is None:
             try:
-                response = self._validator(asset)
+                validator = build_validator_from_env()
+                self._validator = validator
+            except MCPUnavailableError as exc:
+                message = f"MCP validation unavailable: {exc}"
+                issues.append(message)
+                self._logger.error(message)
+
+        if validator is not None:
+            try:
+                response = validator(asset)
                 mcp_response = response
                 validation_status = "passed"
             except MCPUnavailableError as exc:

@@ -6,65 +6,18 @@ import argparse
 import json
 import logging
 import os
-import socket
 import sys
 from typing import Any, Dict, Optional
 
 from labs.agents.generator import GeneratorAgent
-from labs.agents.critic import CriticAgent, MCPUnavailableError
+from labs.agents.critic import CriticAgent
 from labs.generator.assembler import AssetAssembler
+from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
 
 _LOGGER = logging.getLogger("labs.cli")
 
 _EXPERIMENTS_DIR_ENV = "LABS_EXPERIMENTS_DIR"
 _DEFAULT_EXPERIMENTS_DIR = os.path.join("meta", "output", "labs", "experiments")
-
-
-class SocketMCPValidator:
-    """Minimal TCP validator client for MCP adapters.
-
-    The implementation is intentionally lightweight: it opens a TCP connection
-    to the configured host/port, sends a JSON payload, and expects a JSON
-    response. Failures are surfaced as :class:`MCPUnavailableError` so the
-    critic can fall back gracefully.
-    """
-
-    def __init__(self, host: str, port: int, *, timeout: float = 1.0) -> None:
-        self.host = host
-        self.port = port
-        self.timeout = timeout
-
-    def validate(self, asset: Dict[str, Any]) -> Dict[str, Any]:
-        message = json.dumps({"action": "validate", "asset": asset}).encode("utf-8")
-        try:
-            with socket.create_connection((self.host, self.port), timeout=self.timeout) as conn:
-                conn.sendall(message)
-                conn.shutdown(socket.SHUT_WR)
-
-                chunks: list[bytes] = []
-                while True:
-                    part = conn.recv(65536)
-                    if not part:
-                        break
-                    chunks.append(part)
-        except OSError as exc:
-            raise MCPUnavailableError(str(exc)) from exc
-
-        payload = b"".join(chunks)
-
-        if not payload:
-            raise MCPUnavailableError("no response from MCP adapter")
-
-        text = payload.decode("utf-8").strip()
-
-        if not text:
-            raise MCPUnavailableError("empty response from MCP adapter")
-
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as exc:  # pragma: no cover - defensive fallback
-            snippet = text[:200]
-            raise MCPUnavailableError(f"invalid MCP response: {exc}: {snippet}") from exc
 def _configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -102,31 +55,6 @@ def _relativize(path: str) -> str:
         return path
 
 
-def _build_validator() -> Any:
-    host = os.getenv("MCP_HOST") or "localhost"
-    os.environ["MCP_HOST"] = host
-
-    port_value = os.getenv("MCP_PORT") or "7000"
-    os.environ["MCP_PORT"] = port_value
-
-    schemas_dir = os.getenv("SYN_SCHEMAS_DIR") or os.path.join("libs", "synesthetic-schemas")
-    os.environ["SYN_SCHEMAS_DIR"] = schemas_dir
-
-    try:
-        port = int(port_value)
-    except ValueError as exc:
-        message = f"invalid MCP_PORT {port_value}"
-        raise MCPUnavailableError(message) from exc
-
-    if not schemas_dir:
-        message = "SYN_SCHEMAS_DIR not configured"
-        raise MCPUnavailableError(message)
-
-    validator = SocketMCPValidator(host, port)
-    _LOGGER.debug("Configured MCP validator for %s:%s (schemas=%s)", host, port, schemas_dir)
-    return validator.validate
-
-
 def main(argv: Optional[list[str]] = None) -> int:
     """Entry point for the Labs CLI."""
 
@@ -148,7 +76,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         asset = assembler.generate(args.prompt)
 
         try:
-            validator_callback = _build_validator()
+            validator_callback = build_validator_from_env()
         except MCPUnavailableError as exc:
             _LOGGER.error("MCP unavailable: %s", exc)
             return 1
@@ -182,10 +110,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.command == "critique":
         asset = _load_asset(args.asset)
         try:
-            validator_callback = _build_validator()
+            validator_callback = build_validator_from_env()
         except MCPUnavailableError as exc:
             _LOGGER.error("MCP unavailable: %s", exc)
-            validator_callback = None
+            return 1
 
         critic = CriticAgent(validator=validator_callback)
         review = critic.review(asset)

@@ -7,19 +7,19 @@
 
 ## AssetAssembler
 - Builds complete assets by cloning component generators and capturing provenance with timestamps and seed metadata (`labs/generator/assembler.py:44`; `labs/generator/assembler.py:75`).
-- Collects a parameter index across shader/tone/haptic sections to prune invalid control, modulation, and rule references (`labs/generator/assembler.py:64`; `labs/generator/assembler.py:95`).
+- Collects a parameter index across shader/tone/haptic sections to prune invalid control references (`labs/generator/assembler.py:64`).
 - Derives deterministic UUID/timestamp pairs whenever a seed is provided, yielding byte-identical payloads in repeated runs (`labs/generator/assembler.py:50`; `tests/test_determinism.py:10`).
-- Ships modulation and rule bundle components early, a documented divergence retained for richer wiring coverage (`labs/generator/modulation.py:11`; `docs/labs_spec.md:82`).
+- Modulation and rule bundle generators live under `labs.experimental` for v0.2+ previews (`labs/experimental/__init__.py:7`).
 
 ## CriticAgent
 - Guards that assets include id/timestamp/prompt/provenance prior to validation and records outcomes with MCP payloads when available (`labs/agents/critic.py:47`; `labs/agents/critic.py:94`).
 - Missing validators or MCP outages now yield hard failures, preventing downstream flows from proceeding without schema confirmation (`labs/agents/critic.py:55`; `tests/test_critic.py:33`).
 
-## SocketMCPValidator & CLI
-- TCP validator sends JSON over sockets and converts I/O errors into `MCPUnavailableError` for higher-level handling (`labs/cli.py:37`; `labs/cli.py:50`).
-- `_build_validator` auto-populates `MCP_HOST`, `MCP_PORT`, and `SYN_SCHEMAS_DIR`, and now raises on misconfiguration so CLI and experiments cannot skip validation (`labs/cli.py:111`; `tests/test_pipeline.py:58`).
-- `generate` assembles assets, runs the critic, persists validated artefacts under `meta/output/labs/experiments/`, and logs the run through `GeneratorAgent.record_experiment` (`labs/cli.py:153`; `labs/cli.py:165`).
-- `critique` prints review payloads and exits non-zero whenever MCP validation fails, regardless of `LABS_FAIL_FAST` (`labs/cli.py:188`; `tests/test_pipeline.py:53`).
+## STDIO MCP Validator & CLI
+- `build_validator_from_env` constructs a STDIO bridge using `MCP_ADAPTER_CMD`, spawning the adapter with `subprocess.Popen` and raising on timeouts or malformed payloads (`labs/mcp_stdio.py:30`; `labs/mcp_stdio.py:74`).
+- CLI commands fail fast when the adapter command is missing or errors, logging the outage and exiting non-zero (`labs/cli.py:78`; `tests/test_pipeline.py:49`).
+- Successful runs persist validated artefacts under `meta/output/labs/experiments/` and emit experiment logs linking reviews to file paths (`labs/cli.py:87`; `labs/cli.py:104`).
+- `CriticAgent` caches the validator callback and surfaces STDIO failures as review issues while recording MCP responses for provenance (`labs/agents/critic.py:55`; `tests/test_critic.py:70`).
 
 ## Prompt Experiment Harness
 - Loads prompt batches, reuses the shared validator builder, and logs each run to JSON/JSONL outputs for later analysis (`labs/experiments/prompt_experiment.py:32`; `labs/experiments/prompt_experiment.py:58`).

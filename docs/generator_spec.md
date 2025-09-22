@@ -11,9 +11,9 @@ Upgrade Labs Generator from proposal stubs to full, schema-valid Synesthetic ass
 
 - **Secondary Generators (depend on primary parameter surfaces)**
   - **ControlGenerator**: maps gestures (mouse/keys/wheel) only to parameters declared by Shader/Tone/Haptic.
-  - **ModulationGenerator**: LFO/envelope-style modulations (`triangle`, `sine`, additive) targeting valid parameters.
+  - **ModulationGenerator** *(experimental v0.2+)*: LFO/envelope-style modulations (`triangle`, `sine`, additive) targeting valid parameters.
 
-- **RuleBundleGenerator**
+- **RuleBundleGenerator** *(experimental v0.2+)*
   - Default grid mapping that triggers audio notes, haptic pulses, and small visual nudges. Targets must exist.
 
 - **MetaGenerator**
@@ -22,8 +22,8 @@ Upgrade Labs Generator from proposal stubs to full, schema-valid Synesthetic ass
 ## Wiring Step (Assembler)
 1. Collect all declared `input_parameters` from Shader/Tone/Haptic into an index (e.g., `{ "shader.u_r", "tone.detune", "haptic.intensity" }`).
 2. Controls: retain only mappings whose `parameter` exists in the index; drop or rewrite dangling mappings.
-3. Modulations: retain only entries whose `target` exists; drop or rewrite dangling targets.
-4. RuleBundle: ensure each effect `target` exists; drop or rewrite invalid targets.
+3. Modulations *(experimental)*: retain only entries whose `target` exists; drop or rewrite dangling targets.
+4. RuleBundle *(experimental)*: ensure each effect `target` exists; drop or rewrite invalid targets.
 5. Apply provenance `{uuid, timestamp, prompt, seed, generator_version}`.
 
 ## Validation (Two Stages)
@@ -82,8 +82,8 @@ Upgrade Labs Generator from proposal stubs to full, schema-valid Synesthetic ass
   - Fixed seed → identical JSON (byte-for-byte).
 
 ## Operational Modes
-- Default: relaxed mode; MCP outages mark validation as `skipped` but still log asset.
-- Strict: set `LABS_FAIL_FAST=1`; MCP outages or schema errors → non-zero exit and `ok=false` review.
+- Default: strict validation; MCP outages surface as failures and block persistence.
+- Optional: `LABS_FAIL_FAST=1` remains the documented flag for fail-fast parity once relaxed mode returns.
 
 ## Open Decisions (track in backlog)
 - Baseline family: stick to CircleSDF minimal for v0.2; stage Dual Sphere as v0.2.x template.

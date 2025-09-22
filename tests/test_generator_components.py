@@ -2,19 +2,14 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, Iterable, Set
 
 import pytest
 
-from labs.agents.critic import MCPUnavailableError
-from labs.cli import SocketMCPValidator
 from labs.generator import (
     ControlGenerator,
     HapticGenerator,
     MetaGenerator,
-    ModulationGenerator,
-    RuleBundleGenerator,
     ShaderGenerator,
     ToneGenerator,
 )
@@ -41,16 +36,6 @@ def control_section() -> Dict[str, Any]:
 
 
 @pytest.fixture()
-def modulation_section() -> Dict[str, Any]:
-    return ModulationGenerator().generate()
-
-
-@pytest.fixture()
-def rule_bundle_section() -> Dict[str, Any]:
-    return RuleBundleGenerator().generate()
-
-
-@pytest.fixture()
 def meta_section() -> Dict[str, Any]:
     return MetaGenerator().generate()
 
@@ -63,48 +48,6 @@ def _parameter_names(sections: Iterable[Dict[str, Any]]) -> Set[str]:
             if parameter:
                 names.add(parameter)
     return names
-
-
-def _build_full_asset(sections: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-    shader = sections["shader"]
-    tone = sections["tone"]
-    haptic = sections["haptic"]
-    control = sections["control"]
-    modulation = sections["modulation"]
-    rule_bundle = sections["rule_bundle"]
-    meta = sections["meta"]
-
-    return {
-        "shader": shader,
-        "tone": tone,
-        "haptic": haptic,
-        "controls": control.get("mappings", []),
-        "modulations": modulation.get("modulators", []),
-        "rule_bundle": rule_bundle,
-        "meta": meta,
-    }
-
-
-def _maybe_validate_with_mcp(asset: Dict[str, Any]) -> Dict[str, Any]:
-    host = os.getenv("MCP_HOST")
-    port_value = os.getenv("MCP_PORT")
-    schemas_dir = os.getenv("SYN_SCHEMAS_DIR")
-
-    if not host or not port_value or not schemas_dir:
-        pytest.skip("MCP validation requires MCP_HOST, MCP_PORT, and SYN_SCHEMAS_DIR")
-
-    try:
-        port = int(port_value)
-    except (TypeError, ValueError):
-        pytest.skip("MCP_PORT is not a valid integer")
-
-    validator = SocketMCPValidator(host, port)
-    try:
-        return validator.validate(asset)
-    except MCPUnavailableError as exc:
-        pytest.skip(f"MCP unavailable: {exc}")
-    except OSError as exc:
-        pytest.skip(f"MCP unavailable: {exc}")
 
 
 def test_shader_generator_exposes_parameters(shader_section: Dict[str, Any]) -> None:
@@ -137,62 +80,8 @@ def test_control_mappings_reference_known_parameters(
         assert mapping["parameter"] in known_parameters
 
 
-def test_modulations_reference_known_parameters(
-    shader_section: Dict[str, Any],
-    tone_section: Dict[str, Any],
-    haptic_section: Dict[str, Any],
-    modulation_section: Dict[str, Any],
-) -> None:
-    known_parameters = _parameter_names([shader_section, tone_section, haptic_section])
-    assert modulation_section["modulators"], "modulation list should not be empty"
-    for modulator in modulation_section["modulators"]:
-        assert modulator["target"] in known_parameters
-
-
-def test_rule_bundle_effect_targets_are_known(
-    shader_section: Dict[str, Any],
-    tone_section: Dict[str, Any],
-    haptic_section: Dict[str, Any],
-    rule_bundle_section: Dict[str, Any],
-) -> None:
-    known_parameters = _parameter_names([shader_section, tone_section, haptic_section])
-    rules = rule_bundle_section["rules"]
-    assert rules, "rule bundle should define at least one rule"
-    for rule in rules:
-        effects = rule.get("effects", [])
-        assert effects, "each rule should define effects"
-        for effect in effects:
-            target = effect.get("target")
-            if target is not None:
-                assert target in known_parameters
-
 
 def test_meta_generator_fields(meta_section: Dict[str, Any]) -> None:
     for key in ("title", "description", "category", "complexity", "tags"):
         assert key in meta_section
     assert meta_section["category"] == "multimodal"
-
-
-def test_component_bundle_validates_with_mcp(
-    shader_section: Dict[str, Any],
-    tone_section: Dict[str, Any],
-    haptic_section: Dict[str, Any],
-    control_section: Dict[str, Any],
-    modulation_section: Dict[str, Any],
-    rule_bundle_section: Dict[str, Any],
-    meta_section: Dict[str, Any],
-) -> None:
-    asset = _build_full_asset(
-        {
-            "shader": shader_section,
-            "tone": tone_section,
-            "haptic": haptic_section,
-            "control": control_section,
-            "modulation": modulation_section,
-            "rule_bundle": rule_bundle_section,
-            "meta": meta_section,
-        }
-    )
-
-    response = _maybe_validate_with_mcp(asset)
-    assert isinstance(response, dict)

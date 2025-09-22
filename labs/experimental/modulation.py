@@ -1,4 +1,4 @@
-"""Modulation component generator."""
+"""Modulation component generator (experimental)."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ _MODULATORS: list[Dict[str, Any]] = [
 
 
 class ModulationGenerator:
-    """Generate baseline modulation sources."""
+    """Generate baseline modulation sources for experimental builds."""
 
     def __init__(self, *, version: str = "v0.2") -> None:
         self.version = version

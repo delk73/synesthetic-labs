@@ -7,10 +7,10 @@ import json
 import os
 from typing import Any, Callable, Dict, List, Optional
 
-from labs import cli
 from labs.agents.generator import GeneratorAgent
-from labs.agents.critic import CriticAgent, MCPUnavailableError
+from labs.agents.critic import CriticAgent
 from labs.logging import log_jsonl
+from labs.mcp_stdio import build_validator_from_env
 
 
 def _load_prompts(path: str) -> List[str]:
@@ -23,10 +23,7 @@ def _load_prompts(path: str) -> List[str]:
 
 
 def _ensure_validator() -> Callable[[Dict[str, Any]], Dict[str, Any]]:
-    try:
-        return cli._build_validator()  # type: ignore[attr-defined]
-    except MCPUnavailableError as exc:
-        raise
+    return build_validator_from_env()
 
 
 def main(argv: Optional[list[str]] = None) -> int:

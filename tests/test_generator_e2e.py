@@ -9,9 +9,7 @@ from labs.generator import AssetAssembler
 from labs.logging import log_jsonl
 
 
-def test_asset_assembler_end_to_end(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
-
+def test_asset_assembler_end_to_end(tmp_path) -> None:
     assembler = AssetAssembler()
     asset = assembler.generate("e2e wiring test", seed=1234)
 

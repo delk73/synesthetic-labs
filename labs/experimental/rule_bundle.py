@@ -1,4 +1,4 @@
-"""Rule bundle component generator."""
+"""Rule bundle component generator (experimental)."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ _RULES: list[Dict[str, Any]] = [
 
 
 class RuleBundleGenerator:
-    """Generate the baseline rule bundle."""
+    """Generate the baseline rule bundle for experimental builds."""
 
     def __init__(self, *, version: str = "v0.2") -> None:
         self.version = version

@@ -50,6 +50,7 @@
 * **Pre-flight**: generator ensures primary sections exist.
 * **MCP validation**: assets must pass schema check.
 * Fail fast if `LABS_FAIL_FAST=1`.
+* Provide the MCP STDIO command via `MCP_ADAPTER_CMD`; TCP fallbacks are not permitted.
 
 ## Logging
 
@@ -79,4 +80,4 @@
 
 ## Documented Divergences
 
-* The implementation currently includes baseline modulation and rule bundle generators ahead of the v0.2 timeline to support richer wiring tests. Treat these components as an early preview while the canonical baseline remains shader/tone/haptic focused.
+* None for v0.1.
