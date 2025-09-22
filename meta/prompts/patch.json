@@ -1,57 +1,60 @@
 {
   "task": "Align synesthetic-labs to spec v0.1",
-  "objective": "Patch Labs so that it conforms fully to labs_spec.md v0.1. Remove divergences noted in the last audit.",
+  "objective": "Patch Labs so that it conforms fully to labs_spec.md v0.1 and removes all divergences noted in the last audit.",
   "changes": [
     {
       "id": "mcp_stdio_adapter",
-      "description": "Replace TCP SocketMCPValidator with STDIO JSON-RPC client",
+      "description": "Finalize STDIO-only validation path with a stub adapter option.",
       "edits": [
-        "Remove labs/cli.py: SocketMCPValidator + TCP logic",
-        "Add labs/mcp_stdio.py: spawn MCP via subprocess, send NDJSON over stdin/stdout",
-        "Wire CriticAgent to use StdioMCPValidator as default",
-        "Update labs/cli.py CLI commands to fail if MCP process not available"
+        "Ensure labs/mcp_stdio.py implements StdioMCPValidator using subprocess.Popen and NDJSON framing.",
+        "Remove any TCP SocketMCPValidator logic from labs/cli.py and tests.",
+        "CriticAgent defaults to StdioMCPValidator; fails fast if MCP_ADAPTER_CMD not set or subprocess exits.",
+        "Add labs/mcp_stub.py: trivial echo validator for local dev/CI.",
+        "Update README.md to document MCP_ADAPTER_CMD with mcp_stub.py example."
       ]
     },
     {
       "id": "defer_modulation_rule",
-      "description": "Remove modulation and rule bundle generators from v0.1 scope",
+      "description": "De-scope experimental generators from v0.1 flow.",
       "edits": [
-        "Move labs/generator/modulation.py and labs/generator/rule_bundle.py into labs/experimental/",
-        "Strip references from labs/generator/assembler.py so only shader/tone/haptic/controls remain",
-        "Update docs/labs_spec.md to confirm modulation/rule deferred to v0.2+"
+        "Move labs/generator/modulation.py and labs/generator/rule_bundle.py into labs/experimental/.",
+        "Strip references to modulation/rule generators from labs/generator/assembler.py.",
+        "Update docs/labs_spec.md to state modulation/rule are deferred to v0.2+."
       ]
     },
     {
       "id": "docs_sync",
-      "description": "Sync documentation with patched state",
+      "description": "Bring documentation and diagrams in sync with implementation.",
       "edits": [
-        "Update docs/labs_spec.md transport section to require STDIO (no TCP)",
-        "Update README.md to show MCP STDIO integration and remove TCP host/port examples",
-        "Add note that modulation/rule are deferred to v0.2+"
+        "Update docs/labs_spec.md to require STDIO (no TCP).",
+        "Update README.md Quickstart to include System Context diagram (Labs → MCP Adapter → schemas/backend).",
+        "Remove all TCP host/port references; show only MCP_ADAPTER_CMD (with stub example).",
+        "Explicitly note modulation/rule deferred to v0.2+."
       ]
     },
     {
       "id": "tests_update",
-      "description": "Fix and extend tests after removing divergences",
+      "description": "Adapt tests to new MCP flow and removed features.",
       "edits": [
-        "Remove or adapt tests/test_pipeline.py lines expecting TCP MCP_HOST/PORT env vars",
-        "Add regression test: Critic fails fast if MCP STDIO unavailable",
-        "Remove tests that depend on modulation/rule generation for v0.1"
+        "Remove or adapt tests/test_pipeline.py lines referencing MCP_HOST/PORT env vars.",
+        "Add regression test: CriticAgent raises when MCP_ADAPTER_CMD missing or stub returns error.",
+        "Remove tests relying on modulation/rule generation from v0.1."
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "No new dependencies beyond stdlib",
-      "Must use subprocess.Popen for STDIO bridge",
-      "Tests must pass after patch",
-      "Docs and README must be consistent with code"
+      "No new dependencies beyond Python stdlib.",
+      "Use subprocess.Popen for STDIO bridge.",
+      "All tests must pass after patch.",
+      "Docs and README must match code, including the System Context diagram."
     ]
   },
   "exit_criteria": [
-    "All MCP calls in Labs go over STDIO, no TCP left",
-    "Modulation/rule generation removed from v0.1 flow",
-    "docs/labs_spec.md and README.md aligned with new implementation",
-    "Audit passes with no divergences"
+    "All MCP calls in Labs go over STDIO with no TCP remnants.",
+    "Stub MCP adapter provided for dev/CI; documented in README.",
+    "Modulation/rule generators excluded from v0.1 flow, deferred to v0.2+.",
+    "labs_spec.md and README.md synced with implementation, diagram included.",
+    "Audit passes with zero divergences."
   ]
 }
