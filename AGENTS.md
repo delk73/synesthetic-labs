@@ -1,23 +1,29 @@
 # Agent Snapshot (v0.1 Audit)
 
 ## GeneratorAgent
-- `propose` rejects empty prompts, stamps UUID/ISO timestamps, and appends proposals to JSONL via the shared logger (`labs/agents/generator.py:29`, `labs/logging.py:17`)
-- Test suite confirms the logged payload matches the returned proposal for replayability (`tests/test_generator.py:22`)
+- `propose` validates non-empty prompts, stamps UUID/ISO provenance, and appends proposals to the JSONL sink (`labs/agents/generator.py:30`; `tests/test_generator.py:10`).
+- `record_experiment` links persisted asset paths and critic validation envelopes into the same log stream for replayability (`labs/agents/generator.py:71`; `tests/test_generator.py:27`).
+- Default log target remains `meta/output/generator.jsonl`, diverging from the spec’s `meta/output/labs/` hierarchy (`labs/agents/generator.py:12`; `docs/labs_spec.md:14`).
+
+## AssetAssembler
+- Builds complete assets by cloning component generators and capturing provenance with timestamps and seed metadata (`labs/generator/assembler.py:37`; `labs/generator/assembler.py:64`).
+- Collects a parameter index across shader/tone/haptic sections to prune invalid control, modulation, and rule references (`labs/generator/assembler.py:78`; `labs/generator/assembler.py:85`).
+- Ships modulation and rule bundle components even though the v0.1 spec defers them to later releases (`labs/generator/modulation.py:11`; `docs/labs_spec.md:45`).
 
 ## CriticAgent
-- Verifies required generator fields and emits structured reviews with timestamps and MCP payload echoes (`labs/agents/critic.py:47`, `labs/agents/critic.py:75`)
-- Records "validation skipped" when no validator is configured or MCP is unreachable, satisfying the init fallback note but leaving reviews marked successful (`labs/agents/critic.py:55`, `labs/agents/critic.py:72`, `meta/prompts/init.json:22`)
-- Captures MCP responses on success, storing them alongside issues for downstream tooling (`labs/agents/critic.py:58`, `tests/test_pipeline.py:19`)
+- Guards that assets include id/timestamp/prompt/provenance prior to validation and records outcomes with MCP payloads when available (`labs/agents/critic.py:49`; `labs/agents/critic.py:94`).
+- Treats missing validators as informational skips unless `LABS_FAIL_FAST=1`, leaving MCP enforcement optional in default mode (`labs/agents/critic.py:54`; `labs/agents/critic.py:59`).
 
-## CLI Integration
-- `SocketMCPValidator` wraps TCP calls and raises `MCPUnavailableError` on socket issues so outages can be detected (`labs/cli.py:33`, `labs/cli.py:40`)
-- `_build_validator` demands `MCP_HOST`, `MCP_PORT`, and `SYN_SCHEMAS_DIR` but returns `None` when any are missing, letting critiques proceed without validation (`labs/cli.py:64`, `labs/cli.py:80`, `labs/cli.py:109`)
-- CLI critique command prints reviews regardless of validation status and never exits non-zero on MCP failures (`labs/cli.py:109`, `labs/agents/critic.py:72`)
+## SocketMCPValidator & CLI
+- TCP validator sends JSON over sockets and converts I/O errors into `MCPUnavailableError` for higher-level handling (`labs/cli.py:37`; `labs/cli.py:50`).
+- `_build_validator` auto-populates `MCP_HOST`, `MCP_PORT`, and `SYN_SCHEMAS_DIR`, enabling critiques without explicit configuration but bypassing the STDIO contract in the spec (`labs/cli.py:111`; `docs/labs_spec.md:13`).
+- `generate` assembles assets, runs the critic, persists validated artefacts under `meta/output/experiments/`, and logs the run through `GeneratorAgent.record_experiment` (`labs/cli.py:165`; `labs/cli.py:181`).
+- `critique` prints review payloads and only exits non-zero when fail-fast is active and the review failed, so skipped validations still succeed (`labs/cli.py:204`; `tests/test_pipeline.py:33`).
 
-## Test and Pipeline Coverage
-- Unit tests cover generator logging, critic field checks, and MCP success responses (`tests/test_generator.py:22`, `tests/test_critic.py:22`, `tests/test_pipeline.py:19`)
-- Outage handling only asserts a warning message, so fail-fast behavior is untested (`tests/test_critic.py:45`)
+## Prompt Experiment Harness
+- Loads prompt batches, reuses the shared validator builder, and logs each run to JSON/JSONL outputs for later analysis (`labs/experiments/prompt_experiment.py:25`; `labs/experiments/prompt_experiment.py:61`).
+- Continues without MCP validation when outages occur in relaxed mode, logging a warning but treating runs as successes (`labs/experiments/prompt_experiment.py:29`; `labs/experiments/prompt_experiment.py:94`).
 
-## Outstanding Gaps
-- Enforce and test fail-fast semantics for skipped MCP validation at both the agent and CLI layers (`labs/agents/critic.py:52`, `labs/cli.py:64`, `docs/labs_spec.md:32`)
-- Backfill CLI-focused tests after propagating failures to prevent silent regressions (`labs/cli.py:109`, `tests/test_pipeline.py:19`)
+## Logging Utilities & Tests
+- `log_jsonl` enforces directory creation and sorted JSON serialization so all agents share consistent logging semantics (`labs/logging.py:10`).
+- Tests cover generator logging, critic fail-fast behaviour, CLI persistence, and prompt experiment outputs but lack determinism assertions and mandatory MCP outage failures (`tests/test_generator.py:10`; `tests/test_critic.py:66`; `tests/test_pipeline.py:108`; `docs/labs_spec.md:60`).
