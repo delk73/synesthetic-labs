@@ -6,6 +6,7 @@
 
 ## Top gaps & fixes
 - STDIO vs. TCP transport remains a divergence from the spec requirement; document or implement STDIO adapter parity (`docs/labs_spec.md:13`; `labs/cli.py:37`).
+- `LABS_FAIL_FAST` no longer toggles behaviour, so relaxed mode is gone despite spec guidance; decide whether to restore configurable strictness or update docs/spec (`docs/labs_spec.md:52`; `labs/cli.py:179`).
 - Modulation and rule bundle generators still ship ahead of scope but are now documented as an intentional divergence (`labs/generator/modulation.py:11`; `docs/labs_spec.md:82`).
 - MCP availability is mandatory; consider adding integration coverage against a live adapter to guard future regressions (`labs/cli.py:157`; `tests/test_pipeline.py:108`).
 - README and spec updated to reference `meta/prompts/init_labs.json`; ensure downstream tooling adopts the new artefact (`docs/labs_spec.md:20`; `meta/prompts/init_labs.json:1`).
@@ -16,6 +17,7 @@
 | Generator emits canonical shader/tone/haptic defaults | Present | `docs/labs_spec.md:11`; `labs/generator/shader.py:35`; `labs/generator/tone.py:33`; `labs/generator/haptic.py:33` |
 | Controls map mouse axes to shader parameters | Present | `docs/labs_spec.md:43`; `labs/generator/control.py:12` |
 | MCP validation via STDIO and required | Divergent | `docs/labs_spec.md:13`; `labs/cli.py:37`; `labs/agents/critic.py:55` |
+| `LABS_FAIL_FAST` toggles strict failure semantics | Divergent | `docs/labs_spec.md:52`; `labs/cli.py:179`; `labs/experiments/prompt_experiment.py:91` |
 | Logs stored under meta/output/labs/ | Present | `docs/labs_spec.md:14`; `labs/agents/generator.py:12`; `labs/cli.py:165` |
 | Determinism test coverage | Present | `docs/labs_spec.md:64`; `tests/test_determinism.py:10` |
 | Init artefact published as init_labs.json | Present | `docs/labs_spec.md:20`; `meta/prompts/init_labs.json:1` |

@@ -43,7 +43,7 @@ def test_record_experiment_logs_experiment_path(tmp_path) -> None:
     record = agent.record_experiment(
         asset=asset,
         review=review,
-        experiment_path="meta/output/experiments/asset-123.json",
+        experiment_path="meta/output/labs/experiments/asset-123.json",
     )
 
     lines = log_path.read_text(encoding="utf-8").strip().splitlines()
@@ -52,5 +52,5 @@ def test_record_experiment_logs_experiment_path(tmp_path) -> None:
 
     assert logged == record
     assert record["asset_id"] == "asset-123"
-    assert record["experiment_path"] == "meta/output/experiments/asset-123.json"
+    assert record["experiment_path"] == "meta/output/labs/experiments/asset-123.json"
     assert record["validation"]["status"] == "passed"

@@ -23,12 +23,13 @@ Run `python -m labs.cli --help` to explore the CLI:
 
 The critic subcommand looks for `MCP_HOST`, `MCP_PORT`, and `SYN_SCHEMAS_DIR`,
 falling back to `localhost:7000` and `libs/synesthetic-schemas` when they are
-unset. In the default mode, unreachable MCP adapters emit a warning and the
-review records `validation_status="skipped"` so local experimentation can
-continue. Set `LABS_FAIL_FAST=1` to convert those skips into hard failures and
-make the CLI exit non-zero. When validation succeeds, the CriticAgent records
-the MCP payload alongside its review. `.env.example` documents the environment
-variables.
+unset. MCP validation is mandatory: if the adapter is unreachable or
+misconfigured the CLI exits non-zero and records the failure in the review
+payload. When validation succeeds, the CriticAgent records the MCP response for
+provenance. `.env.example` documents the environment variables.
+
+Generator and critic logs live under `meta/output/labs/`, and validated assets
+persist to `meta/output/labs/experiments/` when generation succeeds.
 
 ## Further Reading
 

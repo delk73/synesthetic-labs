@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 import uuid
 from copy import deepcopy
 from typing import Dict, Iterable, List, Optional, Set
@@ -46,7 +47,11 @@ class AssetAssembler:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
 
-        timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
+        if seed is not None:
+            asset_id, timestamp = self._deterministic_identifiers(prompt, seed)
+        else:
+            timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
+            asset_id = str(uuid.uuid4())
 
         shader = deepcopy(self._shader.generate(seed=seed))
         tone = deepcopy(self._tone.generate(seed=seed))
@@ -67,7 +72,6 @@ class AssetAssembler:
         control_component["mappings"] = mappings
         modulation_component["modulators"] = modulators
 
-        asset_id = str(uuid.uuid4())
         asset: Dict[str, object] = {
             "id": asset_id,
             "prompt": prompt,
@@ -92,6 +96,16 @@ class AssetAssembler:
         }
 
         return asset
+
+    def _deterministic_identifiers(self, prompt: str, seed: int) -> tuple[str, str]:
+        digest = hashlib.sha1(f"{prompt}|{seed}|{self.version}".encode("utf-8")).hexdigest()
+        uuid_hex = digest[:32]
+        asset_id = str(uuid.UUID(hex=uuid_hex))
+
+        base = _dt.datetime(2024, 1, 1, tzinfo=_dt.timezone.utc)
+        offset_seconds = int(digest[32:], 16) % (365 * 24 * 60 * 60)
+        timestamp = (base + _dt.timedelta(seconds=offset_seconds)).isoformat()
+        return asset_id, timestamp
 
     @staticmethod
     def _collect_parameters(*sections: Dict[str, object]) -> Set[str]:

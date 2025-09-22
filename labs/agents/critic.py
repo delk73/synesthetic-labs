@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
-import os
 from typing import Any, Callable, Dict, List, Optional
 
 from labs.logging import log_jsonl
 
-_DEFAULT_LOG_PATH = "meta/output/critic.jsonl"
+_DEFAULT_LOG_PATH = "meta/output/labs/critic.jsonl"
 
 
 class MCPUnavailableError(RuntimeError):
@@ -37,10 +36,9 @@ class CriticAgent:
     def review(self, asset: Dict[str, Any]) -> Dict[str, Any]:
         """Inspect *asset* and return a review payload.
 
-        Validation is attempted through the configured MCP validator. If the
-        validator is missing or reports unavailability, behaviour depends on
-        the ``LABS_FAIL_FAST`` environment toggle: skipped when disabled,
-        treated as a failure when enabled.
+        Validation is attempted through the configured MCP validator. Missing
+        validators or validation outages always surface as failures so caller
+        workflows cannot proceed without a confirmed MCP response.
         """
 
         if not isinstance(asset, dict):
@@ -51,18 +49,13 @@ class CriticAgent:
             if key not in asset:
                 issues.append(f"missing required field: {key}")
 
-        fail_fast = os.getenv("LABS_FAIL_FAST") == "1"
-
-        validation_status = "skipped"
+        validation_status = "failed"
         mcp_response: Optional[Dict[str, Any]] = None
 
         if self._validator is None:
-            message = "MCP validation skipped: no validator configured"
-            log_level = logging.ERROR if fail_fast else logging.INFO
-            self._logger.log(log_level, message)
-            if fail_fast:
-                validation_status = "failed"
-                issues.append("MCP validation unavailable: no validator configured")
+            message = "MCP validation unavailable: no validator configured"
+            issues.append(message)
+            self._logger.error(message)
         else:
             try:
                 response = self._validator(asset)
@@ -70,25 +63,18 @@ class CriticAgent:
                 validation_status = "passed"
             except MCPUnavailableError as exc:
                 message = f"MCP validation unavailable: {exc}"
-                log_level = logging.ERROR if fail_fast else logging.WARNING
-                self._logger.log(log_level, message)
-                if fail_fast:
-                    validation_status = "failed"
-                    issues.append(message)
+                issues.append(message)
+                self._logger.error(message)
             except ConnectionError as exc:  # pragma: no cover - defensive fallback
                 message = f"MCP validation unavailable: {exc}"
-                log_level = logging.ERROR if fail_fast else logging.WARNING
-                self._logger.log(log_level, message)
-                if fail_fast:
-                    validation_status = "failed"
-                    issues.append(message)
+                issues.append(message)
+                self._logger.error(message)
             except Exception as exc:  # pragma: no cover - unexpected failures
-                validation_status = "failed"
                 message = f"MCP validation error: {exc}"
                 issues.append(message)
                 self._logger.error("MCP validation failed: %s", exc)
 
-        ok = len(issues) == 0 and validation_status != "failed"
+        ok = len(issues) == 0 and validation_status == "passed"
         reviewed_at = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
 
         review = {

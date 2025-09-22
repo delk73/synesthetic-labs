@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 
 from labs.logging import log_jsonl
 
-_DEFAULT_LOG_PATH = "meta/output/generator.jsonl"
+_DEFAULT_LOG_PATH = "meta/output/labs/generator.jsonl"
 
 
 class GeneratorAgent:

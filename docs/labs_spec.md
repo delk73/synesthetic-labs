@@ -17,6 +17,7 @@
   ```bash
   python -m labs.cli generate "circle baseline"
   ```
+* Publish the initialization prompt as `meta/prompts/init_labs.json` for downstream tooling.
 
 ## Non-Scope (deferred v0.2+)
 
@@ -76,3 +77,6 @@
 * Tests pass in CI.
 * v0.2 backlog tracked in `meta/backlog.md`.
 
+## Documented Divergences
+
+* The implementation currently includes baseline modulation and rule bundle generators ahead of the v0.2 timeline to support richer wiring tests. Treat these components as an early preview while the canonical baseline remains shader/tone/haptic focused.

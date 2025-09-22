@@ -34,13 +34,13 @@ def test_prompt_experiment_writes_asset_files(tmp_path, monkeypatch) -> None:
                 "issues": [],
                 "ok": True,
                 "reviewed_at": "2025-01-01T00:00:01Z",
-                "validation_status": "skipped",
-                "mcp_response": None,
+                "validation_status": "passed",
+                "mcp_response": {"status": "ok"},
             }
 
     monkeypatch.setattr(prompt_experiment, "GeneratorAgent", DummyGenerator)
     monkeypatch.setattr(prompt_experiment, "CriticAgent", DummyCritic)
-    monkeypatch.setattr(prompt_experiment, "_ensure_validator", lambda: None)
+    monkeypatch.setattr(prompt_experiment, "_ensure_validator", lambda: (lambda payload: {"status": "ok"}))
 
     exit_code = prompt_experiment.main([str(prompt_file), str(output_dir)])
 

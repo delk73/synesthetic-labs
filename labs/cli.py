@@ -17,7 +17,7 @@ from labs.generator.assembler import AssetAssembler
 _LOGGER = logging.getLogger("labs.cli")
 
 _EXPERIMENTS_DIR_ENV = "LABS_EXPERIMENTS_DIR"
-_DEFAULT_EXPERIMENTS_DIR = os.path.join("meta", "output", "experiments")
+_DEFAULT_EXPERIMENTS_DIR = os.path.join("meta", "output", "labs", "experiments")
 
 
 class SocketMCPValidator:
@@ -65,12 +65,6 @@ class SocketMCPValidator:
         except json.JSONDecodeError as exc:  # pragma: no cover - defensive fallback
             snippet = text[:200]
             raise MCPUnavailableError(f"invalid MCP response: {exc}: {snippet}") from exc
-
-
-def _fail_fast_enabled() -> bool:
-    return os.getenv("LABS_FAIL_FAST") == "1"
-
-
 def _configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -108,37 +102,25 @@ def _relativize(path: str) -> str:
         return path
 
 
-def _build_validator() -> Optional[Any]:
-    host = os.getenv("MCP_HOST")
-    if not host:
-        host = "localhost"
-        os.environ["MCP_HOST"] = host
+def _build_validator() -> Any:
+    host = os.getenv("MCP_HOST") or "localhost"
+    os.environ["MCP_HOST"] = host
 
-    port_value = os.getenv("MCP_PORT")
-    if not port_value:
-        port_value = "7000"
-        os.environ["MCP_PORT"] = port_value
+    port_value = os.getenv("MCP_PORT") or "7000"
+    os.environ["MCP_PORT"] = port_value
 
-    schemas_dir = os.getenv("SYN_SCHEMAS_DIR")
-    if not schemas_dir:
-        schemas_dir = os.path.join("libs", "synesthetic-schemas")
-        os.environ["SYN_SCHEMAS_DIR"] = schemas_dir
+    schemas_dir = os.getenv("SYN_SCHEMAS_DIR") or os.path.join("libs", "synesthetic-schemas")
+    os.environ["SYN_SCHEMAS_DIR"] = schemas_dir
 
     try:
         port = int(port_value)
     except ValueError as exc:
         message = f"invalid MCP_PORT {port_value}"
-        if _fail_fast_enabled():
-            raise MCPUnavailableError(message) from exc
-        _LOGGER.warning("MCP validation skipped: %s", message)
-        return None
+        raise MCPUnavailableError(message) from exc
 
     if not schemas_dir:
         message = "SYN_SCHEMAS_DIR not configured"
-        if _fail_fast_enabled():
-            raise MCPUnavailableError(message)
-        _LOGGER.info("MCP validation skipped: %s", message)
-        return None
+        raise MCPUnavailableError(message)
 
     validator = SocketMCPValidator(host, port)
     _LOGGER.debug("Configured MCP validator for %s:%s (schemas=%s)", host, port, schemas_dir)
@@ -165,15 +147,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         assembler = AssetAssembler()
         asset = assembler.generate(args.prompt)
 
-        fail_fast = _fail_fast_enabled()
-
         try:
             validator_callback = _build_validator()
         except MCPUnavailableError as exc:
             _LOGGER.error("MCP unavailable: %s", exc)
-            if fail_fast:
-                return 1
-            validator_callback = None
+            return 1
 
         critic = CriticAgent(validator=validator_callback)
         review = critic.review(asset)
@@ -213,7 +191,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         review = critic.review(asset)
         print(json.dumps(review, indent=2))
 
-        if _fail_fast_enabled() and not review.get("ok"):
+        if not review.get("ok"):
             _LOGGER.error("Critique failed: MCP validation did not pass")
             return 1
 

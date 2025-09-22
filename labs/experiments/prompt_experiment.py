@@ -22,14 +22,11 @@ def _load_prompts(path: str) -> List[str]:
     return prompts
 
 
-def _ensure_validator() -> Optional[Callable[[Dict[str, Any]], Dict[str, Any]]]:
+def _ensure_validator() -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     try:
         return cli._build_validator()  # type: ignore[attr-defined]
     except MCPUnavailableError as exc:
-        if cli._fail_fast_enabled():  # type: ignore[attr-defined]
-            raise
-        cli._LOGGER.warning("Proceeding without MCP validation: %s", exc)
-        return None
+        raise
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -92,7 +89,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             fail_count += 1
 
     print(f"Processed {total} prompts: {ok_count} ok, {fail_count} failed")
-    return 0 if fail_count == 0 or not cli._fail_fast_enabled() else 1  # type: ignore[attr-defined]
+    return 0 if fail_count == 0 else 1
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -19,19 +19,18 @@ def base_asset() -> dict:
     }
 
 
-def test_missing_fields_flagged(tmp_path, monkeypatch) -> None:
-    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
+def test_missing_fields_flagged(tmp_path) -> None:
     critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
     review = critic.review({"id": "only"})
 
     assert review["ok"] is False
     assert any("missing required field" in item for item in review["issues"])
-    assert review["validation_status"] == "skipped"
+    assert any("no validator" in item for item in review["issues"])
+    assert review["validation_status"] == "failed"
     assert review["mcp_response"] is None
 
 
-def test_successful_validation(tmp_path, base_asset, monkeypatch) -> None:
-    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
+def test_successful_validation(tmp_path, base_asset) -> None:
 
     def validator(payload: dict) -> dict:
         return {"status": "ok", "asset_id": payload["id"]}
@@ -45,25 +44,7 @@ def test_successful_validation(tmp_path, base_asset, monkeypatch) -> None:
     assert review["mcp_response"] == {"status": "ok", "asset_id": "proposal-1"}
 
 
-def test_validation_skipped_without_fail_fast(tmp_path, base_asset, monkeypatch, caplog) -> None:
-    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
-
-    def validator(_: dict) -> dict:
-        raise MCPUnavailableError("adapter offline")
-
-    critic = CriticAgent(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
-
-    with caplog.at_level(logging.WARNING):
-        review = critic.review(base_asset)
-
-    assert review["ok"] is True
-    assert review["issues"] == []
-    assert review["validation_status"] == "skipped"
-    assert any("MCP validation unavailable" in message for message in caplog.messages)
-
-
-def test_validation_failure_with_fail_fast(tmp_path, base_asset, monkeypatch, caplog) -> None:
-    monkeypatch.setenv("LABS_FAIL_FAST", "1")
+def test_validation_failure_when_mcp_unavailable(tmp_path, base_asset, caplog) -> None:
 
     def validator(_: dict) -> dict:
         raise MCPUnavailableError("adapter offline")
@@ -75,12 +56,11 @@ def test_validation_failure_with_fail_fast(tmp_path, base_asset, monkeypatch, ca
 
     assert review["ok"] is False
     assert review["validation_status"] == "failed"
-    assert any("MCP validation unavailable" in issue for issue in review["issues"])
-    assert any("MCP validation failed" in message or "MCP validation unavailable" in message for message in caplog.messages)
+    assert any("adapter offline" in issue for issue in review["issues"])
+    assert any("MCP validation unavailable" in message for message in caplog.messages)
 
 
-def test_validation_failure_records_issue(tmp_path, base_asset, monkeypatch) -> None:
-    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
+def test_validation_failure_records_issue(tmp_path, base_asset) -> None:
 
     def validator(_: dict) -> dict:
         raise RuntimeError("schema mismatch")
