@@ -1,63 +1,57 @@
 {
-  "task": "Fix Labs audit gaps",
-  "objective": "Update synesthetic-labs so it complies with labs_spec.md v0.1 and passes audit.",
-  "gaps": [
+  "task": "Align synesthetic-labs to spec v0.1",
+  "objective": "Patch Labs so that it conforms fully to labs_spec.md v0.1. Remove divergences noted in the last audit.",
+  "changes": [
     {
-      "id": "mcp_validation_optional",
-      "description": "Critic and CLI treat MCP validation as optional in relaxed mode.",
-      "changes": [
-        "In labs/agents/critic.py: remove relaxed skip; always require MCP validation result.",
-        "CLI (labs/cli.py): exit non-zero if MCP validation fails, regardless of LABS_FAIL_FAST."
+      "id": "mcp_stdio_adapter",
+      "description": "Replace TCP SocketMCPValidator with STDIO JSON-RPC client",
+      "edits": [
+        "Remove labs/cli.py: SocketMCPValidator + TCP logic",
+        "Add labs/mcp_stdio.py: spawn MCP via subprocess, send NDJSON over stdin/stdout",
+        "Wire CriticAgent to use StdioMCPValidator as default",
+        "Update labs/cli.py CLI commands to fail if MCP process not available"
       ]
     },
     {
-      "id": "logging_path",
-      "description": "Logs and experiment outputs land in meta/output/* instead of meta/output/labs/.",
-      "changes": [
-        "Redirect all log_jsonl and experiment persistence to meta/output/labs/…",
-        "Update tests/test_pipeline.py and related tests to assert the new paths.",
-        "Update README.md logging docs accordingly."
+      "id": "defer_modulation_rule",
+      "description": "Remove modulation and rule bundle generators from v0.1 scope",
+      "edits": [
+        "Move labs/generator/modulation.py and labs/generator/rule_bundle.py into labs/experimental/",
+        "Strip references from labs/generator/assembler.py so only shader/tone/haptic/controls remain",
+        "Update docs/labs_spec.md to confirm modulation/rule deferred to v0.2+"
       ]
     },
     {
-      "id": "init_file",
-      "description": "Init artefact is named init.json instead of init_labs.json.",
-      "changes": [
-        "Duplicate or rename meta/prompts/init.json → init_labs.json.",
-        "Update docs/labs_spec.md references accordingly."
+      "id": "docs_sync",
+      "description": "Sync documentation with patched state",
+      "edits": [
+        "Update docs/labs_spec.md transport section to require STDIO (no TCP)",
+        "Update README.md to show MCP STDIO integration and remove TCP host/port examples",
+        "Add note that modulation/rule are deferred to v0.2+"
       ]
     },
     {
-      "id": "determinism_tests",
-      "description": "Determinism requirement untested.",
-      "changes": [
-        "Add tests/test_determinism.py: call AssetAssembler.generate with a fixed seed, compare two runs, assert byte-for-byte equality.",
-        "Add negative case: without seed, allow variance but still schema-valid."
-      ]
-    },
-    {
-      "id": "scope_drift",
-      "description": "Modulation and rule bundle generators included though spec defers them.",
-      "changes": [
-        "Either move labs/generator/modulation.py and rule_bundle.py to labs/experimental/ and update README.md, OR",
-        "Document in docs/labs_spec.md that these are present early (mark Divergent)."
+      "id": "tests_update",
+      "description": "Fix and extend tests after removing divergences",
+      "edits": [
+        "Remove or adapt tests/test_pipeline.py lines expecting TCP MCP_HOST/PORT env vars",
+        "Add regression test: Critic fails fast if MCP STDIO unavailable",
+        "Remove tests that depend on modulation/rule generation for v0.1"
       ]
     }
   ],
   "constraints": {
-    "style": "atomic diffs, grounded in file paths",
     "rules": [
-      "No new dependencies",
-      "Tests must pass",
-      "Docs must be updated with any path/name changes"
+      "No new dependencies beyond stdlib",
+      "Must use subprocess.Popen for STDIO bridge",
+      "Tests must pass after patch",
+      "Docs and README must be consistent with code"
     ]
   },
   "exit_criteria": [
-    "MCP validation is mandatory in critic and CLI flows",
-    "All logs and experiments written under meta/output/labs/",
-    "init_labs.json exists and matches baseline",
-    "Determinism test added and passing",
-    "Scope drift either fixed by moving files or documented as Divergent",
-    "README and docs aligned with final state"
+    "All MCP calls in Labs go over STDIO, no TCP left",
+    "Modulation/rule generation removed from v0.1 flow",
+    "docs/labs_spec.md and README.md aligned with new implementation",
+    "Audit passes with no divergences"
   ]
 }
