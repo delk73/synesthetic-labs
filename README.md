@@ -37,3 +37,33 @@ and rule bundle generators are deferred to v0.2+.
 * `docs/labs_spec.md` — canonical scope for this release
 * `AGENTS.md` — generator and critic provenance
 * `meta/prompts/` — canonical prompt set and audit requests
+
+
+
+```mermaid
+flowchart TB
+  subgraph Labs["Synesthetic Labs (v0.1)"]
+    G["GeneratorAgent\n(propose, assemble, log)"]
+    C["CriticAgent\n(review, enforce MCP, log)"]
+    CLI["labs.cli\n(generate, critique,\npersist experiments)"]
+  end
+
+  MCP["MCP Adapter (STDIO bridge)\n• Accepts JSON-RPC over stdin/stdout\n• Runs schema validation\n• Forwards to backend if available"]
+  SCHEMAS["synesthetic-schemas (SSOT)\n• JSON Schemas\n• Python bindings\n• Examples"]
+  BACKEND["sdfk-backend\n• API + store\n• CRUD for assets"]
+
+  G --> |"proposed assets"| C
+  C --> |"validate via STDIO"| MCP
+  CLI --> |"runs"| G
+  CLI --> |"runs"| C
+
+  MCP --> |"loads schemas"| SCHEMAS
+  BACKEND --> |"loads schemas"| SCHEMAS
+  MCP --> |"optional proxy"| BACKEND
+
+  style Labs fill:#222222,stroke:#ffffff,stroke-width:2px
+  style MCP fill:#333333,stroke:#ffffff,stroke-width:2px
+  style SCHEMAS fill:#444444,stroke:#ffffff,stroke-width:2px
+  style BACKEND fill:#666666,stroke:#ffffff,stroke-width:2px
+
+```
