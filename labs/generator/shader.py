@@ -87,7 +87,7 @@ _INPUT_PARAMETERS: list[Dict[str, Any]] = [
 class ShaderGenerator:
     """Generate the canonical CircleSDF shader component."""
 
-    def __init__(self, *, version: str = "v0.2") -> None:
+    def __init__(self, *, version: str = "v0.1") -> None:
         self.version = version
 
     def generate(self, *, seed: Optional[int] = None) -> Dict[str, Any]:

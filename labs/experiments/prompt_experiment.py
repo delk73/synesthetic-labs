@@ -13,6 +13,12 @@ from labs.logging import log_jsonl
 from labs.mcp_stdio import build_validator_from_env
 
 
+def _relativize(path: str) -> str:
+    try:
+        return os.path.relpath(path, start=os.getcwd())
+    except ValueError:
+        return path
+
 def _load_prompts(path: str) -> List[str]:
     with open(path, "r", encoding="utf-8") as handle:
         prompts = [line.strip() for line in handle]
@@ -69,6 +75,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             json.dump(asset, handle, indent=2)
             handle.write("\n")
 
+        experiment_path: Optional[str] = None
+
         if review.get("mcp_response"):
             if validated_dir is None:
                 validated_dir = os.path.join(args.output_dir, "validated_assets")
@@ -77,6 +85,13 @@ def main(argv: Optional[list[str]] = None) -> int:
             with open(validated_path, "w", encoding="utf-8") as handle:
                 json.dump(review["mcp_response"], handle, indent=2)
                 handle.write("\n")
+            experiment_path = _relativize(validated_path)
+
+        generator.record_experiment(
+            asset=asset,
+            review=review,
+            experiment_path=experiment_path,
+        )
 
         log_jsonl(results_log, run_record)
 

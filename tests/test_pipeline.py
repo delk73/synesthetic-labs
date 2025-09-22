@@ -25,6 +25,10 @@ def test_generator_to_critic_pipeline(tmp_path) -> None:
     review = critic.review(asset)
 
     assert "provenance" in asset
+    for section in ("shader", "tone", "haptic", "control"):
+        assert section in asset
+        assert asset[section]["component"] == section
+    assert asset["provenance"]["generator"]["agent"] == "GeneratorAgent"
     assert review["ok"] is True
     assert review["validation_status"] == "passed"
     assert review["mcp_response"] == {"validated": True, "asset_id": asset["id"]}
@@ -93,14 +97,22 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
 
     persisted_asset = json.loads(persisted_asset_path.read_text(encoding="utf-8"))
     assert persisted_asset["prompt"] == "aurora bloom"
+    for section in ("shader", "tone", "haptic", "control"):
+        assert section in persisted_asset
 
     relative_path = os.path.relpath(persisted_asset_path, os.getcwd())
     assert payload["experiment_path"] == relative_path
 
     assert generator_log.exists()
     log_lines = generator_log.read_text(encoding="utf-8").strip().splitlines()
-    assert len(log_lines) == 1
-    log_record = json.loads(log_lines[0])
+    assert len(log_lines) == 2
+    logged_asset = json.loads(log_lines[0])
+    assert logged_asset["prompt"] == "aurora bloom"
+    assert (
+        logged_asset["provenance"]["generator"]["agent"]
+        == LoggedGeneratorAgent.__name__
+    )
+    log_record = json.loads(log_lines[1])
     assert log_record["experiment_path"] == relative_path
     assert log_record["validation"]["ok"] is True
     assert log_record["validation"]["status"] == "passed"

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
-import uuid
 from typing import Any, Dict, Optional
 
 from labs.logging import log_jsonl
+from labs.generator.assembler import AssetAssembler
 
 _DEFAULT_LOG_PATH = "meta/output/labs/generator.jsonl"
 
@@ -22,37 +22,44 @@ class GeneratorAgent:
         repository log directory under ``meta/output``.
     """
 
-    def __init__(self, log_path: str = _DEFAULT_LOG_PATH, *, version: str = "v0.3") -> None:
+    def __init__(
+        self,
+        log_path: str = _DEFAULT_LOG_PATH,
+        *,
+        version: str = "v0.1",
+        assembler: Optional[AssetAssembler] = None,
+    ) -> None:
         self.log_path = log_path
         self._logger = logging.getLogger(self.__class__.__name__)
         self.version = version
+        self._assembler = assembler or AssetAssembler(version=version)
 
-    def propose(self, prompt: str) -> Dict[str, Any]:
-        """Return a proposal dictionary for *prompt*.
+    def propose(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, Any]:
+        """Return a fully assembled asset for *prompt*.
 
-        The payload includes a UUID primary key, an ISO-8601 timestamp, the
-        original prompt, and a provenance envelope. The proposal is logged to
-        the configured JSONL sink for traceability.
+        The payload mirrors the canonical Synesthetic schema sections produced
+        by :class:`AssetAssembler` and is logged to the configured JSONL sink
+        for traceability.
         """
 
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
 
-        timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        proposal = {
-            "id": str(uuid.uuid4()),
-            "timestamp": timestamp,
-            "prompt": prompt,
-            "provenance": {
-                "agent": self.__class__.__name__,
-                "version": self.version,
-                "logged_at": timestamp,
-            },
+        asset = self._assembler.generate(prompt, seed=seed)
+
+        timestamp = asset.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
+        provenance = asset.setdefault("provenance", {})
+        provenance.setdefault("agent", "AssetAssembler")
+        provenance.setdefault("version", self._assembler.version)
+        provenance["generator"] = {
+            "agent": self.__class__.__name__,
+            "version": self.version,
+            "generated_at": timestamp,
         }
 
-        self._logger.info("Generated proposal %s", proposal["id"])
-        log_jsonl(self.log_path, proposal)
-        return proposal
+        self._logger.info("Generated asset %s", asset.get("id"))
+        log_jsonl(self.log_path, asset)
+        return asset
 
     def record_experiment(
         self,

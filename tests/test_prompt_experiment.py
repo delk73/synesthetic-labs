@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from labs.agents.critic import CriticAgent
+from labs.agents.generator import GeneratorAgent
 from labs.experiments import prompt_experiment
 
 
@@ -12,35 +14,21 @@ def test_prompt_experiment_writes_asset_files(tmp_path, monkeypatch) -> None:
     prompt_file.write_text("shimmer\n", encoding="utf-8")
     output_dir = tmp_path / "out"
 
-    class DummyGenerator:
-        def __init__(self, *_, **__):
-            pass
+    def build_generator() -> GeneratorAgent:
+        return GeneratorAgent(log_path=str(tmp_path / "generator.jsonl"))
 
-        def propose(self, prompt: str) -> dict:
-            return {
-                "id": "asset-1",
-                "timestamp": "2025-01-01T00:00:00Z",
-                "prompt": prompt,
-                "provenance": {"agent": "GeneratorAgent"},
-            }
+    class LoggedCriticAgent(CriticAgent):
+        def __init__(self, validator=None) -> None:  # pragma: no cover - simple wiring
+            super().__init__(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
 
-    class DummyCritic:
-        def __init__(self, *_, **__):
-            pass
+    def validator(payload: dict) -> dict:
+        for section in ("shader", "tone", "haptic", "control"):
+            assert section in payload
+        return {"status": "ok", "asset_id": payload["id"]}
 
-        def review(self, asset: dict) -> dict:
-            return {
-                "asset": asset,
-                "issues": [],
-                "ok": True,
-                "reviewed_at": "2025-01-01T00:00:01Z",
-                "validation_status": "passed",
-                "mcp_response": {"status": "ok"},
-            }
-
-    monkeypatch.setattr(prompt_experiment, "GeneratorAgent", DummyGenerator)
-    monkeypatch.setattr(prompt_experiment, "CriticAgent", DummyCritic)
-    monkeypatch.setattr(prompt_experiment, "_ensure_validator", lambda: (lambda payload: {"status": "ok"}))
+    monkeypatch.setattr(prompt_experiment, "GeneratorAgent", build_generator)
+    monkeypatch.setattr(prompt_experiment, "CriticAgent", LoggedCriticAgent)
+    monkeypatch.setattr(prompt_experiment, "_ensure_validator", lambda: validator)
 
     exit_code = prompt_experiment.main([str(prompt_file), str(output_dir)])
 
@@ -56,3 +44,9 @@ def test_prompt_experiment_writes_asset_files(tmp_path, monkeypatch) -> None:
 
     asset_data = json.loads(generated_path.read_text(encoding="utf-8"))
     assert asset_data["prompt"] == "shimmer"
+    for section in ("shader", "tone", "haptic", "control"):
+        assert section in asset_data
+
+    run_record = json.loads(run_path.read_text(encoding="utf-8"))
+    assert run_record["review"]["validation_status"] == "passed"
+    assert run_record["review"]["mcp_response"]["status"] == "ok"

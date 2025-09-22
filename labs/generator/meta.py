@@ -8,7 +8,7 @@ from typing import Dict, Optional
 class MetaGenerator:
     """Generate descriptive metadata for the asset."""
 
-    def __init__(self, *, version: str = "v0.2") -> None:
+    def __init__(self, *, version: str = "v0.1") -> None:
         self.version = version
 
     def generate(self, *, seed: Optional[int] = None) -> Dict[str, object]:

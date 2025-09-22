@@ -11,17 +11,29 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     log_path = tmp_path / "generator.jsonl"
     agent = GeneratorAgent(log_path=str(log_path))
 
-    proposal = agent.propose("synthwave pulse")
+    asset = agent.propose("synthwave pulse")
 
-    assert set(["id", "timestamp", "prompt", "provenance"]).issubset(proposal)
-    assert proposal["prompt"] == "synthwave pulse"
-    assert proposal["provenance"]["agent"] == "GeneratorAgent"
+    for field in ("id", "timestamp", "prompt", "provenance"):
+        assert field in asset
+
+    assert asset["prompt"] == "synthwave pulse"
+    assert asset["provenance"]["agent"] == "AssetAssembler"
+    generator_info = asset["provenance"]["generator"]
+    assert generator_info["agent"] == "GeneratorAgent"
+    assert generator_info["version"] == "v0.1"
+    assert asset["provenance"]["version"] == "v0.1"
+
+    for section in ("shader", "tone", "haptic", "control", "meta"):
+        assert section in asset
+        assert asset[section]["component"] == section
 
     assert log_path.exists()
     lines = log_path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
     logged = json.loads(lines[0])
-    assert logged["id"] == proposal["id"]
+    assert logged["id"] == asset["id"]
+    assert logged["shader"]["component"] == "shader"
+    assert logged["provenance"]["generator"]["agent"] == "GeneratorAgent"
 
 
 def test_record_experiment_logs_experiment_path(tmp_path) -> None:

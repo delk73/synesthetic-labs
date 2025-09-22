@@ -19,7 +19,7 @@
   ```
 * Publish the initialization prompt as `meta/prompts/init_labs.json` for downstream tooling.
 
-## Non-Scope (deferred v0.2+)
+## Non-Scope (future work)
 
 * Critic agent and review flows.
 * RLHF/rating loops.
@@ -43,7 +43,7 @@
 * **Controls**: basic mouse.x → shader.u\_px, mouse.y → shader.u\_py.
 * **Meta**: `category=multimodal`, `tags=["circle","baseline"]`.
 
-*(All other modulation/rule bundles deferred to v0.2.)*
+*(All other modulation/rule bundles are deferred to later releases.)*
 
 ## Validation
 
@@ -77,7 +77,7 @@
 * Logs written under `meta/output/labs/`.
 * CLI works inside/outside Docker.
 * Tests pass in CI.
-* v0.2 backlog tracked in `meta/backlog.md`.
+* Backlog items tracked in `meta/backlog.md`.
 
 ## Documented Divergences
 

@@ -11,7 +11,6 @@ from typing import Any, Dict, Optional
 
 from labs.agents.generator import GeneratorAgent
 from labs.agents.critic import CriticAgent
-from labs.generator.assembler import AssetAssembler
 from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
 
 _LOGGER = logging.getLogger("labs.cli")
@@ -72,8 +71,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "generate":
-        assembler = AssetAssembler()
-        asset = assembler.generate(args.prompt)
+        generator = GeneratorAgent()
+        asset = generator.propose(args.prompt)
 
         try:
             validator_callback = build_validator_from_env()
@@ -91,8 +90,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             _LOGGER.error("Generation failed validation; asset not persisted")
 
-        generator_logger = GeneratorAgent()
-        generator_logger.record_experiment(
+        generator.record_experiment(
             asset=asset,
             review=review,
             experiment_path=experiment_path,

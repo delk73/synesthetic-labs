@@ -38,7 +38,7 @@ _DEFAULT_PROFILE: Dict[str, Any] = {
 class HapticGenerator:
     """Generate the baseline haptic configuration."""
 
-    def __init__(self, *, version: str = "v0.2") -> None:
+    def __init__(self, *, version: str = "v0.1") -> None:
         self.version = version
 
     def generate(self, *, seed: Optional[int] = None) -> Dict[str, Any]:
