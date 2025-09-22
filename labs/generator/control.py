@@ -23,14 +23,6 @@ _MAPPINGS: list[Dict[str, Any]] = [
         "range": {"minimum": -1.0, "maximum": 1.0},
         "invert": True,
     },
-    {
-        "id": "shift_mouse_tone_detune",
-        "input": {"device": "mouse", "control": "x", "modifiers": ["shift"]},
-        "parameter": "tone.detune",
-        "mode": "relative",
-        "curve": "linear",
-        "scale": 20.0,
-    },
 ]
 
 

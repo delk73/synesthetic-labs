@@ -1,56 +1,47 @@
 {
-  "task": "Refactor Generator and Prompt Experiment to conform to labs_spec.md v0.1",
-  "objective": "Ensure GeneratorAgent always emits full canonical assets (shader/tone/haptic/control) via AssetAssembler, fix prompt experiment harness, normalize version markers, and sync .env/docs.",
+  "task": "Implement LABS_FAIL_FAST and finalize v0.1 alignment",
+  "objective": "Add the LABS_FAIL_FAST toggle, update documentation to reflect delivered CriticAgent and toggle semantics, and resolve divergences between canonical vs expanded controls/meta.",
   "changes": [
     {
-      "id": "generator_wiring",
-      "description": "Wire GeneratorAgent.propose to AssetAssembler so all proposals are canonical schema-ready assets.",
+      "id": "fail_fast_toggle",
+      "description": "Implement LABS_FAIL_FAST environment variable to support strict vs relaxed validation.",
       "edits": [
-        "Update labs/agents/generator.py: GeneratorAgent.propose should call AssetAssembler.generate instead of returning metadata-only payloads.",
-        "Adjust labs/cli.py to work with full assets returned by GeneratorAgent.propose.",
-        "Update tests/test_generator.py and tests/test_pipeline.py to assert shader/tone/haptic/control sections are present."
+        "Update labs/agents/critic.py: check LABS_FAIL_FAST (default true). If false, log 'validation skipped' and continue instead of raising MCPUnavailableError.",
+        "Update labs/cli.py: respect LABS_FAIL_FAST when MCP_ADAPTER_CMD is missing/unavailable. Exit non-zero only if strict mode is active.",
+        "Add tests in tests/test_critic.py and tests/test_pipeline.py to cover both strict and relaxed behaviors."
       ]
     },
     {
-      "id": "prompt_experiment_refactor",
-      "description": "Refactor prompt experiment harness to assemble assets before MCP validation.",
+      "id": "docs_refresh",
+      "description": "Update documentation to reflect delivered CriticAgent and fail-fast toggle.",
       "edits": [
-        "Update labs/experiments/prompt_experiment.py to build full assets with AssetAssembler before sending to MCP.",
-        "Extend tests/test_prompt_experiment.py to assert schema-valid assets pass MCP validation instead of metadata-only payloads.",
-        "Ensure CriticAgent handles prompt experiments consistently with CLI assets."
+        "Update docs/labs_spec.md: move CriticAgent from 'future work' to 'implemented in v0.1'.",
+        "Add section describing LABS_FAIL_FAST semantics (strict = exit non-zero, relaxed = log skip + continue).",
+        "Update README.md to include LABS_FAIL_FAST in environment variable list."
       ]
     },
     {
-      "id": "version_alignment",
-      "description": "Normalize version markers across generator, assembler, and provenance to v0.1.",
+      "id": "canonicalization",
+      "description": "Resolve divergence between spec baseline and code for controls and meta tags.",
       "edits": [
-        "Update labs/agents/generator.py, labs/generator/assembler.py, and labs/generator/shader.py to stamp v0.1 in agent/version metadata.",
-        "Update README.md and docs/labs_spec.md to reflect v0.1 (remove stray v0.2/v0.3 references)."
-      ]
-    },
-    {
-      "id": "env_docs_sync",
-      "description": "Update environment scaffolding and documentation for clarity.",
-      "edits": [
-        "Update .env.example to include MCP_ADAPTER_CMD, SYN_SCHEMAS_DIR, LABS_EXPERIMENTS_DIR, and stub MCP_HOST/MCP_PORT entries to satisfy init_labs.json expectations.",
-        "Clarify in README.md that MCP validation is STDIO-only, but MCP_HOST/PORT are retained as no-op placeholders for compatibility.",
-        "Remove unused SYN_EXAMPLES_DIR or document as deprecated."
+        "Decide direction: either (a) prune ControlGenerator back to two shader mappings and MetaGenerator tags to ['circle','baseline'], or (b) bless expanded sets and update docs/tests accordingly.",
+        "If pruning: update labs/generator/control.py and labs/generator/meta.py to canonical sets, and adjust tests/test_generator_components.py expectations.",
+        "If blessing expansion: update docs/labs_spec.md and related tests to include expanded taxonomy and detune mapping."
       ]
     }
   ],
   "constraints": {
     "rules": [
       "No new dependencies beyond Python stdlib.",
-      "GeneratorAgent must always produce schema-valid assets via AssetAssembler.",
-      "Tests must pass after patch, including prompt_experiment pipeline.",
-      "Docs, version strings, and .env must be consistent with v0.1 spec."
+      "LABS_FAIL_FAST must default to strict (true) for CI reproducibility.",
+      "Docs and tests must reflect final decision on canonical vs expanded sets.",
+      "All tests must pass after patch."
     ]
   },
   "exit_criteria": [
-    "GeneratorAgent.propose returns full canonical assets, not metadata-only.",
-    "Prompt experiment harness validates full assets successfully via MCP.",
-    "All provenance/version markers aligned to v0.1.",
-    "README.md, labs_spec.md, and .env.example consistent with implementation.",
-    "Audit passes with no divergences remaining for v0.1 scope."
+    "LABS_FAIL_FAST toggle implemented and tested in both strict and relaxed modes.",
+    "docs/labs_spec.md and README.md reflect CriticAgent as implemented and describe LABS_FAIL_FAST.",
+    "ControlGenerator and MetaGenerator are aligned with either canonical baseline or updated spec/docs for expansion.",
+    "Audit passes with no remaining divergences for v0.1."
   ]
 }

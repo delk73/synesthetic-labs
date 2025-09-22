@@ -28,13 +28,14 @@ development and CI you can rely on the bundled stub:
 export MCP_ADAPTER_CMD="python -m labs.mcp_stub"
 ```
 
-Optional variables such as `SYN_SCHEMAS_DIR` and `LABS_EXPERIMENTS_DIR` are
-forwarded to the subprocess and persistence layer. `MCP_HOST` and `MCP_PORT`
-remain in `.env.example` as compatibility placeholders; MCP validation is
-strictly STDIO-based in v0.1. Validation is mandatory: if the adapter command
-fails the CLI exits non-zero and records the failure in the review payload. When
-validation succeeds, the CriticAgent records the MCP response for provenance.
-`.env.example` documents the supported environment variables.
+Optional variables such as `SYN_SCHEMAS_DIR`, `LABS_EXPERIMENTS_DIR`, and
+`LABS_FAIL_FAST` tune validation and persistence behavior. `LABS_FAIL_FAST`
+defaults to strict (`1`) so CLI and experiment runs fail when the MCP adapter
+is unavailable; set it to `0`/`false` to log "Validation skipped" and continue
+in relaxed mode. `MCP_HOST` and `MCP_PORT` remain in `.env.example` as
+compatibility placeholders; MCP validation is strictly STDIO-based in v0.1.
+When validation succeeds, the CriticAgent records the MCP response for
+provenance. `.env.example` documents the supported environment variables.
 
 ```text
 +-------------+      STDIO JSON payload      +----------------------+      Schema bundle / backend
@@ -52,5 +53,4 @@ and rule bundle generators remain out of scope for this release.
 * `docs/labs_spec.md` — canonical scope for this release
 * `AGENTS.md` — generator and critic provenance
 * `meta/prompts/` — canonical prompt set and audit requests
-
 

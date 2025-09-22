@@ -76,6 +76,7 @@ def test_control_mappings_reference_known_parameters(
 ) -> None:
     known_parameters = _parameter_names([shader_section, tone_section, haptic_section])
     assert control_section["mappings"], "control mappings should not be empty"
+    assert len(control_section["mappings"]) == 2
     for mapping in control_section["mappings"]:
         assert mapping["parameter"] in known_parameters
 
@@ -85,3 +86,4 @@ def test_meta_generator_fields(meta_section: Dict[str, Any]) -> None:
     for key in ("title", "description", "category", "complexity", "tags"):
         assert key in meta_section
     assert meta_section["category"] == "multimodal"
+    assert set(meta_section["tags"]) == {"circle", "baseline"}

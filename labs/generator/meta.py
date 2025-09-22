@@ -24,5 +24,5 @@ class MetaGenerator:
             ),
             "category": "multimodal",
             "complexity": "medium",
-            "tags": ["circle", "interactive", "audio", "haptic"],
+            "tags": ["circle", "baseline"],
         }

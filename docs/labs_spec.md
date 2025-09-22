@@ -9,6 +9,7 @@
 ## Scope (v0.1)
 
 * Implement a **generator agent** that produces a minimal `nested-synesthetic-asset`.
+* Deliver a **critic agent** that coordinates MCP validation and logging.
 * Assemble Shader, Tone, Haptic sections with canonical defaults.
 * Wire through MCP validation (`validate_asset` over STDIO).
 * Log validated assets under `meta/output/labs/`.
@@ -21,7 +22,6 @@
 
 ## Non-Scope (future work)
 
-* Critic agent and review flows.
 * RLHF/rating loops.
 * Patch lifecycle orchestration.
 * Dataset building or persistence to backend.
@@ -31,6 +31,7 @@
 | Component       | Responsibilities                                    |
 | --------------- | --------------------------------------------------- |
 | Generator agent | Emit Shader, Tone, Haptic with minimal defaults.    |
+| Critic agent    | Review assets, invoke MCP validation, log outcomes. |
 | Assembler       | Collect input\_parameters, prune dangling mappings. |
 | Labs CLI        | Orchestrate generator → MCP validation → log.       |
 | MCP adapter     | Final schema authority.                             |
@@ -49,7 +50,7 @@
 
 * **Pre-flight**: generator ensures primary sections exist.
 * **MCP validation**: assets must pass schema check.
-* Fail fast if `LABS_FAIL_FAST=1`.
+* **Fail-fast toggle** (`LABS_FAIL_FAST`, default strict): values `1/true/on` enforce immediate failures; `0/false/off` logs "Validation skipped" and allows relaxed runs.
 * Provide the MCP STDIO command via `MCP_ADAPTER_CMD`; TCP fallbacks are not permitted.
 * `python -m labs.mcp_stub` offers a local no-op adapter for smoke tests.
 

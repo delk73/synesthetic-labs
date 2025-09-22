@@ -33,7 +33,7 @@ Upgrade Labs Generator from proposal stubs to full, schema-valid Synesthetic ass
    - Cross-section checks (no dangling targets in controls/modulations/rules).
 2. **Authoritative MCP validation** (SSOT schema):
    - Send assembled asset to MCP; accept/reject based on schema.
-   - In strict mode (`LABS_FAIL_FAST=1`), unreachable MCP or schema errors fail the run.
+   - Strict mode (`LABS_FAIL_FAST` unset/`1`) fails on MCP outages; relaxed mode (`0`/`false`) logs "Validation skipped" and continues.
 
 ## Flow
 1. Primary generators emit Shader, Tone, Haptic with canonical defaults.
@@ -83,7 +83,7 @@ Upgrade Labs Generator from proposal stubs to full, schema-valid Synesthetic ass
 
 ## Operational Modes
 - Default: strict validation; MCP outages surface as failures and block persistence.
-- Optional: `LABS_FAIL_FAST=1` remains the documented flag for fail-fast parity once relaxed mode returns.
+- Relaxed: set `LABS_FAIL_FAST` to `0`/`false` to log skips while allowing persistence.
 
 ## Open Decisions (track in backlog)
 - Baseline family: stick to CircleSDF minimal for v0.2; stage Dual Sphere as v0.2.x template.

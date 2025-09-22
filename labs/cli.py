@@ -10,7 +10,7 @@ import sys
 from typing import Any, Dict, Optional
 
 from labs.agents.generator import GeneratorAgent
-from labs.agents.critic import CriticAgent
+from labs.agents.critic import CriticAgent, is_fail_fast_enabled
 from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
 
 _LOGGER = logging.getLogger("labs.cli")
@@ -77,8 +77,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         try:
             validator_callback = build_validator_from_env()
         except MCPUnavailableError as exc:
-            _LOGGER.error("MCP unavailable: %s", exc)
-            return 1
+            if is_fail_fast_enabled():
+                _LOGGER.error("MCP unavailable: %s", exc)
+                return 1
+            _LOGGER.warning("Validation skipped: %s", exc)
+            validator_callback = None
 
         critic = CriticAgent(validator=validator_callback)
         review = critic.review(asset)
@@ -110,8 +113,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         try:
             validator_callback = build_validator_from_env()
         except MCPUnavailableError as exc:
-            _LOGGER.error("MCP unavailable: %s", exc)
-            return 1
+            if is_fail_fast_enabled():
+                _LOGGER.error("MCP unavailable: %s", exc)
+                return 1
+            _LOGGER.warning("Validation skipped: %s", exc)
+            validator_callback = None
 
         critic = CriticAgent(validator=validator_callback)
         review = critic.review(asset)
