@@ -20,6 +20,7 @@
 - CLI commands fail fast when the adapter command is missing or errors, logging the outage and exiting non-zero (`labs/cli.py:78`; `tests/test_pipeline.py:49`).
 - Successful runs persist validated artefacts under `meta/output/labs/experiments/` and emit experiment logs linking reviews to file paths (`labs/cli.py:87`; `labs/cli.py:104`).
 - `CriticAgent` caches the validator callback and surfaces STDIO failures as review issues while recording MCP responses for provenance (`labs/agents/critic.py:55`; `tests/test_critic.py:70`).
+- `labs.mcp_stub` provides a lightweight STDIO adapter for local development and CI smoke checks (`labs/mcp_stub.py:5`; `README.md:25`).
 
 ## Prompt Experiment Harness
 - Loads prompt batches, reuses the shared validator builder, and logs each run to JSON/JSONL outputs for later analysis (`labs/experiments/prompt_experiment.py:32`; `labs/experiments/prompt_experiment.py:58`).

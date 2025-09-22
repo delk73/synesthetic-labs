@@ -51,6 +51,7 @@
 * **MCP validation**: assets must pass schema check.
 * Fail fast if `LABS_FAIL_FAST=1`.
 * Provide the MCP STDIO command via `MCP_ADAPTER_CMD`; TCP fallbacks are not permitted.
+* `python -m labs.mcp_stub` offers a local no-op adapter for smoke tests.
 
 ## Logging
 

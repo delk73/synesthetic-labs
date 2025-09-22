@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 
 import pytest
 
@@ -89,3 +90,31 @@ def test_critic_fails_when_stdio_validator_unavailable(tmp_path, base_asset, mon
     assert review["validation_status"] == "failed"
     assert any("adapter not configured" in issue for issue in review["issues"])
     assert any("adapter not configured" in message for message in caplog.messages)
+
+
+def test_critic_reports_missing_mcp_command(tmp_path, base_asset, monkeypatch, caplog) -> None:
+    monkeypatch.delenv("MCP_ADAPTER_CMD", raising=False)
+
+    critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
+
+    with caplog.at_level(logging.ERROR):
+        review = critic.review(base_asset)
+
+    assert review["ok"] is False
+    assert any("MCP validation unavailable" in issue for issue in review["issues"])
+    assert any("MCP validation unavailable" in message for message in caplog.messages)
+
+
+def test_critic_handles_stub_failure(tmp_path, base_asset, monkeypatch, caplog) -> None:
+    command = f"{sys.executable} -m labs.mcp_stub --fail"
+    monkeypatch.setenv("MCP_ADAPTER_CMD", command)
+
+    critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
+
+    with caplog.at_level(logging.ERROR):
+        review = critic.review(base_asset)
+
+    assert review["ok"] is False
+    assert review["validation_status"] == "failed"
+    assert any("MCP validation unavailable" in issue for issue in review["issues"])
+    assert any("MCP validation unavailable" in message for message in caplog.messages)

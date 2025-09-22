@@ -21,12 +21,25 @@ Run `python -m labs.cli --help` to explore the CLI:
 * `python -m labs.cli generate "describe the asset"`
 * `python -m labs.cli critique '{"id": "abc", ...}'`
 
-Configure the STDIO MCP adapter by exporting `MCP_ADAPTER_CMD` (for example,
-`python -m synesthetic_schemas.mcp`). Optional variables such as
-`SYN_SCHEMAS_DIR` are forwarded to the subprocess. MCP validation is mandatory:
-if the adapter command fails the CLI exits non-zero and records the failure in
-the review payload. When validation succeeds, the CriticAgent records the MCP
-response for provenance. `.env.example` documents the environment variables.
+Configure the STDIO MCP adapter by exporting `MCP_ADAPTER_CMD`. For local
+development and CI you can rely on the bundled stub:
+
+```bash
+export MCP_ADAPTER_CMD="python -m labs.mcp_stub"
+```
+
+Optional variables such as `SYN_SCHEMAS_DIR` are forwarded to the subprocess.
+Validation is mandatory: if the adapter command fails the CLI exits non-zero
+and records the failure in the review payload. When validation succeeds, the
+CriticAgent records the MCP response for provenance. `.env.example` documents
+the supported environment variables.
+
+```text
++-------------+      STDIO JSON payload      +----------------------+      Schema bundle / backend
+| Labs (CLI & | ============================> | MCP Adapter (STDIO) | ===========================>
+| Experiments)| <============================ |    e.g. mcp_stub     |
++-------------+                               +----------------------+
+```
 
 Generator and critic logs live under `meta/output/labs/`, and validated assets
 persist to `meta/output/labs/experiments/` when generation succeeds. Modulation
@@ -40,30 +53,3 @@ and rule bundle generators are deferred to v0.2+.
 
 
 
-```mermaid
-flowchart TB
-  subgraph Labs["Synesthetic Labs (v0.1)"]
-    G["GeneratorAgent\n(propose, assemble, log)"]
-    C["CriticAgent\n(review, enforce MCP, log)"]
-    CLI["labs.cli\n(generate, critique,\npersist experiments)"]
-  end
-
-  MCP["MCP Adapter (STDIO bridge)\n• Accepts JSON-RPC over stdin/stdout\n• Runs schema validation\n• Forwards to backend if available"]
-  SCHEMAS["synesthetic-schemas (SSOT)\n• JSON Schemas\n• Python bindings\n• Examples"]
-  BACKEND["sdfk-backend\n• API + store\n• CRUD for assets"]
-
-  G --> |"proposed assets"| C
-  C --> |"validate via STDIO"| MCP
-  CLI --> |"runs"| G
-  CLI --> |"runs"| C
-
-  MCP --> |"loads schemas"| SCHEMAS
-  BACKEND --> |"loads schemas"| SCHEMAS
-  MCP --> |"optional proxy"| BACKEND
-
-  style Labs fill:#222222,stroke:#ffffff,stroke-width:2px
-  style MCP fill:#333333,stroke:#ffffff,stroke-width:2px
-  style SCHEMAS fill:#444444,stroke:#ffffff,stroke-width:2px
-  style BACKEND fill:#666666,stroke:#ffffff,stroke-width:2px
-
-```

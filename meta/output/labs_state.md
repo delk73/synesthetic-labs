@@ -5,8 +5,7 @@
 - Modulation and rule bundle generators live under `labs/experimental/` and are no longer part of the v0.1 asset assembly flow (`labs/generator/assembler.py:75`; `labs/experimental/__init__.py:3`).
 
 ## Top gaps & fixes
-- Document a sample `MCP_ADAPTER_CMD` command or provide a stub adapter script to streamline local validation (`README.md:24`; `labs/mcp_stdio.py:87`).
-- Add integration coverage against a real MCP adapter to exercise the STDIO bridge end-to-end (`labs/mcp_stdio.py:26`; `tests/test_pipeline.py:62`).
+- Extend integration coverage against a real MCP adapter to exercise the STDIO bridge end-to-end (`labs/mcp_stdio.py:26`; `tests/test_pipeline.py:62`).
 - Consider reintroducing a relaxed mode toggle or update docs if strict validation is the only supported behaviour (`docs/labs_spec.md:52`; `labs/cli.py:185`).
 
 ## Alignment with labs_spec.md and init_labs.json
@@ -81,5 +80,5 @@
 - None observed.
 
 ## Recommendations
-- Provide an example MCP adapter command or stub implementation so developers can exercise STDIO validation locally (`README.md:24`; `labs/mcp_stdio.py:87`).
-- Extend integration testing to cover real MCP adapter interactions, ensuring STDIO contracts remain stable (`labs/mcp_stdio.py:30`; `tests/test_pipeline.py:49`).
+- Add a thin integration test harness that exercises the STDIO bridge against a real adapter implementation (`labs/mcp_stdio.py:30`; `tests/test_pipeline.py:49`).
+- Evaluate whether a configurable relaxed mode is required or if full fail-fast semantics can be codified in docs/spec (`docs/labs_spec.md:52`; `labs/cli.py:185`).
