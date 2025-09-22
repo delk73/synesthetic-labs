@@ -1,60 +1,56 @@
 {
-  "task": "Align synesthetic-labs to spec v0.1",
-  "objective": "Patch Labs so that it conforms fully to labs_spec.md v0.1 and removes all divergences noted in the last audit.",
+  "task": "Refactor Generator and Prompt Experiment to conform to labs_spec.md v0.1",
+  "objective": "Ensure GeneratorAgent always emits full canonical assets (shader/tone/haptic/control) via AssetAssembler, fix prompt experiment harness, normalize version markers, and sync .env/docs.",
   "changes": [
     {
-      "id": "mcp_stdio_adapter",
-      "description": "Finalize STDIO-only validation path with a stub adapter option.",
+      "id": "generator_wiring",
+      "description": "Wire GeneratorAgent.propose to AssetAssembler so all proposals are canonical schema-ready assets.",
       "edits": [
-        "Ensure labs/mcp_stdio.py implements StdioMCPValidator using subprocess.Popen and NDJSON framing.",
-        "Remove any TCP SocketMCPValidator logic from labs/cli.py and tests.",
-        "CriticAgent defaults to StdioMCPValidator; fails fast if MCP_ADAPTER_CMD not set or subprocess exits.",
-        "Add labs/mcp_stub.py: trivial echo validator for local dev/CI.",
-        "Update README.md to document MCP_ADAPTER_CMD with mcp_stub.py example."
+        "Update labs/agents/generator.py: GeneratorAgent.propose should call AssetAssembler.generate instead of returning metadata-only payloads.",
+        "Adjust labs/cli.py to work with full assets returned by GeneratorAgent.propose.",
+        "Update tests/test_generator.py and tests/test_pipeline.py to assert shader/tone/haptic/control sections are present."
       ]
     },
     {
-      "id": "defer_modulation_rule",
-      "description": "De-scope experimental generators from v0.1 flow.",
+      "id": "prompt_experiment_refactor",
+      "description": "Refactor prompt experiment harness to assemble assets before MCP validation.",
       "edits": [
-        "Move labs/generator/modulation.py and labs/generator/rule_bundle.py into labs/experimental/.",
-        "Strip references to modulation/rule generators from labs/generator/assembler.py.",
-        "Update docs/labs_spec.md to state modulation/rule are deferred to v0.2+."
+        "Update labs/experiments/prompt_experiment.py to build full assets with AssetAssembler before sending to MCP.",
+        "Extend tests/test_prompt_experiment.py to assert schema-valid assets pass MCP validation instead of metadata-only payloads.",
+        "Ensure CriticAgent handles prompt experiments consistently with CLI assets."
       ]
     },
     {
-      "id": "docs_sync",
-      "description": "Bring documentation and diagrams in sync with implementation.",
+      "id": "version_alignment",
+      "description": "Normalize version markers across generator, assembler, and provenance to v0.1.",
       "edits": [
-        "Update docs/labs_spec.md to require STDIO (no TCP).",
-        "Update README.md Quickstart to include System Context diagram (Labs → MCP Adapter → schemas/backend).",
-        "Remove all TCP host/port references; show only MCP_ADAPTER_CMD (with stub example).",
-        "Explicitly note modulation/rule deferred to v0.2+."
+        "Update labs/agents/generator.py, labs/generator/assembler.py, and labs/generator/shader.py to stamp v0.1 in agent/version metadata.",
+        "Update README.md and docs/labs_spec.md to reflect v0.1 (remove stray v0.2/v0.3 references)."
       ]
     },
     {
-      "id": "tests_update",
-      "description": "Adapt tests to new MCP flow and removed features.",
+      "id": "env_docs_sync",
+      "description": "Update environment scaffolding and documentation for clarity.",
       "edits": [
-        "Remove or adapt tests/test_pipeline.py lines referencing MCP_HOST/PORT env vars.",
-        "Add regression test: CriticAgent raises when MCP_ADAPTER_CMD missing or stub returns error.",
-        "Remove tests relying on modulation/rule generation from v0.1."
+        "Update .env.example to include MCP_ADAPTER_CMD, SYN_SCHEMAS_DIR, LABS_EXPERIMENTS_DIR, and stub MCP_HOST/MCP_PORT entries to satisfy init_labs.json expectations.",
+        "Clarify in README.md that MCP validation is STDIO-only, but MCP_HOST/PORT are retained as no-op placeholders for compatibility.",
+        "Remove unused SYN_EXAMPLES_DIR or document as deprecated."
       ]
     }
   ],
   "constraints": {
     "rules": [
       "No new dependencies beyond Python stdlib.",
-      "Use subprocess.Popen for STDIO bridge.",
-      "All tests must pass after patch.",
-      "Docs and README must match code, including the System Context diagram."
+      "GeneratorAgent must always produce schema-valid assets via AssetAssembler.",
+      "Tests must pass after patch, including prompt_experiment pipeline.",
+      "Docs, version strings, and .env must be consistent with v0.1 spec."
     ]
   },
   "exit_criteria": [
-    "All MCP calls in Labs go over STDIO with no TCP remnants.",
-    "Stub MCP adapter provided for dev/CI; documented in README.",
-    "Modulation/rule generators excluded from v0.1 flow, deferred to v0.2+.",
-    "labs_spec.md and README.md synced with implementation, diagram included.",
-    "Audit passes with zero divergences."
+    "GeneratorAgent.propose returns full canonical assets, not metadata-only.",
+    "Prompt experiment harness validates full assets successfully via MCP.",
+    "All provenance/version markers aligned to v0.1.",
+    "README.md, labs_spec.md, and .env.example consistent with implementation.",
+    "Audit passes with no divergences remaining for v0.1 scope."
   ]
 }
