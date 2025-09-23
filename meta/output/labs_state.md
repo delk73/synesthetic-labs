@@ -4,14 +4,13 @@
 
 The `synesthetic-labs` repository is in a well-defined state for v0.1. The core generator and critic agents are implemented, tested, and documented. The project uses a containerized environment for reproducible testing and execution, with a clear entry point via `test.sh`. The MCP integration is handled via a STDIO bridge, with a stub for local testing. Logging is structured and directed to `meta/output/labs/`. The documentation is mostly accurate, with some minor divergences.
 
-## Top gaps & fixes (3–5 bullets)
+## Top gaps & fixes (3-5 bullets)
 
-*   **Missing `init_labs.json`**: The audit request refers to `init_labs.json`, but this file is not present in the repository.
 *   **Divergence in canonical baseline**: The `ControlGenerator` and `MetaGenerator` implementations provide a slightly expanded set of controls and tags compared to the `docs/labs_spec.md`.
 *   **Incomplete test for MCP failure**: The tests for MCP failure handling are present but could be more comprehensive by testing more failure modes of the MCP adapter.
 *   **README mentions non-existent `.env.example`**: The `README.md` refers to an `.env.example` file which does not exist in the repository.
 
-## Alignment with labs_spec.md and init_labs.json
+## Alignment with labs_spec.md
 
 | Spec item                               | Status    | Evidence                                                                                             |
 | --------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------- |
@@ -25,7 +24,6 @@ The `synesthetic-labs` repository is in a well-defined state for v0.1. The core 
 | Haptic: Generic device                  | Present   | `labs/generator/haptic.py`                                                                           |
 | Controls: basic mouse mapping           | Divergent | `labs/generator/control.py` includes mappings for `u_px` and `u_py`.                                 |
 | Meta: `category=multimodal`, `tags=["circle","baseline"]` | Divergent | `labs/generator/meta.py` includes additional tags.                                                   |
-| `init_labs.json`                        | Missing   | File not found in the repository.                                                                    |
 
 ## Generator implementation
 
@@ -105,5 +103,4 @@ The `synesthetic-labs` repository is in a well-defined state for v0.1. The core 
 
 *   **Align on baseline**: Decide whether to adopt the expanded baseline and update `docs/labs_spec.md` or to prune the implementation to match the spec.
 *   **Create `.env.example`**: Create the `.env.example` file and document the environment variables there, as mentioned in the `README.md`.
-*   **Add `init_labs.json`**: If `init_labs.json` is a required file, it should be added to the repository.
 *   **Improve MCP failure tests**: Add more tests to cover different MCP adapter failure scenarios.
