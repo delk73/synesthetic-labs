@@ -1,0 +1,12 @@
+# make sure you’re in your labs repo and schemas311 env
+cd ~/src/synesthetic-labs
+conda activate schemas311
+
+# set MCP adapter command to target your running container
+export MCP_ADAPTER_CMD="docker exec -i synesthetic-mcp-serve-run-3e117f200ea8 python -m mcp"
+
+# enforce strict mode (fail if MCP is unreachable)
+export LABS_FAIL_FAST=1
+
+# now generate a test asset end-to-end
+python -m labs.cli generate "make a circle harmony asset"
