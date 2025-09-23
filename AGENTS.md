@@ -1,5 +1,7 @@
 # Agent Snapshot (v0.1 Audit)
 
+*This snapshot was verified during the v0.1 audit. The implementation aligns with the documented behaviors below.*
+
 ## GeneratorAgent
 - `propose` delegates to AssetAssembler so every prompt yields shader/tone/haptic/control/meta sections plus provenance (labs/agents/generator.py:37, labs/generator/assembler.py:38, tests/test_generator.py:24).
 - `record_experiment` appends validation outcomes with timestamps and persisted paths to the generator log stream (labs/agents/generator.py:64, labs/logging.py:10, tests/test_generator.py:40).
@@ -14,6 +16,7 @@
 - Validates required asset fields before invoking MCP, surfacing structural issues immediately (labs/agents/critic.py:41, tests/test_critic.py:23).
 - Lazily builds and caches the STDIO validator, so repeated reviews reuse the same MCP subprocess wiring (labs/agents/critic.py:48, labs/agents/critic.py:61).
 - Logs review payloads, including MCP responses and outages, to `meta/output/labs/critic.jsonl` (labs/agents/critic.py:12, labs/agents/critic.py:66, tests/test_critic.py:48).
+- Supports a `LABS_FAIL_FAST` environment variable to control strict (default) vs. relaxed validation when the MCP is unavailable (labs/agents/critic.py:21, tests/test_critic.py:130).
 
 ## MCP Bridge & CLI
 - `build_validator_from_env` enforces `MCP_ADAPTER_CMD` and forwards optional schema paths before spawning the STDIO adapter (labs/mcp_stdio.py:84, labs/mcp_stdio.py:93, tests/test_critic.py:95).

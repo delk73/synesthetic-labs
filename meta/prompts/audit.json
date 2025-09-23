@@ -1,6 +1,6 @@
 {
   "task": "Audit synesthetic-labs repo state (v0.1 Generator + Critic, with MCP dependency)",
-  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md and init_labs.json. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot.",
+  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot.",
   "constraints": {
     "style": "deterministic, terse, Markdown headings with bullets/tables",
     "rules": [
@@ -17,8 +17,8 @@
     ],
     "sections": [
       "Summary of repo state",
-      "Top gaps & fixes (3–5 bullets)",
-      "Alignment with labs_spec.md and init_labs.json (table: Spec item → Status → Evidence)",
+      "Top gaps & fixes (3-5 bullets)",
+      "Alignment with labs_spec.md (table: Spec item → Status → Evidence)",
       "Generator implementation (table: Component → Status → Evidence)",
       "Critic implementation (table: Responsibility → Status → Evidence)",
       "Assembler / Wiring step (bullets: parameter index, dangling reference pruning, provenance)",
@@ -64,6 +64,6 @@
     "Dependencies mapped to imports in a table with evidence",
     "Environment variables listed with defaults and behavior when MCP unreachable",
     "Logging practices verified (structured JSONL, provenance, meta/output/)",
-    "README cross-checked against docs/labs_spec.md and init_labs.json"
+    "README cross-checked against docs/labs_spec.md"
   ]
 }

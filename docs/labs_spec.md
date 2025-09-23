@@ -18,7 +18,6 @@
   ```bash
   python -m labs.cli generate "circle baseline"
   ```
-* Publish the initialization prompt as `meta/prompts/init_labs.json` for downstream tooling.
 
 ## Non-Scope (future work)
 
