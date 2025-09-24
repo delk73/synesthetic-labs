@@ -1,6 +1,6 @@
 # Synesthetic Labs
 
-Synesthetic Labs delivers the v0.1 generator → critic workflow with deterministic Python agents and a container harness that mirrors CI.
+Synesthetic Labs delivers the v0.2 generator → critic workflow with deterministic Python agents, Unix socket MCP transport, and a patch lifecycle stub exercised via the CLI.
 
 ## Quickstart
 
@@ -20,27 +20,37 @@ Run `python -m labs.cli --help` to explore the CLI:
 
 * `python -m labs.cli generate "describe the asset"`
 * `python -m labs.cli critique '{"id": "abc", ...}'`
+* `python -m labs.cli preview '{"id": "asset"}' '{"id": "patch", "updates": {...}}'`
+* `python -m labs.cli apply '{"id": "asset"}' '{"id": "patch", "updates": {...}}'`
+* `python -m labs.cli rate patch-id '{"score": 0.9}' --asset-id asset-id`
 
-Configure the STDIO MCP adapter by exporting `MCP_ADAPTER_CMD`. For local
-development and CI you can rely on the bundled stub:
+Configure the MCP adapter transport using environment variables:
 
 ```bash
+# STDIO transport (default)
+export MCP_ENDPOINT=stdio
 export MCP_ADAPTER_CMD="python -m labs.mcp_stub"
+
+# Unix socket transport
+export MCP_ENDPOINT=socket
+export MCP_SOCKET_PATH="/tmp/synesthetic.sock"
+python -m labs.mcp --path "$MCP_SOCKET_PATH"  # launches the bundled adapter once
 ```
 
 Optional variables such as `SYN_SCHEMAS_DIR`, `LABS_EXPERIMENTS_DIR`, and
 `LABS_FAIL_FAST` tune validation and persistence behavior. `LABS_FAIL_FAST`
 defaults to strict (`1`) so CLI and experiment runs fail when the MCP adapter
 is unavailable; set it to `0`/`false` to log "Validation skipped" and continue
-in relaxed mode. `MCP_HOST` and `MCP_PORT` remain in `.env.example` as
-compatibility placeholders; MCP validation is strictly STDIO-based in v0.1.
-When validation succeeds, the CriticAgent records the MCP response for
-provenance. `.env.example` documents the supported environment variables.
+in relaxed mode. The transport helpers enforce a 1 MiB payload cap and
+`normalize_resource_path` rejects path traversal in schema or socket
+configurations. When the patch lifecycle commands run, the critic logs patch
+reviews and rating stubs to `meta/output/labs/critic.jsonl` while the patch
+module appends lifecycle events to `meta/output/labs/patches.jsonl`.
 
 ```text
-+-------------+      STDIO JSON payload      +----------------------+      Schema bundle / backend
++-------------+      STDIO / Socket JSON      +----------------------+      Schema bundle / backend
 | Labs (CLI & | ============================> | MCP Adapter (STDIO) | ===========================>
-| Experiments)| <============================ |    e.g. mcp_stub     |
+| Experiments)| <============================ |    or socket mode    |
 +-------------+                               +----------------------+
 ```
 
@@ -53,4 +63,3 @@ and rule bundle generators remain out of scope for this release.
 * `docs/labs_spec.md` — canonical scope for this release
 * `AGENTS.md` — generator and critic provenance
 * `meta/prompts/` — canonical prompt set and audit requests
-

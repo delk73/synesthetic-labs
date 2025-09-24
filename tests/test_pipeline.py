@@ -185,3 +185,68 @@ def test_cli_generate_relaxed_mode_skips_validation(monkeypatch, tmp_path, capsy
 
     persisted_files = list(experiments_dir.glob("*.json"))
     assert len(persisted_files) == 1
+
+
+def test_cli_preview_command(monkeypatch, capsys) -> None:
+    asset = {"id": "asset-10"}
+    patch = {"id": "patch-10"}
+
+    def fake_preview(payload_asset, payload_patch):
+        assert payload_asset == asset
+        assert payload_patch == patch
+        return {"action": "preview", "asset_id": asset["id"], "patch_id": patch["id"]}
+
+    monkeypatch.setattr(cli, "preview_patch", fake_preview)
+
+    exit_code = cli.main(["preview", json.dumps(asset), json.dumps(patch)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    output = json.loads(captured.out)
+    assert output["patch_id"] == patch["id"]
+
+
+def test_cli_apply_command(monkeypatch, capsys) -> None:
+    asset = {"id": "asset-20"}
+    patch = {"id": "patch-20"}
+
+    def fake_build_validator_optional():
+        return lambda payload: {"status": "ok", "asset_id": payload["id"]}
+
+    def fake_apply(payload_asset, payload_patch, critic):
+        assert payload_asset == asset
+        assert payload_patch == patch
+        assert critic is not None
+        return {"asset": payload_asset, "review": {"ok": True}}
+
+    monkeypatch.setattr(cli, "_build_validator_optional", fake_build_validator_optional)
+    monkeypatch.setattr(cli, "apply_patch", fake_apply)
+
+    exit_code = cli.main(["apply", json.dumps(asset), json.dumps(patch)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    output = json.loads(captured.out)
+    assert output["review"]["ok"] is True
+
+
+def test_cli_rate_command(monkeypatch, capsys) -> None:
+    rating = {"score": 0.9}
+
+    recorded = {}
+
+    def fake_rate(patch_id, payload_rating, asset_id=None):
+        recorded["patch_id"] = patch_id
+        recorded["rating"] = payload_rating
+        recorded["asset_id"] = asset_id
+        return {"action": "rate", "patch_id": patch_id, "rating": payload_rating, "asset_id": asset_id}
+
+    monkeypatch.setattr(cli, "rate_patch", fake_rate)
+
+    exit_code = cli.main(["rate", "patch-30", json.dumps(rating), "--asset-id", "asset-30"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    output = json.loads(captured.out)
+    assert output["rating"] == rating
+    assert recorded["asset_id"] == "asset-30"

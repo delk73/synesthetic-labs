@@ -1,12 +1,22 @@
-"""STDIO-based MCP validation bridge."""
+"""MCP validation bridges supporting STDIO and Unix socket transports."""
 
 from __future__ import annotations
 
-import json
 import os
 import shlex
+import socket
 import subprocess
 from typing import Any, Callable, Dict, Mapping, MutableMapping, Optional, Sequence
+
+from labs.core import normalize_resource_path
+from labs.transport import (
+    InvalidPayloadError,
+    PayloadTooLargeError,
+    decode_payload,
+    encode_payload,
+    read_message,
+    write_message,
+)
 
 
 class MCPUnavailableError(RuntimeError):
@@ -39,7 +49,12 @@ class StdioMCPValidator:
     def validate(self, asset: Dict[str, Any]) -> Dict[str, Any]:
         """Send *asset* to the MCP adapter and return the validation payload."""
 
-        request = json.dumps({"action": "validate", "asset": asset}) + "\n"
+        try:
+            request_bytes = encode_payload({"action": "validate", "asset": asset})
+        except PayloadTooLargeError as exc:
+            raise MCPUnavailableError(f"MCP request payload too large: {exc}") from exc
+
+        request = request_bytes.decode("utf-8")
         try:
             process = subprocess.Popen(  # noqa: S603 - user-controlled command expected
                 self._command,
@@ -69,37 +84,86 @@ class StdioMCPValidator:
         if not lines:
             raise MCPUnavailableError("MCP adapter returned no output")
 
-        response_text = lines[-1]
+        response_line = lines[-1] + "\n"
         try:
-            payload = json.loads(response_text)
-        except json.JSONDecodeError as exc:
-            snippet = response_text[:200]
-            raise MCPUnavailableError(f"Invalid MCP response: {exc}: {snippet}") from exc
+            payload = decode_payload(response_line.encode("utf-8"))
+        except (PayloadTooLargeError, InvalidPayloadError) as exc:
+            raise MCPUnavailableError(f"Invalid MCP response: {exc}") from exc
 
-        if not isinstance(payload, dict):
-            raise MCPUnavailableError("MCP response was not a JSON object")
         return payload
 
 
+class SocketMCPValidator:
+    """Invoke an MCP adapter over a Unix domain socket."""
+
+    def __init__(self, path: str, *, timeout: float = 10.0) -> None:
+        if not path:
+            raise ValueError("path must be a non-empty string")
+        self._path = path
+        self._timeout = timeout
+
+    def validate(self, asset: Dict[str, Any]) -> Dict[str, Any]:
+        """Send *asset* to the MCP socket server and return the validation payload."""
+
+        try:
+            payload = {"action": "validate", "asset": asset}
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(self._timeout)
+                client.connect(self._path)
+                write_message(client, payload)
+                response_bytes = read_message(client)
+        except PayloadTooLargeError as exc:
+            raise MCPUnavailableError(f"MCP request payload too large: {exc}") from exc
+        except (FileNotFoundError, socket.timeout) as exc:
+            raise MCPUnavailableError(f"MCP socket unavailable: {exc}") from exc
+        except ConnectionError as exc:
+            raise MCPUnavailableError(f"MCP socket connection error: {exc}") from exc
+        except OSError as exc:
+            raise MCPUnavailableError(f"MCP socket failure: {exc}") from exc
+
+        try:
+            response = decode_payload(response_bytes)
+        except (PayloadTooLargeError, InvalidPayloadError) as exc:
+            raise MCPUnavailableError(f"Invalid MCP response: {exc}") from exc
+        return response
+
+
 def build_validator_from_env(*, timeout: float = 10.0) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
-    """Construct a STDIO MCP validator from environment configuration."""
+    """Construct an MCP validator from environment configuration."""
 
-    command_value = os.getenv("MCP_ADAPTER_CMD")
-    if not command_value:
-        raise MCPUnavailableError("MCP_ADAPTER_CMD environment variable is required")
+    endpoint = os.getenv("MCP_ENDPOINT", "stdio").strip().lower()
 
-    command = shlex.split(command_value)
-    env_overrides: Dict[str, str] = {}
-    schemas_dir = os.getenv("SYN_SCHEMAS_DIR")
-    if schemas_dir:
-        env_overrides["SYN_SCHEMAS_DIR"] = schemas_dir
+    if endpoint in {"stdio", ""}:
+        command_value = os.getenv("MCP_ADAPTER_CMD")
+        if not command_value:
+            raise MCPUnavailableError("MCP_ADAPTER_CMD environment variable is required")
 
-    validator = StdioMCPValidator(command, env=env_overrides or None, timeout=timeout)
-    return validator.validate
+        command = shlex.split(command_value)
+        env_overrides: Dict[str, str] = {}
+        schemas_dir = os.getenv("SYN_SCHEMAS_DIR")
+        if schemas_dir:
+            env_overrides["SYN_SCHEMAS_DIR"] = normalize_resource_path(schemas_dir)
+
+        validator = StdioMCPValidator(command, env=env_overrides or None, timeout=timeout)
+        return validator.validate
+
+    if endpoint == "socket":
+        socket_path_raw = os.getenv("MCP_SOCKET_PATH")
+        socket_path = normalize_resource_path(socket_path_raw) if socket_path_raw else None
+        if not socket_path:
+            raise MCPUnavailableError(
+                "MCP_SOCKET_PATH environment variable is required when MCP_ENDPOINT=socket"
+            )
+
+        validator = SocketMCPValidator(socket_path, timeout=timeout)
+        return validator.validate
+
+    raise MCPUnavailableError(f"Unsupported MCP_ENDPOINT value: {endpoint}")
 
 
 __all__ = [
     "MCPUnavailableError",
+    "SocketMCPValidator",
     "StdioMCPValidator",
     "build_validator_from_env",
 ]

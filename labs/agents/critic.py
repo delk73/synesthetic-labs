@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import os
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from labs.logging import log_jsonl
 from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
@@ -42,7 +42,7 @@ class CriticAgent:
         self.log_path = log_path
         self._logger = logging.getLogger(self.__class__.__name__)
 
-    def review(self, asset: Dict[str, Any]) -> Dict[str, Any]:
+    def review(self, asset: Dict[str, Any], *, patch_id: Optional[str] = None) -> Dict[str, Any]:
         """Inspect *asset* and return a review payload.
 
         Validation is attempted through the configured MCP validator. When
@@ -127,6 +127,34 @@ class CriticAgent:
         if validation_reason is not None:
             review["validation_reason"] = validation_reason
 
+        if patch_id is not None:
+            review["patch_id"] = patch_id
+
         self._logger.info("Completed review for asset %s", asset.get("id"))
         log_jsonl(self.log_path, review)
         return review
+
+    def record_rating(
+        self,
+        *,
+        patch_id: str,
+        rating: Mapping[str, Any],
+        asset_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Log a rating stub for *patch_id* linked to an optional *asset_id*."""
+
+        if not patch_id:
+            raise ValueError("patch_id must be a non-empty string")
+
+        timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
+        record = {
+            "type": "rating",
+            "patch_id": patch_id,
+            "asset_id": asset_id,
+            "rating": dict(rating),
+            "recorded_at": timestamp,
+        }
+
+        self._logger.info("Recorded rating for patch %s", patch_id)
+        log_jsonl(self.log_path, record)
+        return record
