@@ -1,6 +1,6 @@
 {
-  "task": "Audit synesthetic-labs repo state (v0.1 Generator + Critic, with MCP dependency)",
-  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot.",
+  "task": "Audit synesthetic-labs repo state (v0.2 features with MCP dependency)",
+  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md v0.2. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot.",
   "constraints": {
     "style": "deterministic, terse, Markdown headings with bullets/tables",
     "rules": [
@@ -11,8 +11,8 @@
       "Recommendations must cite evidence (file path + line/section) and be actionable code/test/doc changes only",
       "Always write the full audit report directly to meta/output/labs_state.md (overwrite if exists, non-empty)",
       "Always write the updated agent snapshot directly to AGENTS.md (overwrite if exists, non-empty)",
-      "Labs MUST call MCP for schema validation; any local fallback is a non-compliant divergence",
-      "Labs MUST log generator, critic, and MCP interactions; silent failures are non-compliant",
+      "Labs MUST call MCP for schema validation via STDIO or socket; any local fallback is a non-compliant divergence",
+      "Labs MUST log generator, critic, patch, and MCP interactions; silent failures are non-compliant",
       "Audit is incomplete unless both output files are created or overwritten with non-empty content"
     ],
     "sections": [
@@ -22,11 +22,12 @@
       "Generator implementation (table: Component → Status → Evidence)",
       "Critic implementation (table: Responsibility → Status → Evidence)",
       "Assembler / Wiring step (bullets: parameter index, dangling reference pruning, provenance)",
-      "MCP integration (bullets: validation calls, failure handling, strict vs relaxed mode)",
+      "Patch lifecycle (bullets: preview, apply, rate stubs, logging)",
+      "MCP integration (bullets: STDIO and socket validation, failure handling, strict vs relaxed mode)",
       "Test coverage (table: Feature → Tested? → Evidence)",
       "Dependencies and runtime (table: Package → Used in → Required/Optional)",
       "Environment variables (bullets: name, default, behavior when MCP unreachable)",
-      "Logging (bullets: structured JSONL, provenance fields, location under meta/output/)",
+      "Logging (bullets: structured JSONL, provenance fields, patch/rating fields, location under meta/output/)",
       "Documentation accuracy (bullets: README vs. labs_spec.md)",
       "Detected divergences",
       "Recommendations"
@@ -57,13 +58,13 @@
   "exit_criteria": [
     "meta/output/labs_state.md is written and non-empty",
     "AGENTS.md snapshot updated with current audit findings",
-    "Spec features mapped to Present / Missing / Divergent in table form",
-    "Generator, Critic, and Assembler behavior explicitly verified",
-    "MCP validation integration checked (strict vs relaxed mode)",
+    "Spec v0.2 features mapped to Present / Missing / Divergent in table form",
+    "Generator, Critic, Assembler, and Patch lifecycle explicitly verified",
+    "MCP validation integration checked for STDIO and socket, strict vs relaxed mode",
     "Test coverage summarized in a table with evidence",
     "Dependencies mapped to imports in a table with evidence",
     "Environment variables listed with defaults and behavior when MCP unreachable",
-    "Logging practices verified (structured JSONL, provenance, meta/output/)",
+    "Logging practices verified (structured JSONL, provenance, patch/rating, meta/output/)",
     "README cross-checked against docs/labs_spec.md"
   ]
 }

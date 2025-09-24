@@ -1,47 +1,69 @@
 {
-  "task": "Implement LABS_FAIL_FAST and finalize v0.1 alignment",
-  "objective": "Add the LABS_FAIL_FAST toggle, update documentation to reflect delivered CriticAgent and toggle semantics, and resolve divergences between canonical vs expanded controls/meta.",
+  "task": "Implement v0.2 features and finalize alignment",
+  "objective": "Deliver socket transport, patch lifecycle orchestration, ratings stub, container hardening, and update documentation/tests to reflect v0.2 scope.",
   "changes": [
     {
-      "id": "fail_fast_toggle",
-      "description": "Implement LABS_FAIL_FAST environment variable to support strict vs relaxed validation.",
+      "id": "socket_transport",
+      "description": "Add Unix socket transport to MCP adapter.",
       "edits": [
-        "Update labs/agents/critic.py: check LABS_FAIL_FAST (default true). If false, log 'validation skipped' and continue instead of raising MCPUnavailableError.",
-        "Update labs/cli.py: respect LABS_FAIL_FAST when MCP_ADAPTER_CMD is missing/unavailable. Exit non-zero only if strict mode is active.",
-        "Add tests in tests/test_critic.py and tests/test_pipeline.py to cover both strict and relaxed behaviors."
+        "Add labs/mcp/socket_main.py: implement AF_UNIX single-client loop with 1 MiB guard.",
+        "Update labs/mcp/__main__.py: branch on MCP_ENDPOINT=socket.",
+        "Update labs/transport.py: factor common framing helpers.",
+        "Add tests/test_socket.py: cover request/response, payload cap, unlink on shutdown."
+      ]
+    },
+    {
+      "id": "patch_lifecycle",
+      "description": "Introduce patch preview/apply/rate stubs.",
+      "edits": [
+        "Add labs/patches.py: preview/apply functions wrapping MCP validation.",
+        "Update labs/cli.py: new subcommands `preview`, `apply`, `rate`.",
+        "Update labs/agents/critic.py: integrate patch validation before apply.",
+        "Add tests/test_patches.py: cover preview/apply/rate stubs."
+      ]
+    },
+    {
+      "id": "ratings_stub",
+      "description": "Critic agent records rating stubs.",
+      "edits": [
+        "Update labs/agents/critic.py: write rating entries into logs.",
+        "Extend meta/output/labs/ JSONL format with rating field.",
+        "Add tests/test_ratings.py: confirm ratings stub logged."
+      ]
+    },
+    {
+      "id": "container_hardening",
+      "description": "Harden container execution to run as non-root and enforce path traversal guards.",
+      "edits": [
+        "Dockerfile: add non-root user and switch USER.",
+        "labs/core.py: normalize schema/example paths and reject traversal.",
+        "Add tests/test_path_guard.py: assert `..` and absolute paths rejected."
       ]
     },
     {
       "id": "docs_refresh",
-      "description": "Update documentation to reflect delivered CriticAgent and fail-fast toggle.",
+      "description": "Update docs to reflect v0.2 scope.",
       "edits": [
-        "Update docs/labs_spec.md: move CriticAgent from 'future work' to 'implemented in v0.1'.",
-        "Add section describing LABS_FAIL_FAST semantics (strict = exit non-zero, relaxed = log skip + continue).",
-        "Update README.md to include LABS_FAIL_FAST in environment variable list."
-      ]
-    },
-    {
-      "id": "canonicalization",
-      "description": "Resolve divergence between spec baseline and code for controls and meta tags.",
-      "edits": [
-        "Decide direction: either (a) prune ControlGenerator back to two shader mappings and MetaGenerator tags to ['circle','baseline'], or (b) bless expanded sets and update docs/tests accordingly.",
-        "If pruning: update labs/generator/control.py and labs/generator/meta.py to canonical sets, and adjust tests/test_generator_components.py expectations.",
-        "If blessing expansion: update docs/labs_spec.md and related tests to include expanded taxonomy and detune mapping."
+        "docs/labs_spec.md: add v0.2 scope, baseline, validation, logging, exit criteria.",
+        "README.md: add MCP socket usage, patch lifecycle CLI commands, LABS_FAIL_FAST semantics.",
+        "AGENTS.md: snapshot updated with generator, critic, patch lifecycle roles."
       ]
     }
   ],
   "constraints": {
     "rules": [
       "No new dependencies beyond Python stdlib.",
-      "LABS_FAIL_FAST must default to strict (true) for CI reproducibility.",
-      "Docs and tests must reflect final decision on canonical vs expanded sets.",
+      "Socket and STDIO transports must both enforce 1 MiB cap.",
+      "Patch lifecycle may be stubbed but must log structured outputs.",
       "All tests must pass after patch."
     ]
   },
   "exit_criteria": [
-    "LABS_FAIL_FAST toggle implemented and tested in both strict and relaxed modes.",
-    "docs/labs_spec.md and README.md reflect CriticAgent as implemented and describe LABS_FAIL_FAST.",
-    "ControlGenerator and MetaGenerator are aligned with either canonical baseline or updated spec/docs for expansion.",
-    "Audit passes with no remaining divergences for v0.1."
+    "MCP socket transport implemented and tested.",
+    "Patch preview/apply/rate CLI functional and logged.",
+    "Critic logs rating stubs.",
+    "Container runs as non-root with path guards enforced.",
+    "Docs and README updated for v0.2 scope.",
+    "Audit passes with no remaining divergences for v0.2."
   ]
 }
