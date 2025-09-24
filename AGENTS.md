@@ -1,40 +1,36 @@
-# Agent Snapshot (v0.2 Audit)
+# Agent Snapshot (v0.2 Alignment)
 
-*Audit performed against docs/labs_spec.md v0.2; findings grounded in visible source, tests, and docs.*
+*Transport, patch lifecycle, and rating stubs verified against visible source, tests, and docs.*
 
 ## GeneratorAgent
-- `propose` delegates to `AssetAssembler.generate` and appends each asset to the generator JSONL sink (labs/agents/generator.py:48; labs/agents/generator.py:60).
-- Provenance annotates generator version `v0.1`, preserving deterministic seeds in the logged payload (labs/agents/generator.py:29; labs/agents/generator.py:54).
-- `record_experiment` persists validation outcomes with timestamps and optional experiment path references (labs/agents/generator.py:78; labs/agents/generator.py:98).
+- `propose` assembles full assets and logs each proposal to the generator stream (labs/agents/generator.py:37, labs/agents/generator.py:60).
+- Deterministic provenance annotates generator version/seed for downstream traceability (labs/agents/generator.py:29, labs/agents/generator.py:54).
+- `record_experiment` links validation outcomes back to persisted experiment paths (labs/agents/generator.py:78, labs/agents/generator.py:98).
 
 ## AssetAssembler
-- Clones component generators and collects a parameter index across shader/tone/haptic sections (labs/generator/assembler.py:50; labs/generator/assembler.py:56).
-- Prunes control mappings to parameters present in that index to avoid dangling references (labs/generator/assembler.py:104).
-- Emits only shader/tone/haptic/control/meta payloads; modulation and rule bundle stubs remain excluded (labs/generator/assembler.py:62; tests/test_generator_assembler.py:35).
+- Collects shader/tone/haptic parameters and prunes control mappings to known surfaces (labs/generator/assembler.py:56, labs/generator/assembler.py:104).
+- Emits provenance with assembled timestamp and seed to keep validated runs reproducible (labs/generator/assembler.py:67).
 
 ## CriticAgent
-- Verifies required asset keys before invoking MCP validation and lazily caches the validator callback (labs/agents/critic.py:33; labs/agents/critic.py:68).
-- Supports strict vs relaxed validation via the `LABS_FAIL_FAST` environment toggle, with coverage in tests (labs/agents/critic.py:62; tests/test_critic.py:129).
-- Logs review payloads, MCP responses, and validation reasons to `meta/output/labs/critic.jsonl` (labs/agents/critic.py:118; labs/agents/critic.py:130).
-- Ratings stubs mandated in v0.2 remain unimplemented (docs/labs_spec.md:74; labs/agents/critic.py:118).
+- `review` accepts optional `patch_id`, forwarding assets through the configured MCP validator while logging results (labs/agents/critic.py:45, labs/agents/critic.py:118).
+- `record_rating` writes structured rating stubs with patch/asset linkage to `critic.jsonl` (labs/agents/critic.py:137, labs/agents/critic.py:159).
+- Fail-fast vs. relaxed behavior continues to hinge on `LABS_FAIL_FAST` (labs/agents/critic.py:62).
 
-## MCP Bridge & CLI
-- `build_validator_from_env` enforces `MCP_ADAPTER_CMD` and forwards optional schema paths to the STDIO adapter (labs/mcp_stdio.py:84; labs/mcp_stdio.py:93).
-- CLI `generate`/`critique` flow wraps generator + critic agents and persists validated assets when reviews pass (labs/cli.py:70; tests/test_pipeline.py:92).
-- Unix socket transport and patch lifecycle commands are not yet exposed (docs/labs_spec.md:72; labs/cli.py:70).
+## MCP Bridge & Transports
+- Shared framing enforces a 1 MiB cap across transports (`encode_payload`/`read_message`) (labs/transport.py:27, labs/transport.py:53).
+- `build_validator_from_env` normalizes schema and socket paths before constructing STDIO or Unix socket validators (labs/mcp_stdio.py:131, labs/mcp_stdio.py:158).
+- `SocketMCPValidator` drives AF_UNIX handshakes and surfaces connection/time-out failures consistently (labs/mcp_stdio.py:96, labs/mcp_stdio.py:122).
+- `python -m labs.mcp` now dispatches to the socket adapter when `MCP_ENDPOINT=socket` (labs/mcp/__main__.py:12).
+- `labs/mcp/socket_main.serve_once` guards payload size, handles unlink semantics, and reuses the stub response (labs/mcp/socket_main.py:20, labs/mcp/socket_main.py:41).
 
-## Prompt Experiment Harness
-- Batch runner loads prompts, reuses the generator/critic pair, and saves per-run assets plus JSONL summaries (labs/experiments/prompt_experiment.py:41; labs/experiments/prompt_experiment.py:68).
-- Validator helper still assumes the STDIO adapter path without socket fallback (labs/experiments/prompt_experiment.py:32).
+## Patch Lifecycle
+- `preview_patch`, `apply_patch`, and `rate_patch` log structured lifecycle entries to `patches.jsonl` and reuse the critic for validation/ratings (labs/patches.py:18, labs/patches.py:65, labs/patches.py:78).
+- CLI subcommands `preview`, `apply`, and `rate` expose the lifecycle, sharing the validator resolution path with generate/critique (labs/cli.py:82, labs/cli.py:150, labs/cli.py:172).
 
 ## Logging
-- `log_jsonl` ensures log directories exist and writes sorted JSON lines for downstream tooling (labs/logging.py:10).
-- Generator and critic agents default to log sinks under `meta/output/labs/` (labs/agents/generator.py:12; labs/agents/critic.py:13).
-- Patch/rating log streams required for v0.2 have not been added (docs/labs_spec.md:91; labs/agents/critic.py:118).
+- Generator, critic, and patch lifecycle logs remain under `meta/output/labs/`, with rating stubs recorded in the critic stream (labs/agents/generator.py:12, labs/agents/critic.py:13, labs/patches.py:11).
+- Unix socket adapter teardown unlinks the socket path after each request, preventing stale endpoints (labs/mcp/socket_main.py:42).
 
-## Known gaps vs v0.2 spec
-- MCP Unix socket transport absent from runtime and tests (docs/labs_spec.md:72; labs/mcp_stdio.py:1).
-- Patch lifecycle preview/apply/rate orchestration and logging missing (docs/labs_spec.md:73; labs/lifecycle/__init__.py:1).
-- CriticAgent does not emit ratings stubs (docs/labs_spec.md:74; labs/agents/critic.py:118).
-- Modulation and rule bundle stubs are not wired into assembled assets (docs/labs_spec.md:80; labs/generator/assembler.py:62).
-- Container image remains root-based without the required hardening (docs/labs_spec.md:75; Dockerfile:1).
+## Container & Path Guards
+- Docker image now provisions a non-root `labs` user and runs tests under that account (Dockerfile:3, Dockerfile:11).
+- `normalize_resource_path` rejects traversal attempts before forwarding schema or socket paths to transports (labs/core.py:12, labs/mcp_stdio.py:145).

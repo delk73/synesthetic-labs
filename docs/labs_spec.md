@@ -70,7 +70,7 @@
 ## Scope (v0.2)
 
 * Add **Unix socket transport** for MCP alongside STDIO.
-* Implement **patch lifecycle orchestration**: preview, apply, rate.
+* Implement **patch lifecycle orchestration**: preview, apply, rate via CLI commands.
 * Expand critic agent to record **ratings stub**.
 * Harden container execution: **non-root user** and path traversal guard.
 * Align documentation and tests to cover both STDIO and socket modes.
@@ -88,7 +88,7 @@
 
 ## Logging (v0.2)
 
-* Extend logs with **patch operations** and **rating stubs**.
+* Extend logs with **patch operations** and **rating stubs** recorded in both the patch log stream and critic log.
 * Maintain JSONL under `meta/output/labs/`.
 
 ## Tests (v0.2)
