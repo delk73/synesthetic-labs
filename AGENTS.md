@@ -1,33 +1,31 @@
 # Agent Snapshot (v0.3.1 External Generators Audit)
 
 ## GeneratorAgent
-- Assembles canonical shader/tone/haptic/control/meta/modulation/rule sections with provenance and deterministic IDs when seeded (`labs/generator/assembler.py:56`, `labs/generator/assembler.py:75`).
-- Logs generated assets and experiment records to `meta/output/labs/generator.jsonl` for traceability (`labs/agents/generator.py:70`, `labs/agents/generator.py:98`).
+- Uses `AssetAssembler` to emit canonical shader/tone/haptic/control/meta/modulation/rule sections with deterministic IDs and seeded timestamps (`labs/generator/assembler.py:44`, `tests/test_determinism.py:10`).
+- Logs generated assets and validated experiment records to `meta/output/labs/generator.jsonl` with provenance metadata for downstream analyses (`labs/agents/generator.py:60`, `tests/test_pipeline.py:137`).
 
 ## ExternalGenerator
-- Implements retry/backoff with attempt traces, provenance injection, and CLI wiring for Gemini/OpenAI engines (`labs/generator/external.py:90`, `labs/generator/external.py:168`, `labs/cli.py:108`).
-- Success paths persist MCP results plus optional `failure.reason/detail` for validation misses; divergence: `record_failure` omits structured reason/detail for transport outages (`labs/generator/external.py:189`, `labs/generator/external.py:197`).
+- Implements retry/backoff, provenance injection, and mock/live transport wiring for Gemini/OpenAI engines (`labs/generator/external.py:75`, `labs/generator/external.py:332`).
+- Persists MCP-reviewed runs with attempt traces and structured `failure.reason/detail` when validation or transport errors occur (`labs/generator/external.py:168`, `tests/test_external_generator.py:40`).
 
 ## CriticAgent
-- Validates required keys, invokes MCP transports, and emits structured `validation_error` data with reason/detail (`labs/agents/critic.py:58`, `labs/agents/critic.py:140`).
-- Divergence: relaxed mode skips MCP invocation entirely when `_build_validator_optional` returns `None` (`labs/agents/critic.py:100`, `tests/test_critic.py:153`).
-- Records rating stubs for downstream RLHF hooks (`labs/agents/critic.py:170`, `tests/test_patches.py:54`).
+- Checks required asset fields, invokes MCP validation (strict and relaxed modes), and records structured review payloads with `validation_reason` and `validation_error` metadata (`labs/agents/critic.py:58`, `tests/test_critic.py:53`).
+- Provides patch rating stubs for RLHF hooks by logging rating records via the shared JSONL sink (`labs/agents/critic.py:171`, `tests/test_patches.py:54`).
+- Divergence: error detail still reports `stdio_unavailable` even when TCP is the active default transport, obscuring transport provenance in logs (`labs/agents/critic.py:68`).
 
 ## MCP Transports
-- STDIO, socket, and TCP validators share a 1 MiB payload cap and raise `MCPUnavailableError` on transport failures (`labs/mcp_stdio.py:134`, `labs/mcp_stdio.py:148`, `labs/mcp_stdio.py:159`, `labs/transport.py:8`).
-- Divergence: default transport still resolves to STDIO via `MCP_ENDPOINT` fallback instead of spec-mandated TCP (`labs/mcp_stdio.py:132`, `.example.env:1`).
-- Socket tests remain gated behind `LABS_SOCKET_TESTS`, requiring documentation of optional status (`tests/test_socket.py:12`).
+- `build_validator_from_env` defaults to TCP, falling back to STDIO or socket only when explicitly requested and reusing the shared 1 MiB payload guard (`labs/mcp_stdio.py:132`, `labs/transport.py:8`).
+- TCP validator handles round-trips, oversize payloads, and connection errors with `MCPUnavailableError` surfaces (`labs/mcp/tcp_client.py:24`, `tests/test_tcp.py:110`).
+- Divergence: Critic’s `validation_error.detail` derives from the raw `MCP_ENDPOINT` env and mislabels TCP outages as STDIO failures (`labs/agents/critic.py:68`).
 
 ## Patch Lifecycle
-- Preview/apply/rate stubs log structured JSONL records and reuse the critic for validation and rating storage (`labs/patches.py:26`, `labs/patches.py:57`, `labs/patches.py:82`, `tests/test_patches.py:11`).
+- Preview/apply/rate commands log structured JSONL entries and reuse the critic for validation and rating storage to seed RLHF data (`labs/patches.py:26`, `labs/patches.py:68`, `tests/test_patches.py:25`).
 
 ## CLI Orchestration
-- `generate`, `critique`, `preview`, `apply`, and `rate` subcommands share validator setup, persistence, and logging helpers (`labs/cli.py:77`, `labs/cli.py:101`, `labs/cli.py:179`, `labs/cli.py:186`, `labs/cli.py:201`).
-- Divergence: `_build_validator_optional` allows validation skips when fail-fast is disabled, breaking the MCP-always requirement (`labs/cli.py:59`, `tests/test_pipeline.py:63`).
+- `generate`, `critique`, `preview`, `apply`, and `rate` share validator setup, persistence helpers, and logging wiring across subcommands (`labs/cli.py:59`, `labs/cli.py:108`, `labs/cli.py:177`).
 
 ## Logging & Persistence
-- `log_jsonl` materialises directories and writes newline-delimited JSON; generator, critic, patch, and external streams land under `meta/output/labs/` (`labs/logging.py:21`, `labs/agents/generator.py:70`, `labs/agents/critic.py:160`, `labs/patches.py:64`, `labs/generator/external.py:195`).
-- Divergence: external transport failures only capture `status`/`error` without reason/detail, violating logging requirements (`labs/generator/external.py:197`).
+- `log_jsonl` materialises output directories and appends deterministic JSON lines for generator, critic, patch, and external streams under `meta/output/labs/` (`labs/logging.py:13`, `labs/generator/external.py:195`).
 
 ## Environment & Docs
-- Env samples still expose unused backend knobs and advertise STDIO as the default transport, contrary to v0.3.1 mandates (`.env:28`, `.example.env:1`, `README.md:31`).
+- README documents TCP-as-default, socket optionality, and relaxed-mode behaviour, but `.env` and the critic docstring still describe relaxed mode as skipping validation (`README.md:31`, `.env:17`, `labs/agents/critic.py:46`).
