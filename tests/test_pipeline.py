@@ -9,6 +9,7 @@ from labs import cli
 from labs.agents.generator import GeneratorAgent
 from labs.agents.critic import CriticAgent
 from labs.mcp_stdio import MCPUnavailableError
+from labs.generator.external import GeminiGenerator
 
 
 def test_generator_to_critic_pipeline(tmp_path) -> None:
@@ -182,6 +183,48 @@ def test_cli_generate_relaxed_mode_skips_validation(monkeypatch, tmp_path, capsy
     assert payload["review"]["validation_status"] == "skipped"
     assert payload["review"]["ok"] is True
     assert payload["review"]["validation_reason"].startswith("MCP validation unavailable")
+
+    persisted_files = list(experiments_dir.glob("*.json"))
+    assert len(persisted_files) == 1
+
+
+def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> None:
+    experiments_dir = tmp_path / "experiments"
+    monkeypatch.setenv("LABS_EXPERIMENTS_DIR", str(experiments_dir))
+
+    external_log = tmp_path / "external.jsonl"
+    gemini = GeminiGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
+
+    monkeypatch.setattr(cli, "build_external_generator", lambda engine: gemini)
+
+    class LoggedCriticAgent(CriticAgent):
+        def __init__(self, validator=None) -> None:  # pragma: no cover - trivial init
+            super().__init__(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
+
+    monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
+
+    def validator(payload: dict) -> dict:
+        return {"status": "ok", "asset_id": payload["id"]}
+
+    monkeypatch.setattr(cli, "build_validator_from_env", lambda: validator)
+
+    exit_code = cli.main(["generate", "--engine", "gemini", "chromatic tides"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    output = json.loads(captured.out)
+    assert output["engine"] == "gemini"
+    asset = output["asset"]
+    assert asset["prompt"] == "chromatic tides"
+    assert asset["provenance"]["generator"]["engine"] == "gemini"
+
+    lines = [json.loads(line) for line in external_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+    log_record = lines[0]
+    assert log_record["engine"] == "gemini"
+    assert log_record["status"] == "validation_passed"
+    assert log_record["review"]["ok"] is True
+    assert log_record["mcp_result"] == {"status": "ok", "asset_id": asset["id"]}
 
     persisted_files = list(experiments_dir.glob("*.json"))
     assert len(persisted_files) == 1

@@ -1,78 +1,76 @@
 {
-  "task": "Implement v0.2-TCP features and finalize alignment",
-  "objective": "Deliver TCP transport alongside STDIO and socket, patch lifecycle orchestration, ratings stub, container hardening, and update documentation/tests to reflect v0.2-TCP scope.",
+  "task": "Implement v0.3 External Generator features and finalize alignment",
+  "objective": "Deliver optional Gemini/OpenAI generator integration, extend provenance and logging, and update documentation/tests to reflect v0.3 scope.",
   "changes": [
     {
-      "id": "tcp_transport",
-      "description": "Add TCP transport to MCP adapter client in Labs.",
+      "id": "external_generator_interface",
+      "description": "Add a pluggable ExternalGenerator interface for API-based generation.",
       "edits": [
-        "Add labs/mcp/tcp_client.py: implement TcpMCPValidator using MCP_HOST + MCP_PORT with 1 MiB guard.",
-        "Update labs/mcp/__init__.py: extend build_validator_from_env to handle MCP_ENDPOINT=tcp.",
-        "Add tests/test_tcp.py: cover connect, validate, oversize payload rejection, and connection errors."
+        "Add labs/generator/external.py: define ExternalGenerator base class and Gemini/OpenAI implementations.",
+        "Implement prompt → JSON asset/patch pipeline with retry/backoff.",
+        "Parse response into SynestheticAsset shape and inject provenance (engine, api_version, parameters)."
       ]
     },
     {
-      "id": "socket_transport",
-      "description": "Ensure Unix socket transport is complete and tested.",
+      "id": "cli_extension",
+      "description": "Extend CLI to support --engine flag.",
       "edits": [
-        "Verify labs/mcp/socket_main.py: enforce AF_UNIX 1 MiB guard and cleanup.",
-        "Confirm labs/mcp/__main__.py branches on MCP_ENDPOINT=socket.",
-        "Add/extend tests/test_socket.py: request/response, payload cap, unlink on shutdown."
+        "Update labs/cli.py: allow 'generate --engine=gemini' and 'generate --engine=openai'.",
+        "Route to ExternalGenerator when engine flag is set.",
+        "Persist provenance in generated asset metadata."
       ]
     },
     {
-      "id": "patch_lifecycle",
-      "description": "Introduce patch preview/apply/rate stubs.",
+      "id": "validation_pipeline",
+      "description": "Ensure external assets still flow through MCP + Critic.",
       "edits": [
-        "Add labs/patches.py: preview/apply functions wrapping MCP validation.",
-        "Update labs/cli.py: new subcommands `preview`, `apply`, `rate`.",
-        "Update labs/agents/critic.py: integrate patch validation before apply.",
-        "Add tests/test_patches.py: cover preview/apply/rate stubs."
+        "Forward normalized API response to MCP validation via STDIO/socket/TCP.",
+        "On failure, log structured reason/detail (e.g., 'validation_failed').",
+        "Ensure critic reviews and logs outcome even on failure."
       ]
     },
     {
-      "id": "ratings_stub",
-      "description": "Critic agent records rating stubs.",
+      "id": "logging_extension",
+      "description": "Extend logging with external provenance and outcomes.",
       "edits": [
-        "Update labs/agents/critic.py: write rating entries into logs.",
-        "Extend meta/output/labs/ JSONL format with rating field.",
-        "Add tests/test_ratings.py: confirm ratings stub logged."
-      ]
-    },
-    {
-      "id": "container_hardening",
-      "description": "Harden container execution to run as non-root and enforce path traversal guards.",
-      "edits": [
-        "Dockerfile: add non-root user and switch USER.",
-        "labs/core.py: normalize schema/example paths and reject traversal.",
-        "Add tests/test_path_guard.py: assert `..` and absolute paths rejected."
+        "Write external generation runs to meta/output/labs/external.jsonl.",
+        "Include raw prompt, raw API response, normalized asset, MCP result, critic review, provenance.",
+        "Update labs/logging.py to handle new log stream."
       ]
     },
     {
       "id": "docs_refresh",
-      "description": "Update docs to reflect v0.2-TCP scope.",
+      "description": "Update docs to reflect v0.3 scope.",
       "edits": [
-        "docs/labs_spec.md: add v0.2-TCP scope, baseline, validation, logging, exit criteria.",
-        "README.md: add MCP TCP usage example (MCP_ENDPOINT=tcp, MCP_HOST, MCP_PORT).",
-        "AGENTS.md: snapshot updated with generator, critic, patch lifecycle, and TCP validator roles."
+        "docs/labs_spec.md: add v0.3 External Generators scope, canonical baseline, validation, logging, exit criteria.",
+        "README.md: document --engine flag, provenance fields, and external.jsonl log stream.",
+        "AGENTS.md: snapshot updated with ExternalGenerator role."
+      ]
+    },
+    {
+      "id": "tests_external",
+      "description": "Add tests for external generator integration.",
+      "edits": [
+        "tests/test_external_generator.py: mock API responses and confirm parsed asset/provenance.",
+        "tests/test_pipeline.py: cover generate --engine flag end-to-end with mock.",
+        "tests/test_logging.py: confirm external.jsonl structured entries."
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "No new dependencies beyond Python stdlib.",
-      "STDIO, socket, and TCP transports must all enforce 1 MiB payload cap.",
-      "Patch lifecycle may be stubbed but must log structured outputs.",
-      "All tests must pass after patch."
+      "No new runtime dependencies unless absolutely required for HTTP (prefer stdlib urllib/http).",
+      "External generators must default to mock mode for CI (no live API calls).",
+      "All generated assets, whether local or external, must pass through MCP validation.",
+      "All tests must pass deterministically with mocks."
     ]
   },
   "exit_criteria": [
-    "MCP TCP transport implemented and tested.",
-    "MCP socket transport implemented and tested.",
-    "Patch preview/apply/rate CLI functional and logged.",
-    "Critic logs rating stubs.",
-    "Container runs as non-root with path guards enforced.",
-    "Docs and README updated for v0.2-TCP scope.",
-    "Audit passes with no remaining divergences for v0.2-TCP."
+    "ExternalGenerator interface implemented for Gemini/OpenAI.",
+    "CLI --engine flag functional and validated.",
+    "External assets logged to external.jsonl with provenance.",
+    "MCP validation and Critic review integrated into external path.",
+    "Docs and README updated for v0.3 External Generators scope.",
+    "Audit passes with no remaining divergences for v0.3."
   ]
 }

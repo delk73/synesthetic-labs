@@ -9,8 +9,9 @@ import os
 import sys
 from typing import Any, Callable, Dict, Optional
 
-from labs.agents.generator import GeneratorAgent
 from labs.agents.critic import CriticAgent, is_fail_fast_enabled
+from labs.agents.generator import GeneratorAgent
+from labs.generator.external import ExternalGenerationError, build_external_generator
 from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
 from labs.patches import apply_patch, preview_patch, rate_patch
 
@@ -75,6 +76,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     generate_parser = subparsers.add_parser("generate", help="Generate a proposal from a prompt")
     generate_parser.add_argument("prompt", help="Prompt text for the generator")
+    generate_parser.add_argument(
+        "--engine",
+        choices=("gemini", "openai"),
+        help="Optional external engine to fulfil the prompt",
+    )
 
     critique_parser = subparsers.add_parser("critique", help="Critique a proposal JSON payload")
     critique_parser.add_argument("asset", help="JSON string or file path pointing to the asset")
@@ -95,8 +101,21 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "generate":
-        generator = GeneratorAgent()
-        asset = generator.propose(args.prompt)
+        engine = getattr(args, "engine", None)
+        generator: Optional[GeneratorAgent] = None
+        external_context: Optional[Dict[str, Any]] = None
+
+        if engine:
+            external_generator = build_external_generator(engine)
+            try:
+                asset, external_context = external_generator.generate(args.prompt)
+            except ExternalGenerationError as exc:
+                external_generator.record_failure(exc)
+                _LOGGER.error("External generator %s failed: %s", engine, exc)
+                return 1
+        else:
+            generator = GeneratorAgent()
+            asset = generator.propose(args.prompt)
 
         try:
             validator_callback = _build_validator_optional()
@@ -114,17 +133,27 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             _LOGGER.error("Generation failed validation; asset not persisted")
 
-        generator.record_experiment(
-            asset=asset,
-            review=review,
-            experiment_path=experiment_path,
-        )
+        if engine and external_context is not None:
+            external_generator.record_run(
+                context=external_context,
+                review=review,
+                experiment_path=experiment_path,
+            )
+        elif generator is not None:
+            generator.record_experiment(
+                asset=asset,
+                review=review,
+                experiment_path=experiment_path,
+            )
 
         output_payload = {
             "asset": asset,
             "review": review,
             "experiment_path": experiment_path,
         }
+
+        if engine:
+            output_payload["engine"] = engine
 
         print(json.dumps(output_payload, indent=2))
         return 0 if review.get("ok") else 1

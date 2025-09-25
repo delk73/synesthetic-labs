@@ -107,10 +107,11 @@
 
 ## Scope (v0.3 External Generators)
 
-* Add **Gemini/OpenAI integration** as optional generator sources.
-* Define `ExternalGenerator` interface (prompt → JSON asset/patch).
-* Wire into Labs pipeline: external candidates still validated by MCP.
-* Add retry/backoff + structured error logging for API failures.
+* Add **Gemini/OpenAI integration** as optional generator sources (`labs/generator/external.py`).
+* Define an `ExternalGenerator` interface with prompt → JSON asset/patch parsing plus provenance injection.
+* Wire into Labs pipeline so external candidates still run through MCP + critic review (`labs/cli.py`).
+* Add retry/backoff + structured error logging for API outages (`ExternalGenerationError`).
+* Default to mock mode for CI; enable live calls via `LABS_EXTERNAL_LIVE=1` and optional transport overrides.
 * Extend CLI:
 
   * `generate --engine=gemini "prompt"`
@@ -125,26 +126,29 @@
 
 ### Validation (v0.3)
 
-* All external outputs must pass MCP validation.
-* Failures logged as critic errors.
+* All external outputs must pass MCP validation before persistence.
+* Validator outages still honour fail-fast vs relaxed modes, mirroring local runs.
+* Critic and external logs capture structured `validation_failed` reasons on failure.
 
 ### Logging (v0.3)
 
-* Provenance extended with `engine: gemini|openai`, `api_version`, `parameters`.
-* Logged under `meta/output/labs/external.jsonl`.
+* Provenance extended with `engine: gemini|openai`, `api_version`, `parameters`, and per-run `trace_id`.
+* External runs logged under `meta/output/labs/external.jsonl` with prompt, raw API response, normalised asset, MCP result, critic review, and failure metadata when applicable.
+* `log_external_generation` helper appends JSONL entries alongside existing generator/critic streams.
 
 ### Tests (v0.3)
 
-* Mocked API calls for determinism.
-* Fallback to stub generator if external disabled.
-* CLI flag parsing.
+* Mocked API calls for determinism (`tests/test_external_generator.py`).
+* CLI flag parsing + end-to-end validation for `--engine` (`tests/test_pipeline.py`).
+* Logging helper writes structured external entries (`tests/test_logging.py`).
 
 ### Exit Criteria (v0.3)
 
-* External generators pluggable and validated.
-* Provenance extended.
-* Docs updated.
-* Tests pass with mocks.
+* External generators pluggable, retried on failure, and validated via MCP.
+* Provenance extended and persisted assets include engine/API metadata.
+* External runs recorded in `meta/output/labs/external.jsonl`.
+* CLI flag usage and documentation updated to cover external engines.
+* Tests pass with mocks and no live API requirements.
 
 ---
 

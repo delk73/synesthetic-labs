@@ -1,6 +1,6 @@
 # Synesthetic Labs
 
-Synesthetic Labs delivers the v0.2 generator → critic workflow with deterministic Python agents, Unix socket MCP transport, and a patch lifecycle stub exercised via the CLI.
+Synesthetic Labs delivers the v0.3 generator → critic workflow with deterministic Python agents, optional Gemini/OpenAI engines, Unix socket + TCP MCP transports, and a patch lifecycle stub exercised via the CLI.
 
 ## Quickstart
 
@@ -19,6 +19,7 @@ pytest -q
 Run `python -m labs.cli --help` to explore the CLI:
 
 * `python -m labs.cli generate "describe the asset"`
+* `python -m labs.cli generate --engine gemini "external prompt"`
 * `python -m labs.cli critique '{"id": "abc", ...}'`
 * `python -m labs.cli preview '{"id": "asset"}' '{"id": "patch", "updates": {...}}'`
 * `python -m labs.cli apply '{"id": "asset"}' '{"id": "patch", "updates": {...}}'`
@@ -62,6 +63,26 @@ module appends lifecycle events to `meta/output/labs/patches.jsonl`.
 
 Generator and critic logs live under `meta/output/labs/`, and validated assets
 persist to `meta/output/labs/experiments/` when generation succeeds.
+
+## External engines (v0.3)
+
+External generators plug in through the CLI and reuse the critic + MCP validation path.
+
+```bash
+# Mocked (default) Gemini run
+python -m labs.cli generate --engine gemini "chromatic tides"
+
+# Enable live calls (requires transport wiring or API credentials)
+export LABS_EXTERNAL_LIVE=1
+python -m labs.cli generate --engine openai "spectral chorus"
+```
+
+Highlights:
+
+- `labs/generator/external.py` implements a pluggable `ExternalGenerator` with retry/backoff and provenance injection.
+- Runs default to mock responses for CI determinism; enable live execution with `LABS_EXTERNAL_LIVE=1` and optional model/temperature overrides (`GEMINI_MODEL`, `OPENAI_MODEL`, `OPENAI_TEMPERATURE`).
+- Every invocation appends a record to `meta/output/labs/external.jsonl` capturing the prompt, raw API response, normalised asset, MCP result, critic review, and structured failure metadata.
+- Assets generated externally persist alongside local runs once validation passes, and CLI responses include the selected `engine`.
 
 ## Further Reading
 
