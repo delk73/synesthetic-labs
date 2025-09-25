@@ -1,66 +1,44 @@
 {
-  "task": "Implement v0.3.1 fixes (TCP default, MCP enforcement, structured failures, env cleanup)",
-  "objective": "Address divergences in transport defaults, relaxed mode validation, external generator failure logging, socket optionality, and environment cleanup. Ensure alignment with labs_spec.md v0.3.1.",
+  "task": "Patch critic provenance and relaxed mode documentation",
+  "objective": "Fix validation_error.detail transport provenance, update CriticAgent docstring, and correct .env guidance so relaxed mode is accurately described.",
   "changes": [
     {
-      "id": "mcp_relaxed_enforcement",
-      "description": "Ensure relaxed mode still calls MCP validators and logs downgraded severity instead of skipping.",
+      "id": "critic_transport_detail",
+      "description": "Propagate actual MCP transport type into validation_error.detail.",
       "edits": [
-        "Update labs/cli.py:_build_validator_optional to always return a validator wrapper instead of None.",
-        "Modify labs/agents/critic.py to record validation results as warnings in relaxed mode.",
-        "Adjust tests/test_critic.py and tests/test_pipeline.py to assert downgraded severity instead of skipped."
+        "Update labs/agents/critic.py: in review() and error handling, set validation_error.detail to the resolved transport (stdio, tcp, or socket) instead of defaulting to stdio.",
+        "Thread resolved transport name from labs/mcp_stdio.py build_validator_from_env into CriticAgent so detail is accurate.",
+        "Update tests/test_critic.py: assert validation_error.detail matches active transport (e.g. 'tcp_unavailable' when MCP_ENDPOINT=tcp)."
       ]
     },
     {
-      "id": "tcp_default",
-      "description": "Make TCP the default transport when MCP_ENDPOINT is unset or invalid, with explicit STDIO/socket selection.",
+      "id": "critic_docstring",
+      "description": "Update CriticAgent.review docstring to reflect current relaxed mode behavior.",
       "edits": [
-        "Update labs/mcp_stdio.py:build_validator_from_env to set TCP as default transport.",
-        "Modify .env.example and README.md to document TCP as the default, with explicit configuration for STDIO/socket.",
-        "Add test in tests/test_tcp.py to assert TCP is used when MCP_ENDPOINT is unset."
+        "Edit labs/agents/critic.py:46 docstring to state that relaxed mode still invokes MCP validation but downgrades failures to warnings, rather than skipping validation."
       ]
     },
     {
-      "id": "structured_failures",
-      "description": "Add reason/detail fields to external generator failure logging.",
+      "id": "env_relaxed_mode",
+      "description": "Correct .env comment for LABS_FAIL_FAST relaxed mode.",
       "edits": [
-        "Update labs/generator/external.py:record_failure to include failure.reason and failure.detail fields.",
-        "Update tests/test_external_generator.py to assert structured reason/detail on API and transport errors."
-      ]
-    },
-    {
-      "id": "socket_optional_docs",
-      "description": "Document socket transport as optional and gated by LABS_SOCKET_TESTS.",
-      "edits": [
-        "Update README.md to note that socket tests are skipped in CI unless LABS_SOCKET_TESTS is set.",
-        "Add docs/labs_spec.md note clarifying socket is optional in v0.3.1."
-      ]
-    },
-    {
-      "id": "env_cleanup",
-      "description": "Prune or deprecate unused backend environment variables.",
-      "edits": [
-        "Remove SYN_BACKEND_URL and SYN_EXAMPLES_DIR from .env.example.",
-        "Update README.md and docker-compose.yml to drop references to deprecated env vars.",
-        "Add deprecation note to docs/labs_spec.md."
+        "Update .env:17 to explain that LABS_FAIL_FAST=0 downgrades validation failures to warnings but still attempts MCP validation."
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "No new dependencies beyond Python stdlib and pytest.",
-      "TCP must be default transport with 1 MiB cap enforced.",
-      "Relaxed mode must invoke MCP, logging warnings not skips.",
-      "External generator failures must include reason/detail fields.",
-      "All updated tests must pass in CI."
+      "No new dependencies.",
+      "Transport provenance must be deterministic across stdio, tcp, and socket.",
+      "Docstring and .env must match actual relaxed mode implementation.",
+      "All tests must pass after patch."
     ]
   },
   "exit_criteria": [
-    "Relaxed mode always invokes MCP; validation downgraded to warnings instead of skipped.",
-    "TCP is the default transport when MCP_ENDPOINT is unset; README and .env updated accordingly.",
-    "External generator failures log structured reason/detail; tests confirm this.",
-    "Socket transport optionality is clearly documented.",
-    "Deprecated env variables removed or marked; configs/docs aligned.",
-    "All tests (generator, critic, patch lifecycle, MCP transports, external generators) pass in CI."
+    "validation_error.detail reflects the correct MCP transport type.",
+    "CriticAgent.review docstring correctly describes relaxed mode behavior.",
+    ".env comment for LABS_FAIL_FAST is updated and accurate.",
+    "tests/test_critic.py asserts transport-specific detail values and passes.",
+    "Audit no longer reports divergence for transport provenance or relaxed mode documentation."
   ]
 }
