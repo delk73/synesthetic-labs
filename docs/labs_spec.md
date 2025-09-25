@@ -4,193 +4,189 @@
 
 * Deliver a working **generator → MCP validation → logged asset** pipeline.
 * Show that Labs can make **schema-valid Synesthetic assets** end-to-end.
-* Provide a reproducible baseline for future critic, patch lifecycle, and RLHF extensions.
+* Provide a reproducible baseline for critic, patch lifecycle, RLHF, and external generator extensions.
 
 ---
 
 ## Scope (v0.1)
 
-* Implement a **generator agent** that produces a minimal `nested-synesthetic-asset`.
-* Deliver a **critic agent** that coordinates MCP validation and logging.
+* **Generator agent** produces a minimal `nested-synesthetic-asset`.
+* **Critic agent** coordinates MCP validation and logging.
 * Assemble Shader, Tone, Haptic sections with canonical defaults.
 * Wire through MCP validation (`validate_asset` over STDIO).
 * Log validated assets under `meta/output/labs/`.
-* Expose CLI:
+* CLI exposes `generate` subcommand.
 
-  ```bash
-  python -m labs.cli generate "circle baseline"
-  ```
+### Canonical Baseline (v0.1)
 
-## Canonical Baseline (v0.1)
+* Shader: CircleSDF (`u_px`, `u_py`, `u_r`).
+* Tone: `Tone.Synth` with envelope + detune.
+* Haptic: Generic device with `intensity`.
+* Controls: mouse.x → shader.u_px, mouse.y → shader.u_py (invert).
+* Meta: title, description, category=multimodal, complexity=medium, tags.
 
-* **Shader**: CircleSDF with `u_px`, `u_py`, `u_r`.
-* **Tone**: `Tone.Synth` with envelope + detune.
-* **Haptic**: Generic device with `intensity`.
-* **Controls**:
+### Validation (v0.1)
 
-  * `mouse.x` → `shader.u_px` (`mode=absolute`, `curve=linear`, `range=[-1.0, 1.0]`).
-  * `mouse.y` → `shader.u_py` (`mode=absolute`, `curve=linear`, `range=[-1.0, 1.0]`, `invert=true`).
-* **Meta**:
+* Pre-flight ensures primary sections exist.
+* MCP validation must pass.
+* Fail-fast toggle (`LABS_FAIL_FAST`).
+* MCP invoked via `MCP_ADAPTER_CMD`; no TCP.
 
-  * `title`: "Circle Interaction Baseline".
-  * `description`: "Canonical multimodal baseline featuring a CircleSDF shader, Tone.Synth audio bed, and haptic pulse cues.".
-  * `category`: `multimodal`.
-  * `complexity`: `medium`.
-  * `tags`: \["circle", "baseline"].
-
-## Validation (v0.1)
-
-* **Pre-flight**: generator ensures primary sections exist.
-* **MCP validation**: assets must pass schema check.
-* **Fail-fast toggle** (`LABS_FAIL_FAST`, default strict).
-* MCP invoked via `MCP_ADAPTER_CMD`; TCP fallbacks not permitted.
-* `python -m labs.mcp_stub` provides no-op adapter for smoke tests.
-
-## Logging (v0.1)
+### Logging (v0.1)
 
 * Every run logs: prompt, seed, generated asset, MCP result.
-* Stored as JSONL under `meta/output/labs/`.
 
-## Tests (v0.1)
+### Tests (v0.1)
 
-* Unit: generator outputs syntactically valid sections.
-* Integration: generator → assembler → MCP validation.
-* E2E: CLI run produces output under `meta/output/labs/`.
-* Determinism: fixed seed yields identical JSON.
+* Unit, integration, and end-to-end.
+* Determinism enforced.
 
-## Exit Criteria (v0.1)
+### Exit Criteria (v0.1)
 
-* Generator produces end-to-end validated asset.
-* Logs written under `meta/output/labs/`.
+* Generator produces validated asset.
+* Logs under `meta/output/labs/`.
 * CLI works inside/outside Docker.
-* Tests pass in CI.
+* Tests green.
 
 ---
 
 ## Scope (v0.2)
 
-* Add **Unix socket transport** for MCP alongside STDIO.
-* Implement **patch lifecycle orchestration**: preview, apply, rate via CLI commands.
-* Expand critic agent to record **ratings stub**.
-* Harden container execution: **non-root user** and path traversal guard.
-* Align documentation and tests to cover both STDIO and socket modes.
+* Add **Unix socket transport** for MCP.
+* Implement **patch lifecycle orchestration**: preview, apply, rate.
+* Expand critic to record **ratings stub**.
+* Harden container: non-root user, path traversal guard.
+* Align docs/tests to cover STDIO and socket.
 
-## Canonical Baseline (v0.2)
+### Canonical Baseline (v0.2)
 
-* Add **modulation stubs** (e.g., ADSR curve on tone).
-* Add **rule bundle stub** (e.g., radius modulation rule).
+* Add **modulation stubs** (ADSR on tone).
+* Add **rule bundle stub** (e.g. radius modulation rule).
 
-## Validation (v0.2)
+### Validation (v0.2)
 
-* Add **Unix socket transport validation** (`MCP_ENDPOINT=socket`).
-* Enforce **path normalization and traversal rejection** on schemas/examples.
-* Extend critic to validate **patched assets** before apply.
+* Unix socket validation.
+* Path normalization + traversal rejection.
+* Critic validates patched assets before apply.
 
-## Logging (v0.2)
+### Logging (v0.2)
 
-* Extend logs with **patch operations** and **rating stubs** recorded in both the patch log stream and critic log.
-* Maintain JSONL under `meta/output/labs/`.
+* Extend logs with patch ops + rating stubs.
 
-## Tests (v0.2)
+### Tests (v0.2)
 
-* Socket transport: client/server round-trip with size caps.
-* Path traversal rejection.
-* Patch preview/apply integration.
-* Rating stub logging.
-* Container runs as non-root.
+* Socket round-trip, traversal rejection, patch lifecycle integration, rating stub logging, container non-root.
 
-## Exit Criteria (v0.2)
+### Exit Criteria (v0.2)
 
-* MCP socket transport functional and tested.
-* Patch lifecycle (preview, apply, rate) stubbed and logged.
-* Critic agent records ratings stub.
-* Container hardened to non-root with no regressions.
-* Path traversal rejection enforced and tested.
-* Docs reflect STDIO + socket workflows.
+* Socket transport functional.
+* Patch lifecycle stubbed and logged.
+* Critic logs ratings.
+* Container hardened.
+* Docs updated.
 
 ---
 
 ## Scope (v0.2-TCP)
 
-* Add **TCP transport** for MCP alongside STDIO and socket.
-* Implement `TcpMCPValidator` connecting via `MCP_HOST` and `MCP_PORT`.
-* Extend `build_validator_from_env` to dispatch when `MCP_ENDPOINT=tcp`.
-* Update CLI and docs with TCP examples.
+* Add **TCP transport** for MCP.
+* Support `MCP_HOST`/`MCP_PORT` in env.
+* Implement `TcpMCPValidator` with 1 MiB cap.
+* Update CLI dispatch (`MCP_ENDPOINT=tcp`).
+* Add TCP tests: round-trip, oversize payload, error handling.
+* Critic emits structured reason/detail on TCP failures.
+* Docs updated with TCP workflows.
 
-## Canonical Baseline (v0.2-TCP)
+### Exit Criteria (v0.2-TCP)
 
-* Generator produces canonical multimodal baseline.
-* Critic validates asset against a **containerized MCP running over TCP** (`localhost:8765`).
-* Logs persist as JSONL under `meta/output/labs/`.
-
-## Validation (v0.2-TCP)
-
-* **STDIO**: adapter subprocess (`MCP_ADAPTER_CMD`).
-* **Socket**: Unix-domain socket (`MCP_SOCKET_PATH`).
-* **TCP**: direct TCP connection (`MCP_HOST`, `MCP_PORT`).
-* Failures return deterministic `MCPUnavailableError`.
-
-## Logging (v0.2-TCP)
-
-* No changes; assets, patches, and ratings continue to log under `meta/output/labs/`.
-* TCP errors log with `"reason": "mcp_unavailable", "detail": "tcp_connect_failed"`.
-
-## Tests (v0.2-TCP)
-
-* TCP client/server round-trip.
-* Validate known example asset via TCP.
-* Oversize payload rejection tested over TCP.
-* Regression: STDIO + socket still work.
-* CLI run over TCP produces a validated JSONL asset.
-
-## Exit Criteria (v0.2-TCP)
-
-* Labs can generate + validate assets against MCP running in TCP mode.
-* CLI `python -m labs.cli generate "circle baseline"` works end-to-end with `MCP_ENDPOINT=tcp`.
-* Tests for STDIO, socket, and TCP all pass in CI.
-* Docs reflect STDIO + socket + TCP workflows.
+* TCP validator and tests pass.
+* Docs and `.env` accurate.
+* Critic structured error fields present.
 
 ---
 
-## Scope (v0.3)
+## Scope (v0.3 RLHF)
 
-* Deliver first **RLHF loop** with critic-agent ratings.
-* Implement **patch rating storage** and retrieval.
-* Add **dataset persistence**: append rated assets into training corpus.
-* Provide CLI to **list, filter, and export** rated assets.
-* Begin support for **multi-asset orchestration**.
+* Deliver first **RLHF loop**: generator → critic → rating logged.
+* Implement **patch rating storage/retrieval**.
+* Add **dataset persistence**: rated assets to `meta/dataset/`.
+* Provide CLI to **list/filter/export** rated assets.
+* Begin **multi-asset orchestration**.
 
-## Canonical Baseline (v0.3)
+### Canonical Baseline (v0.3)
 
-* Expand **modulation set** (e.g., LFO modulation of tone frequency).
-* Add **rule bundle** for compound controls (e.g., mouse + keyboard → shader + tone).
+* Expand modulation set (e.g., LFO on tone frequency).
+* Add compound rule bundle (mouse+keyboard → shader+tone).
 
-## Validation (v0.3)
+### Validation (v0.3)
 
-* Ratings must be attached to **validated assets only**.
-* Validation extended to ensure **patch diffs** are schema-safe before rating.
+* Ratings only on validated assets.
+* Patch diffs schema-checked before rating.
 
-## Logging (v0.3)
+### Logging (v0.3)
 
-* Ratings logged with: `patch_id`, `asset_id`, `rating`, `critic_metadata`.
-* Dataset persisted under `meta/dataset/` as JSONL.
+* Ratings include patch_id, asset_id, score, critic metadata.
+* Dataset persisted under `meta/dataset/` JSONL.
 
-## Tests (v0.3)
+### Tests (v0.3)
 
-* RLHF loop integration: generator → critic → rating stored.
-* Dataset export and filtering.
-* Determinism: re-run with fixed seed + rating yields identical JSONL export.
+* RLHF loop integration.
+* Dataset export/filter.
+* Determinism checks.
 
-## Exit Criteria (v0.3)
+### Exit Criteria (v0.3)
 
-* Ratings stored and retrievable via CLI.
-* Dataset persisted under `meta/dataset/`.
-* Multi-asset orchestration stub functional.
-* Tests pass in CI.
+* Ratings retrievable via CLI.
+* Dataset persisted.
+* Multi-asset orchestration stubbed.
+* CI passes.
 
 ---
 
-## Backlog (v0.4+)
+## Scope (v0.4 External Generators)
+
+* Add **Gemini/OpenAI integration** as optional generator sources.
+* Define `ExternalGenerator` interface (prompt → JSON asset/patch).
+* Wire into Labs pipeline: external candidates still validated by MCP.
+* Add retry/backoff + structured error logging for API failures.
+* Extend CLI:
+
+  * `generate --engine=gemini "prompt"`
+  * `generate --engine=openai "prompt"`.
+* Persist provenance (engine name, version, parameters) in generated asset.
+* Allow side-by-side runs: deterministic vs external.
+
+### Canonical Baseline (v0.4)
+
+* External generator yields shader+tone+haptic variants beyond stubs.
+* Provenance includes engine + API details.
+
+### Validation (v0.4)
+
+* All external outputs must pass MCP validation.
+* Failures logged as critic errors.
+
+### Logging (v0.4)
+
+* Provenance extended with `engine: gemini|openai`, `api_version`, `parameters`.
+* Logged under `meta/output/labs/external.jsonl`.
+
+### Tests (v0.4)
+
+* Mocked API calls for determinism.
+* Fallback to stub generator if external disabled.
+* CLI flag parsing.
+
+### Exit Criteria (v0.4)
+
+* External generators pluggable and validated.
+* Provenance extended.
+* Docs updated.
+* Tests pass with mocks.
+
+---
+
+## Backlog (v0.5+)
 
 * Full RLHF dataset curation.
 * Multi-agent orchestration with feedback loops.
