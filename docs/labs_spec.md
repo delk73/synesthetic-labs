@@ -4,7 +4,7 @@
 
 * Deliver a working **generator → MCP validation → logged asset** pipeline.
 * Show that Labs can make **schema-valid Synesthetic assets** end-to-end.
-* Provide a reproducible baseline for critic, patch lifecycle, RLHF, and external generator extensions.
+* Provide a reproducible baseline for critic, patch lifecycle, external generator integration, and RLHF extensions.
 
 ---
 
@@ -105,45 +105,7 @@
 
 ---
 
-## Scope (v0.3 RLHF)
-
-* Deliver first **RLHF loop**: generator → critic → rating logged.
-* Implement **patch rating storage/retrieval**.
-* Add **dataset persistence**: rated assets to `meta/dataset/`.
-* Provide CLI to **list/filter/export** rated assets.
-* Begin **multi-asset orchestration**.
-
-### Canonical Baseline (v0.3)
-
-* Expand modulation set (e.g., LFO on tone frequency).
-* Add compound rule bundle (mouse+keyboard → shader+tone).
-
-### Validation (v0.3)
-
-* Ratings only on validated assets.
-* Patch diffs schema-checked before rating.
-
-### Logging (v0.3)
-
-* Ratings include patch_id, asset_id, score, critic metadata.
-* Dataset persisted under `meta/dataset/` JSONL.
-
-### Tests (v0.3)
-
-* RLHF loop integration.
-* Dataset export/filter.
-* Determinism checks.
-
-### Exit Criteria (v0.3)
-
-* Ratings retrievable via CLI.
-* Dataset persisted.
-* Multi-asset orchestration stubbed.
-* CI passes.
-
----
-
-## Scope (v0.4 External Generators)
+## Scope (v0.3 External Generators)
 
 * Add **Gemini/OpenAI integration** as optional generator sources.
 * Define `ExternalGenerator` interface (prompt → JSON asset/patch).
@@ -156,33 +118,71 @@
 * Persist provenance (engine name, version, parameters) in generated asset.
 * Allow side-by-side runs: deterministic vs external.
 
-### Canonical Baseline (v0.4)
+### Canonical Baseline (v0.3)
 
 * External generator yields shader+tone+haptic variants beyond stubs.
 * Provenance includes engine + API details.
 
-### Validation (v0.4)
+### Validation (v0.3)
 
 * All external outputs must pass MCP validation.
 * Failures logged as critic errors.
 
-### Logging (v0.4)
+### Logging (v0.3)
 
 * Provenance extended with `engine: gemini|openai`, `api_version`, `parameters`.
 * Logged under `meta/output/labs/external.jsonl`.
 
-### Tests (v0.4)
+### Tests (v0.3)
 
 * Mocked API calls for determinism.
 * Fallback to stub generator if external disabled.
 * CLI flag parsing.
 
-### Exit Criteria (v0.4)
+### Exit Criteria (v0.3)
 
 * External generators pluggable and validated.
 * Provenance extended.
 * Docs updated.
 * Tests pass with mocks.
+
+---
+
+## Scope (v0.4 RLHF)
+
+* Deliver first **RLHF loop**: generator → critic → rating logged.
+* Implement **patch rating storage/retrieval**.
+* Add **dataset persistence**: rated assets to `meta/dataset/`.
+* Provide CLI to **list/filter/export** rated assets.
+* Begin **multi-asset orchestration**.
+
+### Canonical Baseline (v0.4)
+
+* Expand modulation set (e.g., LFO on tone frequency).
+* Add compound rule bundle (mouse+keyboard → shader+tone).
+
+### Validation (v0.4)
+
+* Ratings only on validated assets.
+* Patch diffs schema-checked before rating.
+
+### Logging (v0.4)
+
+* Ratings include patch_id, asset_id, score, critic metadata.
+* Dataset persisted under `meta/dataset/` JSONL.
+
+### Tests (v0.4)
+
+* RLHF loop integration.
+* Dataset export/filter.
+* Determinism checks.
+
+### Exit Criteria (v0.4)
+
+* Ratings retrievable via CLI.
+* Dataset persisted.
+* Multi-asset orchestration stubbed.
+* CI passes.
 
 ---
 
