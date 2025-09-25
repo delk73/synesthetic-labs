@@ -60,7 +60,7 @@ def test_cli_critique_fails_when_mcp_unreachable(monkeypatch, tmp_path, capsys) 
     assert captured.out == ""
 
 
-def test_cli_critique_relaxed_mode_skips_validation(monkeypatch, tmp_path, capsys) -> None:
+def test_cli_critique_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsys) -> None:
 
     def raise_unavailable() -> None:
         raise MCPUnavailableError("adapter missing")
@@ -86,7 +86,7 @@ def test_cli_critique_relaxed_mode_skips_validation(monkeypatch, tmp_path, capsy
     assert exit_code == 0
     review = json.loads(captured.out)
     assert review["ok"] is True
-    assert review["validation_status"] == "skipped"
+    assert review["validation_status"] == "warned"
     assert review["validation_reason"].startswith("MCP validation unavailable")
 
 
@@ -149,7 +149,7 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
     assert log_record["validation"]["status"] == "passed"
 
 
-def test_cli_generate_relaxed_mode_skips_validation(monkeypatch, tmp_path, capsys) -> None:
+def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsys) -> None:
     experiments_dir = tmp_path / "experiments"
     monkeypatch.setenv("LABS_EXPERIMENTS_DIR", str(experiments_dir))
     monkeypatch.setenv("LABS_FAIL_FAST", "0")
@@ -180,7 +180,7 @@ def test_cli_generate_relaxed_mode_skips_validation(monkeypatch, tmp_path, capsy
 
     assert exit_code == 0
     payload = json.loads(captured.out)
-    assert payload["review"]["validation_status"] == "skipped"
+    assert payload["review"]["validation_status"] == "warned"
     assert payload["review"]["ok"] is True
     assert payload["review"]["validation_reason"].startswith("MCP validation unavailable")
 

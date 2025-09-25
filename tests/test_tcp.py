@@ -135,3 +135,26 @@ def test_tcp_connection_error() -> None:
     with pytest.raises(MCPUnavailableError) as excinfo:
         validator.validate({"id": "missing"})
     assert "connection error" in str(excinfo.value).lower()
+
+
+def test_build_validator_from_env_defaults_to_tcp(monkeypatch) -> None:
+    def handler(raw: bytes) -> Dict[str, object]:
+        request = decode_payload(raw)
+        return {"status": "ok", "endpoint": request["asset"].get("id")}
+
+    try:
+        thread, port, errors = _start_tcp_server(handler)
+    except PermissionError:
+        pytest.skip("TCP sockets are not permitted in this sandbox")
+
+    monkeypatch.delenv("MCP_ENDPOINT", raising=False)
+    monkeypatch.setenv("MCP_HOST", "127.0.0.1")
+    monkeypatch.setenv("MCP_PORT", str(port))
+
+    validator = build_validator_from_env(timeout=2.0)
+    response = validator({"id": "tcp-default"})
+
+    thread.join(timeout=1.0)
+    assert not thread.is_alive()
+    assert not errors
+    assert response == {"status": "ok", "endpoint": "tcp-default"}

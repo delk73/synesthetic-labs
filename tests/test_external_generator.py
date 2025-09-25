@@ -77,3 +77,7 @@ def test_external_generator_logs_failure_when_transport_errors(tmp_path) -> None
     assert len(entry["attempts"]) == 2
     assert entry["attempts"][0]["status"] == "error"
     assert "transport boom" in entry["attempts"][0]["error"]
+    assert entry["failure"] == {
+        "reason": "api_failed",
+        "detail": "transport boom",
+    }

@@ -97,9 +97,16 @@ class CriticAgent:
                     validation_reason = message
                     self._logger.error(message)
                 else:
-                    validation_status = "skipped"
+                    validation_status = "warned"
                     validation_reason = message
-                    self._logger.warning("Validation skipped: %s", message)
+                    self._logger.warning("Validation warning: %s", message)
+
+                    def _lazy_validator(payload: Dict[str, Any]) -> Dict[str, Any]:
+                        actual_validator = build_validator_from_env()
+                        return actual_validator(payload)
+
+                    validator = _lazy_validator
+                    self._validator = validator
 
         if validator is not None:
             try:
@@ -115,9 +122,9 @@ class CriticAgent:
                     validation_reason = message
                     self._logger.error(message)
                 else:
-                    validation_status = "skipped"
+                    validation_status = "warned"
                     validation_reason = message
-                    self._logger.warning("Validation skipped: %s", message)
+                    self._logger.warning("Validation warning: %s", message)
             except ConnectionError as exc:  # pragma: no cover - defensive fallback
                 message = f"MCP validation unavailable: {exc}"
                 issues.append(message)
@@ -136,7 +143,7 @@ class CriticAgent:
         if validation_status == "pending":
             validation_status = "passed" if len(issues) == 0 else "failed"
 
-        ok = len(issues) == 0 and validation_status in {"passed", "skipped"}
+        ok = len(issues) == 0 and validation_status in {"passed", "warned"}
         reviewed_at = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
 
         review = {

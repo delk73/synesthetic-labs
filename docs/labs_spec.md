@@ -158,6 +158,7 @@
 * Clarify that **Unix socket transport** is optional and only tested if supported by the environment (`LABS_SOCKET_TESTS`).
 * Enforce MCP validation calls in all modes — relaxed mode may downgrade failures to warnings, but never skip validation.
 * Prune unused backend variables from `.env` and documentation to reduce drift.
+* Document socket optionality in README and CI guidance and remove legacy backend environment knobs from samples.
 
 ### Exit Criteria (v0.3.1)
 
@@ -165,6 +166,7 @@
 * Socket tests are explicitly marked optional; not counted as failures if skipped.
 * MCP validation is always invoked, with relaxed mode changing severity not behavior.
 * `.env` and README accurately reflect required vars only.
+* Deprecated backend environment knobs are removed or clearly marked as such in docs and samples.
 
 ---
 

@@ -28,7 +28,11 @@ Run `python -m labs.cli --help` to explore the CLI:
 Configure the MCP adapter transport using environment variables:
 
 ```bash
-# STDIO transport (default)
+# TCP transport (default when MCP_ENDPOINT is unset)
+export MCP_HOST=127.0.0.1
+export MCP_PORT=8765
+
+# STDIO transport
 export MCP_ENDPOINT=stdio
 export MCP_ADAPTER_CMD="python -m labs.mcp_stub"
 
@@ -36,23 +40,20 @@ export MCP_ADAPTER_CMD="python -m labs.mcp_stub"
 export MCP_ENDPOINT=socket
 export MCP_SOCKET_PATH="/tmp/synesthetic.sock"
 python -m labs.mcp --path "$MCP_SOCKET_PATH"  # launches the bundled adapter once
-
-# TCP transport
-export MCP_ENDPOINT=tcp
-export MCP_HOST=localhost
-export MCP_PORT=8765
-# assumes an MCP service is listening on host:port
 ```
 
 Optional variables such as `SYN_SCHEMAS_DIR`, `LABS_EXPERIMENTS_DIR`, and
 `LABS_FAIL_FAST` tune validation and persistence behavior. `LABS_FAIL_FAST`
 defaults to strict (`1`) so CLI and experiment runs fail when the MCP adapter
-is unavailable; set it to `0`/`false` to log "Validation skipped" and continue
-in relaxed mode. The transport helpers enforce a 1 MiB payload cap and
+is unavailable; set it to `0`/`false` to downgrade MCP issues to warnings while
+still attempting validation. The transport helpers enforce a 1 MiB payload cap and
 `normalize_resource_path` rejects path traversal in schema or socket
 configurations. When the patch lifecycle commands run, the critic logs patch
 reviews and rating stubs to `meta/output/labs/critic.jsonl` while the patch
 module appends lifecycle events to `meta/output/labs/patches.jsonl`.
+
+Unix socket validation is optional in CI; set `LABS_SOCKET_TESTS=1` locally to
+enable the socket transport tests.
 
 ```text
 +-------------+      STDIO / Socket JSON      +----------------------+      Schema bundle / backend

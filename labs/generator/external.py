@@ -198,11 +198,26 @@ class ExternalGenerator:
         """Log a failed invocation with its attempt trace."""
 
         trace = dict(error.trace)
+        detail: Optional[str] = None
+        if error.__cause__ is not None:
+            detail = str(error.__cause__)
+        else:
+            for attempt in reversed(trace.get("attempts", [])):
+                attempt_error = attempt.get("error")
+                if attempt_error:
+                    detail = str(attempt_error)
+                    break
+        if not detail:
+            detail = str(error)
         trace.update(
             {
                 "status": "api_failed",
                 "error": str(error),
                 "logged_at": _dt.datetime.now(tz=_dt.timezone.utc).isoformat(),
+                "failure": {
+                    "reason": "api_failed",
+                    "detail": detail,
+                },
             }
         )
         log_external_generation(trace, path=self.log_path)

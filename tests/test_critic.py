@@ -150,7 +150,7 @@ def test_critic_handles_stub_failure(tmp_path, base_asset, monkeypatch, caplog) 
     }
 
 
-def test_relaxed_mode_skips_validation(tmp_path, base_asset, monkeypatch, caplog) -> None:
+def test_relaxed_mode_warns_when_validator_unavailable(tmp_path, base_asset, monkeypatch, caplog) -> None:
     monkeypatch.setenv("LABS_FAIL_FAST", "0")
 
     def raise_unavailable(*_args, **_kwargs):
@@ -165,10 +165,10 @@ def test_relaxed_mode_skips_validation(tmp_path, base_asset, monkeypatch, caplog
 
     assert review["ok"] is True
     assert review["issues"] == []
-    assert review["validation_status"] == "skipped"
+    assert review["validation_status"] == "warned"
     assert review["mcp_response"] is None
     assert review["validation_reason"].startswith("MCP validation unavailable")
-    assert any("Validation skipped" in message for message in caplog.messages)
+    assert any("Validation warning" in message for message in caplog.messages)
     assert review["validation_error"] == {
         "reason": "mcp_unavailable",
         "detail": "stdio_unavailable",

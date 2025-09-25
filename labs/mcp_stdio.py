@@ -129,9 +129,15 @@ class SocketMCPValidator:
 def build_validator_from_env(*, timeout: float = 10.0) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     """Construct an MCP validator from environment configuration."""
 
-    endpoint = os.getenv("MCP_ENDPOINT", "stdio").strip().lower()
+    endpoint_raw = os.getenv("MCP_ENDPOINT", "").strip().lower()
+    if endpoint_raw in {"", None}:
+        endpoint = "tcp"
+    elif endpoint_raw in {"stdio", "socket", "tcp"}:
+        endpoint = endpoint_raw
+    else:
+        endpoint = "tcp"
 
-    if endpoint in {"stdio", ""}:
+    if endpoint == "stdio":
         command_value = os.getenv("MCP_ADAPTER_CMD")
         if not command_value:
             raise MCPUnavailableError("MCP_ADAPTER_CMD environment variable is required")
@@ -157,15 +163,15 @@ def build_validator_from_env(*, timeout: float = 10.0) -> Callable[[Dict[str, An
         return validator.validate
 
     if endpoint == "tcp":
-        host = os.getenv("MCP_HOST")
-        port_raw = os.getenv("MCP_PORT")
+        host = os.getenv("MCP_HOST", "127.0.0.1").strip()
+        port_raw = os.getenv("MCP_PORT", "8765").strip()
         if not host:
             raise MCPUnavailableError(
-                "MCP_HOST environment variable is required when MCP_ENDPOINT=tcp"
+                "MCP_HOST environment variable is required when using TCP transport"
             )
         if not port_raw:
             raise MCPUnavailableError(
-                "MCP_PORT environment variable is required when MCP_ENDPOINT=tcp"
+                "MCP_PORT environment variable is required when using TCP transport"
             )
 
         try:

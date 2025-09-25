@@ -5,4 +5,3 @@ services:
     environment:
       - MCP_ADAPTER_CMD=${MCP_ADAPTER_CMD:-}
       - SYN_SCHEMAS_DIR=${SYN_SCHEMAS_DIR:-}
-      - SYN_EXAMPLES_DIR=${SYN_EXAMPLES_DIR:-}

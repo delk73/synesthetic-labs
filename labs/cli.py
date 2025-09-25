@@ -62,8 +62,13 @@ def _build_validator_optional() -> Optional[Callable[[Dict[str, Any]], Dict[str,
     except MCPUnavailableError as exc:
         if is_fail_fast_enabled():
             raise
-        _LOGGER.warning("Validation skipped: %s", exc)
-        return None
+        _LOGGER.warning("Validation warning; continuing with degraded MCP validation: %s", exc)
+
+        def _degraded_validator(payload: Dict[str, Any]) -> Dict[str, Any]:
+            validator = build_validator_from_env()
+            return validator(payload)
+
+        return _degraded_validator
 
 
 def main(argv: Optional[list[str]] = None) -> int:
