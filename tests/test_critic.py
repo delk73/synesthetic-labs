@@ -20,7 +20,9 @@ def base_asset() -> dict:
     }
 
 
-def test_missing_fields_flagged(tmp_path) -> None:
+def test_missing_fields_flagged(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("MCP_ENDPOINT", "tcp")
+    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
     critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
     review = critic.review({"id": "only"})
 
@@ -31,7 +33,7 @@ def test_missing_fields_flagged(tmp_path) -> None:
     assert review["mcp_response"] is None
     assert review["validation_error"] == {
         "reason": "mcp_unavailable",
-        "detail": "stdio_unavailable",
+        "detail": "tcp_unavailable",
     }
 
 
@@ -50,7 +52,8 @@ def test_successful_validation(tmp_path, base_asset) -> None:
     assert "validation_reason" not in review
 
 
-def test_validation_failure_when_mcp_unavailable(tmp_path, base_asset, caplog) -> None:
+def test_validation_failure_when_mcp_unavailable(tmp_path, base_asset, caplog, monkeypatch) -> None:
+    monkeypatch.setenv("MCP_ENDPOINT", "tcp")
 
     def validator(_: dict) -> dict:
         raise MCPUnavailableError("adapter offline")
@@ -67,11 +70,12 @@ def test_validation_failure_when_mcp_unavailable(tmp_path, base_asset, caplog) -
     assert review["validation_reason"].startswith("MCP validation unavailable")
     assert review["validation_error"] == {
         "reason": "mcp_unavailable",
-        "detail": "stdio_unavailable",
+        "detail": "tcp_unavailable",
     }
 
 
-def test_validation_failure_records_issue(tmp_path, base_asset) -> None:
+def test_validation_failure_records_issue(tmp_path, base_asset, monkeypatch) -> None:
+    monkeypatch.setenv("MCP_ENDPOINT", "tcp")
 
     def validator(_: dict) -> dict:
         raise RuntimeError("schema mismatch")
@@ -85,11 +89,12 @@ def test_validation_failure_records_issue(tmp_path, base_asset) -> None:
     assert review["validation_reason"] == "MCP validation error: schema mismatch"
     assert review["validation_error"] == {
         "reason": "mcp_error",
-        "detail": "stdio_unavailable",
+        "detail": "tcp_error",
     }
 
 
 def test_critic_fails_when_stdio_validator_unavailable(tmp_path, base_asset, monkeypatch, caplog) -> None:
+    monkeypatch.setenv("MCP_ENDPOINT", "stdio")
 
     def raise_unavailable(*_args, **_kwargs):
         raise MCPUnavailableError("adapter not configured")
@@ -113,6 +118,7 @@ def test_critic_fails_when_stdio_validator_unavailable(tmp_path, base_asset, mon
 
 
 def test_critic_reports_missing_mcp_command(tmp_path, base_asset, monkeypatch, caplog) -> None:
+    monkeypatch.setenv("MCP_ENDPOINT", "stdio")
     monkeypatch.delenv("MCP_ADAPTER_CMD", raising=False)
 
     critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
@@ -131,6 +137,7 @@ def test_critic_reports_missing_mcp_command(tmp_path, base_asset, monkeypatch, c
 
 
 def test_critic_handles_stub_failure(tmp_path, base_asset, monkeypatch, caplog) -> None:
+    monkeypatch.setenv("MCP_ENDPOINT", "stdio")
     command = f"{sys.executable} -m labs.mcp_stub --fail"
     monkeypatch.setenv("MCP_ADAPTER_CMD", command)
 
@@ -152,6 +159,7 @@ def test_critic_handles_stub_failure(tmp_path, base_asset, monkeypatch, caplog) 
 
 def test_relaxed_mode_warns_when_validator_unavailable(tmp_path, base_asset, monkeypatch, caplog) -> None:
     monkeypatch.setenv("LABS_FAIL_FAST", "0")
+    monkeypatch.setenv("MCP_ENDPOINT", "tcp")
 
     def raise_unavailable(*_args, **_kwargs):
         raise MCPUnavailableError("adapter offline")
@@ -171,5 +179,5 @@ def test_relaxed_mode_warns_when_validator_unavailable(tmp_path, base_asset, mon
     assert any("Validation warning" in message for message in caplog.messages)
     assert review["validation_error"] == {
         "reason": "mcp_unavailable",
-        "detail": "stdio_unavailable",
+        "detail": "tcp_unavailable",
     }

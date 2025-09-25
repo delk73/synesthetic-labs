@@ -126,16 +126,21 @@ class SocketMCPValidator:
         return response
 
 
-def build_validator_from_env(*, timeout: float = 10.0) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
-    """Construct an MCP validator from environment configuration."""
+def resolve_mcp_endpoint() -> str:
+    """Return the effective MCP transport based on environment configuration."""
 
     endpoint_raw = os.getenv("MCP_ENDPOINT", "").strip().lower()
     if endpoint_raw in {"", None}:
-        endpoint = "tcp"
-    elif endpoint_raw in {"stdio", "socket", "tcp"}:
-        endpoint = endpoint_raw
-    else:
-        endpoint = "tcp"
+        return "tcp"
+    if endpoint_raw in {"stdio", "socket", "tcp"}:
+        return endpoint_raw
+    return "tcp"
+
+
+def build_validator_from_env(*, timeout: float = 10.0) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+    """Construct an MCP validator from environment configuration."""
+
+    endpoint = resolve_mcp_endpoint()
 
     if endpoint == "stdio":
         command_value = os.getenv("MCP_ADAPTER_CMD")
@@ -192,4 +197,5 @@ __all__ = [
     "SocketMCPValidator",
     "StdioMCPValidator",
     "build_validator_from_env",
+    "resolve_mcp_endpoint",
 ]
