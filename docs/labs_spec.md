@@ -110,6 +110,48 @@
 
 ---
 
+## Scope (v0.2-TCP)
+
+* Add **TCP transport** for MCP alongside STDIO and socket.
+* Implement `TcpMCPValidator` connecting via `MCP_HOST` and `MCP_PORT`.
+* Extend `build_validator_from_env` to dispatch when `MCP_ENDPOINT=tcp`.
+* Update CLI and docs with TCP examples.
+
+## Canonical Baseline (v0.2-TCP)
+
+* Generator produces canonical multimodal baseline.
+* Critic validates asset against a **containerized MCP running over TCP** (`localhost:8765`).
+* Logs persist as JSONL under `meta/output/labs/`.
+
+## Validation (v0.2-TCP)
+
+* **STDIO**: adapter subprocess (`MCP_ADAPTER_CMD`).
+* **Socket**: Unix-domain socket (`MCP_SOCKET_PATH`).
+* **TCP**: direct TCP connection (`MCP_HOST`, `MCP_PORT`).
+* Failures return deterministic `MCPUnavailableError`.
+
+## Logging (v0.2-TCP)
+
+* No changes; assets, patches, and ratings continue to log under `meta/output/labs/`.
+* TCP errors log with `"reason": "mcp_unavailable", "detail": "tcp_connect_failed"`.
+
+## Tests (v0.2-TCP)
+
+* TCP client/server round-trip.
+* Validate known example asset via TCP.
+* Oversize payload rejection tested over TCP.
+* Regression: STDIO + socket still work.
+* CLI run over TCP produces a validated JSONL asset.
+
+## Exit Criteria (v0.2-TCP)
+
+* Labs can generate + validate assets against MCP running in TCP mode.
+* CLI `python -m labs.cli generate "circle baseline"` works end-to-end with `MCP_ENDPOINT=tcp`.
+* Tests for STDIO, socket, and TCP all pass in CI.
+* Docs reflect STDIO + socket + TCP workflows.
+
+---
+
 ## Scope (v0.3)
 
 * Deliver first **RLHF loop** with critic-agent ratings.
