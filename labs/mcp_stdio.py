@@ -1,4 +1,4 @@
-"""MCP validation bridges supporting STDIO and Unix socket transports."""
+"""MCP validation bridges supporting STDIO, Unix socket, and TCP transports."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import subprocess
 from typing import Any, Callable, Dict, Mapping, MutableMapping, Optional, Sequence
 
 from labs.core import normalize_resource_path
+from labs.mcp.exceptions import MCPUnavailableError
 from labs.transport import (
     InvalidPayloadError,
     PayloadTooLargeError,
@@ -18,9 +19,6 @@ from labs.transport import (
     write_message,
 )
 
-
-class MCPUnavailableError(RuntimeError):
-    """Raised when the MCP validator cannot be reached."""
 
 
 class StdioMCPValidator:
@@ -156,6 +154,28 @@ def build_validator_from_env(*, timeout: float = 10.0) -> Callable[[Dict[str, An
             )
 
         validator = SocketMCPValidator(socket_path, timeout=timeout)
+        return validator.validate
+
+    if endpoint == "tcp":
+        host = os.getenv("MCP_HOST")
+        port_raw = os.getenv("MCP_PORT")
+        if not host:
+            raise MCPUnavailableError(
+                "MCP_HOST environment variable is required when MCP_ENDPOINT=tcp"
+            )
+        if not port_raw:
+            raise MCPUnavailableError(
+                "MCP_PORT environment variable is required when MCP_ENDPOINT=tcp"
+            )
+
+        try:
+            port = int(port_raw)
+        except ValueError as exc:
+            raise MCPUnavailableError("MCP_PORT must be an integer") from exc
+
+        from labs.mcp.tcp_client import TcpMCPValidator
+
+        validator = TcpMCPValidator(host.strip(), port, timeout=timeout)
         return validator.validate
 
     raise MCPUnavailableError(f"Unsupported MCP_ENDPOINT value: {endpoint}")

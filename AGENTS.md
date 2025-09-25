@@ -1,38 +1,32 @@
-# Agent Snapshot (v0.2-TCP Audit)
+# Agent Snapshot (v0.2-TCP)
 
-*Generator/critic stack remains deterministic with STDIO/Unix socket MCP validation, but TCP transport and v0.2 modulation updates are outstanding.*
+*Generator, critic, transports, and lifecycle flows align with the v0.2-TCP baseline after TCP integration and modulation/rule bundle wiring.*
 
 ## GeneratorAgent
-- `propose` assembles and logs full assets with provenance entry `generator.version = v0.1` (`labs/agents/generator.py:37-62`).
-- `record_experiment` appends validation outcomes and persisted paths to the generator log (`labs/agents/generator.py:64-103`).
-- Gap: generator still instantiates `AssetAssembler(version="v0.1")`, so modulation and rule bundle stubs never appear in outputs (`labs/agents/generator.py:29-35`, `tests/test_generator_assembler.py:32-38`).
+- `propose` assembles v0.2 assets with modulation and rule bundle sections while logging provenance to `generator.jsonl` (`labs/agents/generator.py:37-62`, `labs/generator/assembler.py:62-88`).
+- Deterministic seeding and provenance metadata ensure reproducibility for persisted experiments (`labs/generator/assembler.py:44-92`, `labs/agents/generator.py:64-103`).
 
 ## AssetAssembler
-- Collects shader/tone/haptic parameters into `parameter_index` and prunes mappings against that set (`labs/generator/assembler.py:56-113`).
-- Emits provenance with assembler version, timestamp, and seed for reproducibility (`labs/generator/assembler.py:62-72`).
-- Missing: assembled assets omit the v0.2 modulation and rule bundle sections required by the spec (`labs/generator/assembler.py:62-79`, `docs/labs_spec.md:80-81`).
+- Collects shader/tone/haptic parameters for a `parameter_index` and prunes controls against that set (`labs/generator/assembler.py:56-113`).
+- Emits modulation and rule bundle stubs alongside core sections with unified versioning (`labs/generator/assembler.py:62-88`).
 
 ## CriticAgent
-- `review` enforces required keys, forwards assets to MCP, and records validation outcomes with fail-fast control (`labs/agents/critic.py:45-135`).
-- `record_rating` writes structured rating stubs linked to optional assets (`labs/agents/critic.py:137-159`).
-- Relaxed mode skips MCP when unavailable, logging the skip reason for traceability (`labs/agents/critic.py:68-109`, `tests/test_pipeline.py:104-150`).
-- Outstanding: critic does not emit the structured TCP failure reason codes promised in the spec (`labs/agents/critic.py:118-135`, `docs/labs_spec.md:133-141`).
+- `review` enforces required keys, invokes MCP via the selected transport, and records structured error metadata for outages (`labs/agents/critic.py:45-159`).
+- `record_rating` logs patch ratings into the critic stream for downstream RLHF hooks (`labs/agents/critic.py:137-159`, `tests/test_ratings.py:6-21`).
 
-## MCP Bridge & Transports
-- Shared framing enforces a 1 MiB cap for STDIO and socket payloads (`labs/transport.py:1-69`).
-- `build_validator_from_env` supports STDIO via `MCP_ADAPTER_CMD` and Unix sockets via `MCP_SOCKET_PATH`, normalizing paths before use (`labs/mcp_stdio.py:134-159`).
-- Socket adapter unlinks stale paths and handles oversize payloads deterministically (`labs/mcp/socket_main.py:17-68`, `tests/test_socket.py:29-69`).
-- Missing: there is no `TcpMCPValidator`, and `MCP_ENDPOINT=tcp` is rejected despite `.env` advertising the mode (`labs/mcp_stdio.py:131-161`, `.env:5-12`).
+## MCP Transports
+- STDIO adapter launches the configured command with schema path normalization (`labs/mcp_stdio.py:136-148`).
+- Socket validator manages AF_UNIX connections with 1 MiB framing and cleanup (`labs/mcp_stdio.py:150-159`, `labs/mcp/socket_main.py:26-68`, `tests/test_socket.py:29-88`).
+- TCP validator negotiates host/port connections and reuses shared framing with deterministic failure surfacing (`labs/mcp_stdio.py:131-159`, `labs/mcp/tcp_client.py:17-46`, `tests/test_tcp.py:18-110`).
 
 ## Patch Lifecycle
-- `preview_patch`, `apply_patch`, and `rate_patch` write structured lifecycle events to `meta/output/labs/patches.jsonl` and reuse the critic for validation/ratings (`labs/patches.py:18-90`).
-- CLI subcommands delegate directly to these helpers, sharing validator resolution with the generate/critique flow (`labs/cli.py:150-176`).
+- `preview_patch`, `apply_patch`, and `rate_patch` emit structured JSONL entries under `meta/output/labs/patches.jsonl` while reusing the critic for validation/ratings (`labs/patches.py:18-90`, `tests/test_patches.py:18-84`).
+- CLI subcommands share validator resolution with generate/critique for consistent MCP behavior (`labs/cli.py:97-176`, `tests/test_pipeline.py:136-175`).
 
-## Logging
-- JSONL writer guarantees newline-delimited records and auto-creates directories (`labs/logging.py:13-24`).
-- Generator, critic, and patch lifecycle logs land under `meta/output/labs/` with provenance fields intact (`labs/agents/generator.py:60-103`, `labs/agents/critic.py:118-159`, `labs/patches.py:26-89`).
-- MCP outages surface in critic logs but without structured TCP-specific metadata yet (`labs/agents/critic.py:88-135`).
+## Logging & Persistence
+- JSONL helper materializes directories and writes newline-delimited records for generator, critic, and lifecycle logs (`labs/logging.py:13-24`).
+- CLI persists validated assets under `meta/output/labs/experiments/` and records experiment linkage for traceability (`labs/cli.py:101-143`, `labs/agents/generator.py:64-103`).
 
 ## Container & Path Guards
-- Docker image runs as a non-root `labs` user for spec compliance (`Dockerfile:1-12`).
-- `normalize_resource_path` rejects traversal before forwarding schema or socket paths to transports (`labs/core.py:9-28`, `tests/test_path_guard.py:8-32`).
+- Docker image provisions and runs as the non-root `labs` user to satisfy container hardening requirements (`Dockerfile:1-12`).
+- Resource path normalization blocks traversal attempts before delegating to transports (`labs/core.py:9-28`, `tests/test_path_guard.py:8-32`).

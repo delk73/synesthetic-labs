@@ -32,5 +32,7 @@ def test_asset_assembler_produces_consistent_payload() -> None:
     for mapping in asset["control"]["mappings"]:
         assert mapping["parameter"] in parameters
 
-    assert "modulation" not in asset
-    assert "rule_bundle" not in asset
+    assert asset["modulation"]["component"] == "modulation"
+    assert asset["rule_bundle"]["component"] == "rule_bundle"
+    assert asset["modulation"]["modulators"]
+    assert asset["rule_bundle"]["rules"]

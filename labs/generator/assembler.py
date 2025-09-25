@@ -8,6 +8,8 @@ import uuid
 from copy import deepcopy
 from typing import Dict, Iterable, List, Optional, Set
 
+from labs.experimental import ModulationGenerator, RuleBundleGenerator
+
 from .control import ControlGenerator
 from .haptic import HapticGenerator
 from .meta import MetaGenerator
@@ -21,12 +23,14 @@ class AssetAssembler:
     def __init__(
         self,
         *,
-        version: str = "v0.1",
+        version: str = "v0.2",
         shader_generator: Optional[ShaderGenerator] = None,
         tone_generator: Optional[ToneGenerator] = None,
         haptic_generator: Optional[HapticGenerator] = None,
         control_generator: Optional[ControlGenerator] = None,
         meta_generator: Optional[MetaGenerator] = None,
+        modulation_generator: Optional[ModulationGenerator] = None,
+        rule_bundle_generator: Optional[RuleBundleGenerator] = None,
     ) -> None:
         self.version = version
         self._shader = shader_generator or ShaderGenerator(version=version)
@@ -34,6 +38,8 @@ class AssetAssembler:
         self._haptic = haptic_generator or HapticGenerator(version=version)
         self._control = control_generator or ControlGenerator(version=version)
         self._meta = meta_generator or MetaGenerator(version=version)
+        self._modulation = modulation_generator or ModulationGenerator(version=version)
+        self._rule_bundle = rule_bundle_generator or RuleBundleGenerator(version=version)
 
     def generate(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, object]:
         """Return a fully wired Synesthetic asset for *prompt*."""
@@ -52,6 +58,8 @@ class AssetAssembler:
         haptic = deepcopy(self._haptic.generate(seed=seed))
         control_component = deepcopy(self._control.generate(seed=seed))
         meta = deepcopy(self._meta.generate(seed=seed))
+        modulation = deepcopy(self._modulation.generate(seed=seed))
+        rule_bundle = deepcopy(self._rule_bundle.generate(seed=seed))
 
         parameter_index = self._collect_parameters(shader, tone, haptic)
 
@@ -75,6 +83,8 @@ class AssetAssembler:
             "haptic": haptic,
             "control": control_component,
             "meta": meta,
+            "modulation": modulation,
+            "rule_bundle": rule_bundle,
             "controls": mappings,
             "parameter_index": sorted(parameter_index),
         }

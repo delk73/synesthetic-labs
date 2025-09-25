@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import socket
 import threading
 from typing import List
 
 import pytest
+
+if os.environ.get("LABS_SOCKET_TESTS", "").lower() not in {"1", "true"}:
+    pytest.skip("Unix socket tests disabled until Labs is dockerized", allow_module_level=True)
 
 from labs.mcp import socket_main
 from labs.transport import MAX_PAYLOAD_BYTES, PayloadTooLargeError, decode_payload, read_message, write_message

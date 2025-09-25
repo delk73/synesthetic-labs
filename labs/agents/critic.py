@@ -8,7 +8,8 @@ import os
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from labs.logging import log_jsonl
-from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
+from labs.mcp.exceptions import MCPUnavailableError
+from labs.mcp_stdio import build_validator_from_env
 
 _DEFAULT_LOG_PATH = "meta/output/labs/critic.jsonl"
 _LABS_FAIL_FAST_ENV = "LABS_FAIL_FAST"
@@ -63,6 +64,25 @@ class CriticAgent:
         validation_status = "pending"
         validation_reason: Optional[str] = None
         mcp_response: Optional[Dict[str, Any]] = None
+        validation_error: Optional[Dict[str, str]] = None
+        endpoint = os.getenv("MCP_ENDPOINT", "stdio").strip().lower() or "stdio"
+
+        def _build_error_payload(message: str, *, unavailable: bool = True) -> Dict[str, str]:
+            detail = "unknown"
+            lowered = message.lower()
+            if endpoint == "tcp":
+                if "timeout" in lowered:
+                    detail = "tcp_timeout"
+                else:
+                    detail = "tcp_connect_failed"
+            elif endpoint == "socket":
+                detail = "socket_unavailable"
+            else:
+                detail = "stdio_unavailable"
+            return {
+                "reason": "mcp_unavailable" if unavailable else "mcp_error",
+                "detail": detail,
+            }
         validator = self._validator
         if validator is None:
             try:
@@ -70,6 +90,7 @@ class CriticAgent:
                 self._validator = validator
             except MCPUnavailableError as exc:
                 message = f"MCP validation unavailable: {exc}"
+                validation_error = _build_error_payload(str(exc))
                 if fail_fast:
                     issues.append(message)
                     validation_status = "failed"
@@ -87,6 +108,7 @@ class CriticAgent:
                 validation_status = "passed"
             except MCPUnavailableError as exc:
                 message = f"MCP validation unavailable: {exc}"
+                validation_error = _build_error_payload(str(exc))
                 if fail_fast:
                     issues.append(message)
                     validation_status = "failed"
@@ -100,12 +122,14 @@ class CriticAgent:
                 message = f"MCP validation unavailable: {exc}"
                 issues.append(message)
                 self._logger.error(message)
+                validation_error = _build_error_payload(str(exc))
                 validation_status = "failed"
                 validation_reason = message
             except Exception as exc:  # pragma: no cover - unexpected failures
                 message = f"MCP validation error: {exc}"
                 issues.append(message)
                 self._logger.error("MCP validation failed: %s", exc)
+                validation_error = _build_error_payload(str(exc), unavailable=False)
                 validation_status = "failed"
                 validation_reason = message
 
@@ -126,6 +150,9 @@ class CriticAgent:
 
         if validation_reason is not None:
             review["validation_reason"] = validation_reason
+
+        if validation_error is not None:
+            review["validation_error"] = validation_error
 
         if patch_id is not None:
             review["patch_id"] = patch_id

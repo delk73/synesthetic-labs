@@ -25,7 +25,7 @@ def test_generator_to_critic_pipeline(tmp_path) -> None:
     review = critic.review(asset)
 
     assert "provenance" in asset
-    for section in ("shader", "tone", "haptic", "control"):
+    for section in ("shader", "tone", "haptic", "control", "meta", "modulation", "rule_bundle"):
         assert section in asset
         assert asset[section]["component"] == section
     assert asset["provenance"]["generator"]["agent"] == "GeneratorAgent"
@@ -127,7 +127,7 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
 
     persisted_asset = json.loads(persisted_asset_path.read_text(encoding="utf-8"))
     assert persisted_asset["prompt"] == "aurora bloom"
-    for section in ("shader", "tone", "haptic", "control"):
+    for section in ("shader", "tone", "haptic", "control", "meta", "modulation", "rule_bundle"):
         assert section in persisted_asset
 
     relative_path = os.path.relpath(persisted_asset_path, os.getcwd())

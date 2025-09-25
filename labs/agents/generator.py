@@ -26,7 +26,7 @@ class GeneratorAgent:
         self,
         log_path: str = _DEFAULT_LOG_PATH,
         *,
-        version: str = "v0.1",
+        version: str = "v0.2",
         assembler: Optional[AssetAssembler] = None,
     ) -> None:
         self.log_path = log_path

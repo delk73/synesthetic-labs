@@ -1,15 +1,23 @@
 {
-  "task": "Implement v0.2 features and finalize alignment",
-  "objective": "Deliver socket transport, patch lifecycle orchestration, ratings stub, container hardening, and update documentation/tests to reflect v0.2 scope.",
+  "task": "Implement v0.2-TCP features and finalize alignment",
+  "objective": "Deliver TCP transport alongside STDIO and socket, patch lifecycle orchestration, ratings stub, container hardening, and update documentation/tests to reflect v0.2-TCP scope.",
   "changes": [
     {
-      "id": "socket_transport",
-      "description": "Add Unix socket transport to MCP adapter.",
+      "id": "tcp_transport",
+      "description": "Add TCP transport to MCP adapter client in Labs.",
       "edits": [
-        "Add labs/mcp/socket_main.py: implement AF_UNIX single-client loop with 1 MiB guard.",
-        "Update labs/mcp/__main__.py: branch on MCP_ENDPOINT=socket.",
-        "Update labs/transport.py: factor common framing helpers.",
-        "Add tests/test_socket.py: cover request/response, payload cap, unlink on shutdown."
+        "Add labs/mcp/tcp_client.py: implement TcpMCPValidator using MCP_HOST + MCP_PORT with 1 MiB guard.",
+        "Update labs/mcp/__init__.py: extend build_validator_from_env to handle MCP_ENDPOINT=tcp.",
+        "Add tests/test_tcp.py: cover connect, validate, oversize payload rejection, and connection errors."
+      ]
+    },
+    {
+      "id": "socket_transport",
+      "description": "Ensure Unix socket transport is complete and tested.",
+      "edits": [
+        "Verify labs/mcp/socket_main.py: enforce AF_UNIX 1 MiB guard and cleanup.",
+        "Confirm labs/mcp/__main__.py branches on MCP_ENDPOINT=socket.",
+        "Add/extend tests/test_socket.py: request/response, payload cap, unlink on shutdown."
       ]
     },
     {
@@ -42,28 +50,29 @@
     },
     {
       "id": "docs_refresh",
-      "description": "Update docs to reflect v0.2 scope.",
+      "description": "Update docs to reflect v0.2-TCP scope.",
       "edits": [
-        "docs/labs_spec.md: add v0.2 scope, baseline, validation, logging, exit criteria.",
-        "README.md: add MCP socket usage, patch lifecycle CLI commands, LABS_FAIL_FAST semantics.",
-        "AGENTS.md: snapshot updated with generator, critic, patch lifecycle roles."
+        "docs/labs_spec.md: add v0.2-TCP scope, baseline, validation, logging, exit criteria.",
+        "README.md: add MCP TCP usage example (MCP_ENDPOINT=tcp, MCP_HOST, MCP_PORT).",
+        "AGENTS.md: snapshot updated with generator, critic, patch lifecycle, and TCP validator roles."
       ]
     }
   ],
   "constraints": {
     "rules": [
       "No new dependencies beyond Python stdlib.",
-      "Socket and STDIO transports must both enforce 1 MiB cap.",
+      "STDIO, socket, and TCP transports must all enforce 1 MiB payload cap.",
       "Patch lifecycle may be stubbed but must log structured outputs.",
       "All tests must pass after patch."
     ]
   },
   "exit_criteria": [
+    "MCP TCP transport implemented and tested.",
     "MCP socket transport implemented and tested.",
     "Patch preview/apply/rate CLI functional and logged.",
     "Critic logs rating stubs.",
     "Container runs as non-root with path guards enforced.",
-    "Docs and README updated for v0.2 scope.",
-    "Audit passes with no remaining divergences for v0.2."
+    "Docs and README updated for v0.2-TCP scope.",
+    "Audit passes with no remaining divergences for v0.2-TCP."
   ]
 }

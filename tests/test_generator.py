@@ -20,10 +20,10 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     assert asset["provenance"]["agent"] == "AssetAssembler"
     generator_info = asset["provenance"]["generator"]
     assert generator_info["agent"] == "GeneratorAgent"
-    assert generator_info["version"] == "v0.1"
-    assert asset["provenance"]["version"] == "v0.1"
+    assert generator_info["version"] == "v0.2"
+    assert asset["provenance"]["version"] == "v0.2"
 
-    for section in ("shader", "tone", "haptic", "control", "meta"):
+    for section in ("shader", "tone", "haptic", "control", "meta", "modulation", "rule_bundle"):
         assert section in asset
         assert asset[section]["component"] == section
 

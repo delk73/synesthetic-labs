@@ -35,6 +35,12 @@ export MCP_ADAPTER_CMD="python -m labs.mcp_stub"
 export MCP_ENDPOINT=socket
 export MCP_SOCKET_PATH="/tmp/synesthetic.sock"
 python -m labs.mcp --path "$MCP_SOCKET_PATH"  # launches the bundled adapter once
+
+# TCP transport
+export MCP_ENDPOINT=tcp
+export MCP_HOST=localhost
+export MCP_PORT=8765
+# assumes an MCP service is listening on host:port
 ```
 
 Optional variables such as `SYN_SCHEMAS_DIR`, `LABS_EXPERIMENTS_DIR`, and
@@ -55,8 +61,7 @@ module appends lifecycle events to `meta/output/labs/patches.jsonl`.
 ```
 
 Generator and critic logs live under `meta/output/labs/`, and validated assets
-persist to `meta/output/labs/experiments/` when generation succeeds. Modulation
-and rule bundle generators remain out of scope for this release.
+persist to `meta/output/labs/experiments/` when generation succeeds.
 
 ## Further Reading
 
