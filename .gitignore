@@ -32,4 +32,4 @@ Thumbs.db
 
 # Logs and local outputs
 *.log
-*.env
+.env
