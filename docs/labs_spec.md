@@ -152,6 +152,22 @@
 
 ---
 
+## Scope (v0.3.1 Hardening)
+
+* Make TCP the **default MCP transport** for Labs.
+* Clarify that **Unix socket transport** is optional and only tested if supported by the environment (`LABS_SOCKET_TESTS`).
+* Enforce MCP validation calls in all modes — relaxed mode may downgrade failures to warnings, but never skip validation.
+* Prune unused backend variables from `.env` and documentation to reduce drift.
+
+### Exit Criteria (v0.3.1)
+
+* TCP transport remains primary and passes tests in CI.
+* Socket tests are explicitly marked optional; not counted as failures if skipped.
+* MCP validation is always invoked, with relaxed mode changing severity not behavior.
+* `.env` and README accurately reflect required vars only.
+
+---
+
 ## Scope (v0.4 RLHF)
 
 * Deliver first **RLHF loop**: generator → critic → rating logged.
