@@ -1,6 +1,6 @@
 {
-  "task": "Audit synesthetic-labs repo state (v0.3.1 External Generators with MCP dependency, TCP-default)",
-  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md v0.3.1. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot.",
+  "task": "Audit synesthetic-labs repo state (v0.3.2 External Generators with MCP dependency, TCP-default, hardening)",
+  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md v0.3.2. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot.",
   "constraints": {
     "style": "deterministic, terse, Markdown headings with bullets/tables",
     "rules": [
@@ -16,6 +16,9 @@
       "Labs MUST call MCP for schema validation via STDIO, socket, or TCP; any local fallback is a non-compliant divergence",
       "Labs MUST log generator, critic, patch, MCP, and external generator interactions with reason/detail on failures; silent failures are non-compliant",
       "Unused/legacy env vars (e.g., backend knobs) MUST be removed or documented as deprecated; otherwise mark Divergent",
+      "Socket transport MUST have failure coverage in critic tests to assert socket_unavailable detail",
+      "resolve_mcp_endpoint fallback MUST be unit-tested to lock default/fallback behaviour",
+      "Maintainer docs MUST reference transport provenance resolver to avoid drift in future agents",
       "Audit is incomplete unless both output files are created or overwritten with non-empty content"
     ],
     "sections": [
@@ -26,13 +29,13 @@
       "Critic implementation (table: Responsibility → Status → Evidence)",
       "Assembler / Wiring step (bullets: parameter index, dangling reference pruning, provenance)",
       "Patch lifecycle (bullets: preview, apply, rate stubs, logging)",
-      "MCP integration (bullets: STDIO, TCP-default, socket-optional validation; failure handling; strict vs relaxed mode; 1 MiB caps; reason/detail logging)",
+      "MCP integration (bullets: STDIO, TCP-default, socket-optional validation; failure handling; strict vs relaxed mode; 1 MiB caps; reason/detail logging; resolver fallback)",
       "External generator integration (bullets: Gemini/OpenAI interface, provenance logging, CLI flags, error handling, MCP-enforced validation)",
-      "Test coverage (table: Feature → Tested? → Evidence)",
+      "Test coverage (table: Feature → Tested? → Evidence, including socket failure coverage and resolver fallback)",
       "Dependencies and runtime (table: Package → Used in → Required/Optional)",
       "Environment variables (bullets: name, default, transport defaults, behavior when MCP/external API unreachable, deprecated knobs)",
       "Logging (bullets: structured JSONL, provenance fields, patch/rating/external fields, reason/detail on transport failures, location under meta/output/)",
-      "Documentation accuracy (bullets: README vs. labs_spec.md; TCP as default, socket optional; env cleanup)",
+      "Documentation accuracy (bullets: README vs. labs_spec.md; TCP as default, socket optional; maintainer docs reference resolver; env cleanup)",
       "Detected divergences",
       "Recommendations"
     ]
@@ -62,15 +65,18 @@
   "exit_criteria": [
     "meta/output/labs_state.md is written and non-empty",
     "AGENTS.md snapshot updated with current audit findings",
-    "Spec v0.3.1 (TCP-default, socket-optional) features mapped to Present / Missing / Divergent in table form",
+    "Spec v0.3.2 (TCP-default, socket-optional, hardening) features mapped to Present / Missing / Divergent in table form",
     "Generator, Critic, Assembler, and Patch lifecycle explicitly verified",
     "MCP validation integration checked for STDIO, TCP (default), and socket (optional) with doc status",
     "Strict vs relaxed mode both invoke MCP; if failures occur, logs contain reason/detail (no skips)",
     "External generator provenance, MCP-enforced validation, and error handling verified",
-    "Test coverage summarized in a table with evidence, including TCP; socket may be skipped if documented",
+    "Critic socket failure coverage test verified",
+    "Unit test for resolve_mcp_endpoint fallback verified",
+    "Maintainer docs reference transport provenance resolver",
+    "Test coverage summarized in a table with evidence, including TCP and resolver fallback; socket may be skipped if documented",
     "Dependencies mapped to imports in a table with evidence",
     "Environment variables listed with defaults (TCP default), and deprecated/unused knobs identified or removed",
     "Logging practices verified (structured JSONL, provenance, patch/rating/external, reason/detail, meta/output/)",
-    "README cross-checked against docs/labs_spec.md for TCP default, socket optional, and env cleanup"
+    "README cross-checked against docs/labs_spec.md for TCP default, socket optional, resolver reference, and env cleanup"
   ]
 }
