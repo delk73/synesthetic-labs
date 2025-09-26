@@ -1,4 +1,4 @@
-# Agent Snapshot (v0.3.1 External Generators Audit)
+# Agent Snapshot (v0.3.2 External Generators with MCP dependency, TCP-default, hardening)
 
 ## GeneratorAgent
 - Uses `AssetAssembler` to emit canonical shader/tone/haptic/control/meta/modulation/rule sections with deterministic IDs and seeded timestamps (`labs/generator/assembler.py:44`, `tests/test_determinism.py:10`).
@@ -28,4 +28,5 @@
 - `log_jsonl` materialises output directories and appends deterministic JSON lines for generator, critic, patch, and external streams under `meta/output/labs/` (`labs/logging.py:13`, `labs/generator/external.py:195`).
 
 ## Environment & Docs
-- README, `.env`, and the critic docstring consistently describe relaxed mode as running MCP validation while downgrading failures to warnings (`README.md:31`, `.env:19`, `labs/agents/critic.py:46`).
+- README, `.env`, and the critic docstring consistently describe relaxed mode as running MCP validation while downgrading failures to warnings (`README.md:31`, `.example.env:1`, `labs/agents/critic.py:46`).
+- TCP is the default transport, and socket transport is optional and controlled by `LABS_SOCKET_TESTS`.

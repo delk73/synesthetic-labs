@@ -1,102 +1,139 @@
+# Synesthetic Labs State (v0.3.2 Audit)
+
 ## Summary of repo state
-- CLI `generate` drives Generator → Critic → MCP validation before persisting experiments under `meta/output/labs/experiments/` (`labs/cli.py:108`, `tests/test_pipeline.py:93`).
-- AssetAssembler produces canonical shader/tone/haptic/control/meta/modulation/rule sections with deterministic IDs and pruned controls (`labs/generator/assembler.py:44`, `tests/test_generator_assembler.py:21`).
-- External generators normalize Gemini/OpenAI assets, inject provenance, and log MCP-reviewed attempts with structured failure metadata (`labs/generator/external.py:168`, `tests/test_external_generator.py:40`).
-- Patch lifecycle stubs log preview/apply/rate operations alongside critic reviews and ratings (`labs/patches.py:26`, `tests/test_patches.py:25`).
+
+The repository is in a good state and largely compliant with the v0.3.2 spec. The TCP-by-default transport, external generator integration, and hardening goals are mostly met. Key strengths include deterministic asset generation, a robust CLI, and comprehensive logging. The main gaps are around missing or incomplete test coverage for specific failure modes (socket transport, resolver fallbacks) and some documentation drift.
 
 ## Top gaps & fixes (3-5 bullets)
-- Add socket-transport coverage so critic failures assert `socket_unavailable` detail just like the new TCP/STDIO cases (`tests/test_critic.py:23`, `tests/test_critic.py:96`).
-- Consider a focused unit test for `resolve_mcp_endpoint` to lock transport fallback behaviour when environment variables change (`labs/mcp_stdio.py:129`).
-- Extend docs for maintainers to call out the new transport provenance hook so future agents reuse it consistently (`labs/mcp_stdio.py:129`, `labs/agents/critic.py:68`).
 
-## Alignment with labs_spec.md (table: Spec item → Status → Evidence)
-| Spec item | Status | Evidence |
-| --- | --- | --- |
-| Generator → critic pipeline persists validated assets | Present | `labs/cli.py:108`, `tests/test_pipeline.py:93` |
-| TCP transport is default when MCP_ENDPOINT unset/invalid | Present | `labs/mcp_stdio.py:140`, `tests/test_tcp.py:140` |
-| Socket transport optional and documented | Present | `tests/test_socket.py:12`, `README.md:55` |
-| Relaxed mode still attempts MCP validation (warnings only) | Present | `labs/agents/critic.py:46`, `tests/test_pipeline.py:152` |
-| External generator failures emit reason/detail metadata | Present | `labs/generator/external.py:197`, `tests/test_external_generator.py:40` |
-| Validation error detail identifies actual transport | Present | `labs/agents/critic.py:68`, `tests/test_critic.py:23` |
+*   **Missing Test Coverage:** Critical components like the `resolve_mcp_endpoint` fallback logic and critic's socket failure handling are not covered by tests.
+*   **Documentation Drift:** The README and other documents do not consistently reflect that TCP is the default transport.
+*   **Unused Environment Variables:** Some environment variables mentioned in documentation are no longer used and should be removed.
+*   **Incomplete `AGENTS.md`:** The `AGENTS.md` file is out of date and does not reflect the current state of the agents.
 
-## Generator implementation (table: Component → Status → Evidence)
-| Component | Status | Evidence |
-| --- | --- | --- |
-| Canonical section assembly & control pruning | Present | `labs/generator/assembler.py:44`, `tests/test_generator_assembler.py:21` |
-| Deterministic identifiers when seeded | Present | `labs/generator/assembler.py:94`, `tests/test_determinism.py:10` |
-| Experiment logging for validated runs | Present | `labs/agents/generator.py:64`, `tests/test_pipeline.py:137` |
+## Alignment with labs_spec.md
 
-## Critic implementation (table: Responsibility → Status → Evidence)
-| Responsibility | Status | Evidence |
-| --- | --- | --- |
-| Required field checks and issue tracking | Present | `labs/agents/critic.py:58`, `tests/test_critic.py:23` |
-| MCP invocation with structured error metadata | Present | `labs/agents/critic.py:88`, `tests/test_critic.py:71` |
-| Relaxed mode downgrades severity while attempting MCP | Present | `labs/agents/critic.py:46`, `tests/test_critic.py:160` |
-| Rating stub logging for patches | Present | `labs/agents/critic.py:171`, `tests/test_patches.py:54` |
+| Spec item                               | Status    | Evidence                                                                                                                            |
+| --------------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| TCP is default transport                | Present   | `labs/mcp_stdio.py:129` (`resolve_mcp_endpoint` returns "tcp" when `MCP_ENDPOINT` is unset)                                           |
+| Socket transport is optional            | Present   | `tests/test_socket.py` (tests are skipped if `LABS_SOCKET_TESTS` is not set)                                                          |
+| MCP validation always invoked           | Present   | `labs/agents/critic.py:58` (validation is called in all modes, with `fail_fast` controlling behavior on failure)                      |
+| Prune unused backend variables          | Missing   | `.example.env` still contains `SYN_SCHEMAS_DIR` which is not used.                                                                    |
+| Document socket optionality             | Present   | `README.md` mentions `LABS_SOCKET_TESTS`.                                                                                           |
+| Critic socket failure coverage          | Missing   | `tests/test_critic.py` does not have a test case for socket unavailability.                                                         |
+| `resolve_mcp_endpoint` fallback tested  | Missing   | No unit test for `resolve_mcp_endpoint` in `tests/`.                                                                                |
+| Maintainer docs reference resolver      | Missing   | `docs/labs_spec.md` does not reference `resolve_mcp_endpoint`.                                                                      |
 
-## Assembler / Wiring step (bullets: parameter index, dangling reference pruning, provenance)
-- Parameter index aggregates shader/tone/haptic inputs for downstream wiring (`labs/generator/assembler.py:104`).
-- `_prune_controls` removes mappings without parameter coverage to avoid dangling references (`labs/generator/assembler.py:115`).
-- Provenance stamps assembler agent/version/timestamp/seed onto each asset (`labs/generator/assembler.py:70`).
+## Generator implementation
 
-## Patch lifecycle (bullets: preview, apply, rate stubs, logging)
-- `preview_patch` logs asset/patch IDs plus proposed updates without mutating the source asset (`labs/patches.py:26`, `tests/test_patches.py:11`).
-- `apply_patch` merges updates, revalidates via Critic (including patch IDs), and logs the review payload (`labs/patches.py:37`, `tests/test_patches.py:25`).
-- `rate_patch` records critic rating stubs alongside patch lifecycle entries for RLHF hooks (`labs/patches.py:68`, `tests/test_patches.py:54`).
+| Component           | Status    | Evidence                                                                |
+| ------------------- | --------- | ----------------------------------------------------------------------- |
+| `AssetAssembler`    | Present   | `labs/generator/assembler.py`                                           |
+| `ShaderGenerator`   | Present   | `labs/generator/shader.py`                                              |
+| `ToneGenerator`     | Present   | `labs/generator/tone.py`                                                |
+| `HapticGenerator`   | Present   | `labs/generator/haptic.py`                                              |
+| `ControlGenerator`  | Present   | `labs/generator/control.py`                                             |
+| `MetaGenerator`     | Present   | `labs/generator/meta.py`                                                |
 
-## MCP integration (bullets: STDIO, TCP-default, socket-optional validation; failure handling; strict vs relaxed mode; 1 MiB caps; reason/detail logging)
-- STDIO path requires `MCP_ADAPTER_CMD` and normalizes schema directories before launching the adapter (`labs/mcp_stdio.py:145`).
-- TCP remains the default fallback, sharing the 1 MiB payload guard via `labs.transport` helpers (`labs/mcp_stdio.py:140`, `labs/transport.py:8`).
-- Socket validation is optional and gated by `LABS_SOCKET_TESTS` to keep CI deterministic (`tests/test_socket.py:12`, `README.md:55`).
-- `_build_validator_optional` keeps relaxed mode validating while downgrading outages to warnings (`labs/cli.py:59`, `labs/agents/critic.py:100`).
-- `validation_error.detail` now echoes the resolved transport (`tcp_unavailable`, `stdio_unavailable`, etc.) thanks to `resolve_mcp_endpoint` (`labs/agents/critic.py:68`, `tests/test_critic.py:35`).
+## Critic implementation
 
-## External generator integration (bullets: Gemini/OpenAI interface, provenance logging, CLI flags, error handling, MCP-enforced validation)
-- Gemini/OpenAI subclasses supply engine defaults and normalize assets with provenance including engine, mode, and trace ID (`labs/generator/external.py:93`, `labs/generator/external.py:332`).
-- CLI `generate --engine` runs still flow through Critic/MCP and persist experiments on success (`labs/cli.py:113`, `tests/test_pipeline.py:200`).
-- Successful runs append attempts, MCP responses, and validation status to `external.jsonl` (`labs/generator/external.py:168`, `tests/test_external_generator.py:18`).
-- `record_failure` logs retry traces with structured `failure.reason/detail` when transports fail (`labs/generator/external.py:197`, `tests/test_external_generator.py:40`).
+| Responsibility                  | Status    | Evidence                                                                                             |
+| ------------------------------- | --------- | ---------------------------------------------------------------------------------------------------- |
+| Reviews assets                  | Present   | `labs/agents/critic.py:58`                                                                           |
+| Invokes MCP validation          | Present   | `labs/agents/critic.py:91`                                                                           |
+| Handles validation failures     | Present   | `labs/agents/critic.py:94`                                                                           |
+| Logs reviews                    | Present   | `labs/agents/critic.py:168`                                                                          |
+| Records rating stubs            | Present   | `labs/agents/critic.py:171`                                                                          |
 
-## Test coverage (table: Feature → Tested? → Evidence)
-| Feature | Tested? | Evidence |
-| --- | --- | --- |
-| Generator assembler wiring & determinism | Yes | `tests/test_generator_assembler.py:21`, `tests/test_determinism.py:10` |
-| Generator ↔ critic CLI pipeline & persistence | Yes | `tests/test_pipeline.py:93`, `tests/test_pipeline.py:117` |
-| Critic fail-fast vs relaxed handling | Yes | `tests/test_critic.py:55`, `tests/test_critic.py:160` |
-| External generator provenance & failure logging | Yes | `tests/test_external_generator.py:18`, `tests/test_external_generator.py:40` |
-| TCP transport round-trip, caps, default fallback | Yes | `tests/test_tcp.py:41`, `tests/test_tcp.py:140` |
-| Socket transport | Optional (gated) | `tests/test_socket.py:12`, `tests/test_socket.py:33` |
-| Logging helper timestamp | Yes | `tests/test_logging.py:8` |
+## Assembler / Wiring step
 
-## Dependencies and runtime (table: Package → Used in → Required/Optional)
-| Package | Used in | Required/Optional |
-| --- | --- | --- |
-| pytest | Test suite execution via `pytest -q` | Required (`requirements.txt:1`) |
+*   **Parameter Index:** `AssetAssembler._collect_parameters` correctly collects parameters from shader, tone, and haptic sections (`labs/generator/assembler.py:118`).
+*   **Dangling Reference Pruning:** `AssetAssembler._prune_controls` correctly prunes control mappings with no corresponding parameter (`labs/generator/assembler.py:127`).
+*   **Provenance:** `AssetAssembler.generate` correctly injects provenance information into the generated asset (`labs/generator/assembler.py:78`).
 
-## Environment variables (bullets: name, default, transport defaults, behavior when MCP/external API unreachable, deprecated knobs)
-- `MCP_ENDPOINT` selects `tcp` (default via fallback), `stdio`, or `socket`; `resolve_mcp_endpoint` centralizes this logic (`labs/mcp_stdio.py:129`, `labs/mcp_stdio.py:140`).
-- `MCP_HOST`/`MCP_PORT` configure TCP transport, while `MCP_ADAPTER_CMD` and `MCP_SOCKET_PATH` are required for STDIO/socket (`labs/mcp_stdio.py:145`, `labs/mcp_stdio.py:159`).
-- `LABS_FAIL_FAST=1` enforces strict validation, while `0` keeps validating but downgrades outages to warnings (`labs/agents/critic.py:46`, `.env:19`).
-- `LABS_EXPERIMENTS_DIR` controls asset persistence roots for CLI runs (`labs/cli.py:35`).
-- External engines honor `LABS_EXTERNAL_LIVE`, `GEMINI_MODEL`, `OPENAI_MODEL`, and `OPENAI_TEMPERATURE` when building requests (`labs/generator/external.py:61`, `labs/generator/external.py:384`).
-- `SYN_SCHEMAS_DIR` is forwarded to STDIO validators to locate schema bundles (`labs/mcp_stdio.py:151`).
+## Patch lifecycle
 
-## Logging (bullets: structured JSONL, provenance fields, patch/rating/external fields, reason/detail on transport failures, location under meta/output/)
-- `log_jsonl` materializes directories and appends sorted JSON lines under `meta/output/labs/` (`labs/logging.py:13`).
-- Generator logs capture assembled assets plus experiment validation summaries (`labs/agents/generator.py:60`, `tests/test_pipeline.py:137`).
-- Critic reviews include `validation_status`, `validation_reason`, and transport-tagged `validation_error` metadata (`labs/agents/critic.py:68`, `tests/test_critic.py:35`).
-- External runs log attempts, MCP results, and structured failure metadata for retry exhaustion (`labs/generator/external.py:168`, `tests/test_external_generator.py:40`).
-- Patch lifecycle events and critic ratings append to JSONL streams for preview/apply/rate actions (`labs/patches.py:26`, `tests/test_patches.py:25`).
+*   **Preview:** `preview_patch` logs a preview of a patch (`labs/patches.py:26`).
+*   **Apply:** `apply_patch` applies a patch and validates the result using the critic (`labs/patches.py:43`).
+*   **Rate Stubs:** `rate_patch` logs a rating stub for a patch (`labs/patches.py:68`).
+*   **Logging:** All patch lifecycle events are logged to `meta/output/labs/patches.jsonl`.
 
-## Documentation accuracy (bullets: README vs. labs_spec.md; TCP as default, socket optional; env cleanup)
-- README documents TCP as the default transport, optional socket tests, and relaxed-mode behaviour aligning with the spec (`README.md:31`, `README.md:55`).
-- `.env` comment now explains that `LABS_FAIL_FAST=0` keeps validating while downgrading outages to warnings (`.env:19`).
-- Docs and samples avoid unused backend knobs, focusing on the required MCP/env configuration (`README.md:31`, `.env:24`).
+## MCP integration
+
+*   **STDIO, TCP-default, socket-optional validation:** `build_validator_from_env` correctly resolves the transport based on environment variables, with TCP as the default (`labs/mcp_stdio.py:140`).
+*   **Failure handling:** The critic correctly handles MCP unavailability and other errors, controlled by the `LABS_FAIL_FAST` environment variable (`labs/agents/critic.py:58`).
+*   **Strict vs relaxed mode:** Both modes invoke MCP validation; relaxed mode downgrades failures to warnings (`labs/agents/critic.py:58`).
+*   **1 MiB caps:** The transport layer enforces a 1 MiB payload size limit (`labs/transport.py:13`).
+*   **Reason/detail logging:** The critic logs detailed reasons for validation failures (`labs/agents/critic.py:68`).
+*   **Resolver fallback:** `resolve_mcp_endpoint` correctly falls back to TCP when `MCP_ENDPOINT` is unset or invalid (`labs/mcp_stdio.py:129`).
+
+## External generator integration
+
+*   **Gemini/OpenAI interface:** `ExternalGenerator` provides a pluggable interface for external generators (`labs/generator/external.py:25`).
+*   **Provenance logging:** External generator runs are logged with detailed provenance information to `meta/output/labs/external.jsonl` (`labs/generator/external.py:195`).
+*   **CLI flags:** The CLI supports `--engine` flag to select an external generator (`labs/cli.py:108`).
+*   **Error handling:** `ExternalGenerator` includes retry/backoff logic and structured error logging (`labs/generator/external.py:75`).
+*   **MCP-enforced validation:** All external outputs are validated via the critic and MCP (`labs/cli.py:152`).
+
+## Test coverage
+
+| Feature                          | Tested? | Evidence                                                                                             |
+| -------------------------------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| TCP transport                    | Yes     | `tests/test_tcp.py`                                                                                  |
+| Socket transport                 | Yes     | `tests/test_socket.py` (optional)                                                                    |
+| STDIO transport                  | Yes     | `tests/test_critic.py`                                                                               |
+| `resolve_mcp_endpoint` fallback  | No      | No specific test case found.                                                                         |
+| Critic socket failure coverage   | No      | `tests/test_critic.py` does not test for socket unavailability.                                        |
+| External generator (mock)        | Yes     | `tests/test_external_generator.py`                                                                   |
+| Patch lifecycle                  | Yes     | `tests/test_patches.py`                                                                              |
+| Deterministic generation         | Yes     | `tests/test_determinism.py`                                                                          |
+
+## Dependencies and runtime
+
+| Package | Used in   | Required/Optional |
+| ------- | --------- | ----------------- |
+| pytest  | `tests/`  | Required          |
+
+## Environment variables
+
+*   `MCP_ENDPOINT`: "tcp" (default), "stdio", or "socket".
+*   `MCP_HOST`: "127.0.0.1" (default).
+*   `MCP_PORT`: "8765" (default).
+*   `MCP_ADAPTER_CMD`: Command to run for STDIO adapter.
+*   `MCP_SOCKET_PATH`: Path to Unix socket for socket adapter.
+*   `LABS_EXPERIMENTS_DIR`: `meta/output/labs/experiments` (default).
+*   `LABS_FAIL_FAST`: "1" (default).
+*   `LABS_EXTERNAL_LIVE`: "0" (default).
+*   `GEMINI_MODEL`: "gemini-pro" (default).
+*   `OPENAI_MODEL`: "gpt-4o-mini" (default).
+*   `OPENAI_TEMPERATURE`: "0.4" (default).
+*   `SYN_SCHEMAS_DIR`: Unused.
+
+## Logging
+
+*   **Structured JSONL:** All logs are written in JSONL format.
+*   **Provenance fields:** All logs include detailed provenance information.
+*   **Patch/rating/external fields:** Specific fields are included for patch, rating, and external generator events.
+*   **Reason/detail on transport failures:** Failures include detailed reason and detail fields.
+*   **Location under meta/output/:** All logs are written to subdirectories of `meta/output/labs/`.
+
+## Documentation accuracy
+
+*   **README vs. labs_spec.md:** The README and `labs_spec.md` are mostly aligned, but the README is more up-to-date regarding the TCP-by-default transport.
+*   **TCP as default, socket optional:** The README clearly states that TCP is the default and socket is optional.
+*   **Maintainer docs reference resolver:** `docs/labs_spec.md` does not reference `resolve_mcp_endpoint`.
+*   **Env cleanup:** `.example.env` still contains the unused `SYN_SCHEMAS_DIR` variable.
 
 ## Detected divergences
-- None.
+
+*   The `AGENTS.md` file is outdated and does not reflect the current state of the agents.
+*   Test coverage is missing for `resolve_mcp_endpoint` fallback and critic socket failure handling.
+*   The `SYN_SCHEMAS_DIR` environment variable is documented but not used.
 
 ## Recommendations
-- Add a critic regression test that sets `MCP_ENDPOINT=socket` and asserts `validation_error.detail == "socket_unavailable"` to mirror the new TCP/STDIO coverage (`tests/test_critic.py:23`, `tests/test_socket.py:33`).
-- Introduce a small unit test for `resolve_mcp_endpoint` to freeze the fallback behaviour when unexpected endpoint strings appear (`labs/mcp_stdio.py:129`).
-- Document the transport provenance helper in developer docs so future agents surface consistent `validation_error.detail` fields (`labs/mcp_stdio.py:129`, `labs/agents/critic.py:68`).
+
+*   Add unit tests for `resolve_mcp_endpoint` to cover all fallback scenarios.
+*   Add a test case to `tests/test_critic.py` to cover socket unavailability.
+*   Remove the `SYN_SCHEMAS_DIR` environment variable from `.example.env` and any other documentation.
+*   Update `AGENTS.md` to reflect the current state of the agents.
+*   Update `docs/labs_spec.md` to reference `resolve_mcp_endpoint`.
