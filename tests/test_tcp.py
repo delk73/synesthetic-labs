@@ -10,7 +10,7 @@ import pytest
 
 from labs.mcp.exceptions import MCPUnavailableError
 from labs.mcp.tcp_client import TcpMCPValidator
-from labs.mcp_stdio import build_validator_from_env
+from labs.mcp_stdio import build_validator_from_env, resolve_mcp_endpoint
 from labs.transport import MAX_PAYLOAD_BYTES, decode_payload, read_message, write_message
 
 
@@ -158,3 +158,19 @@ def test_build_validator_from_env_defaults_to_tcp(monkeypatch) -> None:
     assert not thread.is_alive()
     assert not errors
     assert response == {"status": "ok", "endpoint": "tcp-default"}
+
+
+def test_resolve_mcp_endpoint_unset_defaults_to_tcp(monkeypatch) -> None:
+    monkeypatch.delenv("MCP_ENDPOINT", raising=False)
+
+    endpoint = resolve_mcp_endpoint()
+
+    assert endpoint == "tcp"
+
+
+def test_resolve_mcp_endpoint_invalid_defaults_to_tcp(monkeypatch) -> None:
+    monkeypatch.setenv("MCP_ENDPOINT", "bogus")
+
+    endpoint = resolve_mcp_endpoint()
+
+    assert endpoint == "tcp"

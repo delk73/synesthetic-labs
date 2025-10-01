@@ -181,3 +181,19 @@ def test_relaxed_mode_warns_when_validator_unavailable(tmp_path, base_asset, mon
         "reason": "mcp_unavailable",
         "detail": "tcp_unavailable",
     }
+
+
+def test_socket_endpoint_without_path_emits_socket_detail(tmp_path, base_asset, monkeypatch) -> None:
+    monkeypatch.setenv("MCP_ENDPOINT", "socket")
+    monkeypatch.delenv("MCP_SOCKET_PATH", raising=False)
+
+    critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
+    review = critic.review(base_asset)
+
+    assert review["ok"] is False
+    assert any("MCP validation unavailable" in issue for issue in review["issues"])
+    assert review["validation_status"] == "failed"
+    assert review["validation_error"] == {
+        "reason": "mcp_unavailable",
+        "detail": "socket_unavailable",
+    }
