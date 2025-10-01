@@ -1,6 +1,6 @@
 {
-  "task": "Audit synesthetic-labs repo state (v0.3.2 External Generators with MCP dependency, TCP-default, hardening)",
-  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md v0.3.2. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot.",
+  "task": "Audit synesthetic-labs repo state (v0.3.3 External Generators, TCP-default, hardening)",
+  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md v0.3.3. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot.",
   "constraints": {
     "style": "deterministic, terse, Markdown headings with bullets/tables",
     "rules": [
@@ -65,7 +65,7 @@
   "exit_criteria": [
     "meta/output/labs_state.md is written and non-empty",
     "AGENTS.md snapshot updated with current audit findings",
-    "Spec v0.3.2 (TCP-default, socket-optional, hardening) features mapped to Present / Missing / Divergent in table form",
+    "Spec v0.3.3 (TCP-default, socket-optional, hardening) features mapped to Present / Missing / Divergent in table form",
     "Generator, Critic, Assembler, and Patch lifecycle explicitly verified",
     "MCP validation integration checked for STDIO, TCP (default), and socket (optional) with doc status",
     "Strict vs relaxed mode both invoke MCP; if failures occur, logs contain reason/detail (no skips)",

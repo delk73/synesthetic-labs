@@ -1,4 +1,10 @@
-# synesthetic-labs Spec
+---
+version: v0.3.3
+lastReviewed: 2025-10-01
+owner: labs-core
+---
+
+# Synesthetic Labs Spec
 
 ## Purpose
 
@@ -115,7 +121,8 @@
 * Extend CLI:
 
   * `generate --engine=gemini "prompt"`
-  * `generate --engine=openai "prompt"`.
+  * `generate --engine=openai "prompt"`
+
 * Persist provenance (engine name, version, parameters) in generated asset.
 * Allow side-by-side runs: deterministic vs external.
 
@@ -167,6 +174,23 @@
 * MCP validation is always invoked, with relaxed mode changing severity not behavior.
 * `.env` and README accurately reflect required vars only.
 * Deprecated backend environment knobs are removed or clearly marked as such in docs and samples.
+
+---
+
+## Scope (v0.3.3 Spec Alignment)
+
+* **Test Coverage Gaps:** Add explicit tests for `resolve_mcp_endpoint` fallback and critic socket failure handling.
+* **Docs Cleanup:** Update `docs/labs_spec.md` and README to reference resolver fallback.  
+* **Environment Cleanup:** Remove unused `SYN_SCHEMAS_DIR` from `.example.env` and docs.  
+* **AGENTS.md Refresh:** Update with current agent roles and responsibilities.
+
+### Exit Criteria (v0.3.3)
+
+* Tests cover `resolve_mcp_endpoint` fallback and critic socket failure.  
+* README and spec reference resolver fallback.  
+* `.env` and docs pruned of unused vars.  
+* `AGENTS.md` up-to-date.  
+* CI passes with new tests green.
 
 ---
 
