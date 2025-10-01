@@ -1,44 +1,95 @@
 {
-  "task": "Patch critic provenance and relaxed mode documentation",
-  "objective": "Fix validation_error.detail transport provenance, update CriticAgent docstring, and correct .env guidance so relaxed mode is accurately described.",
+  "task": "Close all Synesthetic Labs v0.3.3 audit gaps",
+  "objective": "Bring Labs implementation, tests, and docs into full compliance with docs/labs_spec.md v0.3.3. Address missing test coverage, README/env/doc cleanup, and agent role refresh.",
   "changes": [
     {
-      "id": "critic_transport_detail",
-      "description": "Propagate actual MCP transport type into validation_error.detail.",
+      "id": "critic_socket_failure_test",
+      "description": "Add test to ensure critic emits socket_unavailable detail when MCP_ENDPOINT=socket but MCP_SOCKET_PATH unset.",
       "edits": [
-        "Update labs/agents/critic.py: in review() and error handling, set validation_error.detail to the resolved transport (stdio, tcp, or socket) instead of defaulting to stdio.",
-        "Thread resolved transport name from labs/mcp_stdio.py build_validator_from_env into CriticAgent so detail is accurate.",
-        "Update tests/test_critic.py: assert validation_error.detail matches active transport (e.g. 'tcp_unavailable' when MCP_ENDPOINT=tcp)."
+        {
+          "file": "tests/test_critic.py",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "import pytest, os\nfrom labs.agents.critic import Critic\n\n\ndef test_critic_socket_failure_emits_detail(monkeypatch):\n    monkeypatch.setenv(\"MCP_ENDPOINT\", \"socket\")\n    monkeypatch.delenv(\"MCP_SOCKET_PATH\", raising=False)\n    critic = Critic(fail_fast=True)\n    asset = {\"schema\": \"synesthetic-asset\", \"asset\": {\"meta\": {\"id\": \"t\", \"version\": \"0.0.0\"}}}\n    review = critic.review(asset)\n    assert review[\"ok\"] is False\n    detail = review.get(\"detail\") or {}\n    if isinstance(detail, dict):\n        assert \"socket\" in (detail.get(\"reason\", \"\") + detail.get(\"code\", \"\"))"
+        }
       ]
     },
     {
-      "id": "critic_docstring",
-      "description": "Update CriticAgent.review docstring to reflect current relaxed mode behavior.",
+      "id": "resolver_fallback_tests",
+      "description": "Cover resolve_mcp_endpoint fallback for unset and invalid MCP_ENDPOINT values.",
       "edits": [
-        "Edit labs/agents/critic.py:46 docstring to state that relaxed mode still invokes MCP validation but downgrades failures to warnings, rather than skipping validation."
+        {
+          "file": "tests/test_tcp.py",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "import pytest, os\nfrom labs.mcp_stdio import resolve_mcp_endpoint\n\n\ndef test_resolve_mcp_endpoint_unset_defaults_to_tcp(monkeypatch):\n    monkeypatch.delenv(\"MCP_ENDPOINT\", raising=False)\n    ep = resolve_mcp_endpoint()\n    assert ep.kind == \"tcp\"\n\n\ndef test_resolve_mcp_endpoint_invalid_defaults_to_tcp(monkeypatch):\n    monkeypatch.setenv(\"MCP_ENDPOINT\", \"bogus\")\n    ep = resolve_mcp_endpoint()\n    assert ep.kind == \"tcp\""
+        }
       ]
     },
     {
-      "id": "env_relaxed_mode",
-      "description": "Correct .env comment for LABS_FAIL_FAST relaxed mode.",
+      "id": "readme_resolver_notes",
+      "description": "Update README to mention resolver fallback behavior.",
       "edits": [
-        "Update .env:17 to explain that LABS_FAIL_FAST=0 downgrades validation failures to warnings but still attempts MCP validation."
+        {
+          "file": "README.md",
+          "pattern": "TCP is the default transport.*",
+          "multiple": true,
+          "replacement": "TCP is the default transport. Socket is optional. If MCP_ENDPOINT is unset or invalid, Labs falls back to TCP by default."
+        }
+      ]
+    },
+    {
+      "id": "env_cleanup",
+      "description": "Deprecate or remove SYN_SCHEMAS_DIR from .example.env per spec cleanup.",
+      "edits": [
+        {
+          "file": ".example.env",
+          "pattern": "SYN_SCHEMAS_DIR.*",
+          "multiple": true,
+          "replacement": "# (deprecated) SYN_SCHEMAS_DIR=/abs/path/to/schemas"
+        }
+      ]
+    },
+    {
+      "id": "spec_doc_update",
+      "description": "Ensure labs_spec.md references resolver fallback and env cleanup.",
+      "edits": [
+        {
+          "file": "docs/labs_spec.md",
+          "pattern": "## Scope \\(v0.3.3 Spec Alignment\\)[\\s\\S]*?### Exit Criteria",
+          "multiple": true,
+          "replacement": "## Scope (v0.3.3 Spec Alignment)\n\n* **Test Coverage Gaps:** Add explicit tests for resolve_mcp_endpoint fallback and critic socket failure handling.\n* **Docs Cleanup:** Update docs/labs_spec.md and README to reference resolver fallback.\n* **Environment Cleanup:** Remove or clearly deprecate SYN_SCHEMAS_DIR from .example.env and docs.\n* **AGENTS.md Refresh:** Update with current agent roles.\n\n### Exit Criteria\n\n* Tests cover resolve_mcp_endpoint fallback and critic socket failure.\n* README and docs reference resolver fallback.\n* .env pruned of unused vars.\n* AGENTS.md up-to-date.\n* CI passes."
+        }
+      ]
+    },
+    {
+      "id": "agents_doc_refresh",
+      "description": "Refresh AGENTS.md snapshot to reflect current Labs roles and transports.",
+      "edits": [
+        {
+          "file": "AGENTS.md",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "# Synesthetic Labs Agents (v0.3.3)\n\n## Generator\n- Produces Synesthetic assets from prompts.\n- Supports local, Gemini, and OpenAI engines.\n- Ensures MCP validation before persistence.\n\n## Critic\n- Validates assets in strict/relaxed modes.\n- Emits reason/detail on failure.\n- Handles TCP (default), STDIO, optional socket.\n- Logs reviews and rating stubs.\n\n## MCP Resolver\n- Reads MCP_ENDPOINT, MCP_HOST, MCP_PORT, MCP_SOCKET_PATH.\n- Falls back to TCP if unset or invalid.\n\n## Patch Lifecycle\n- Preview, apply, rate flows.\n- Logged under meta/output/labs/patches.jsonl.\n\n## Logging\n- Generator, critic, external, and patches all log JSONL to meta/output/labs/.\n- Determinism required.\n\n---\n\n_Last reviewed: v0.3.3 (2025-10-01)_"
+        }
       ]
     }
   ],
   "constraints": {
     "rules": [
       "No new dependencies.",
-      "Transport provenance must be deterministic across stdio, tcp, and socket.",
-      "Docstring and .env must match actual relaxed mode implementation.",
-      "All tests must pass after patch."
+      "Tests must be deterministic and CI-safe.",
+      "Edits confined to listed files.",
+      "Docs and .env must reflect v0.3.3 cleanup."
     ]
   },
   "exit_criteria": [
-    "validation_error.detail reflects the correct MCP transport type.",
-    "CriticAgent.review docstring correctly describes relaxed mode behavior.",
-    ".env comment for LABS_FAIL_FAST is updated and accurate.",
-    "tests/test_critic.py asserts transport-specific detail values and passes.",
-    "Audit no longer reports divergence for transport provenance or relaxed mode documentation."
+    "Critic socket failure test present and passing.",
+    "resolve_mcp_endpoint fallback tests present and passing.",
+    "README updated with resolver fallback notes.",
+    ".example.env deprecates SYN_SCHEMAS_DIR.",
+    "labs_spec.md updated with v0.3.3 alignment.",
+    "AGENTS.md refreshed for current agent roles.",
+    "CI green with coverage increased; audit rerun has no Missing/Divergent rows."
   ]
 }
