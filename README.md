@@ -44,8 +44,9 @@ python -m labs.mcp --path "$MCP_SOCKET_PATH"  # launches the bundled adapter onc
 
 If `MCP_ENDPOINT` is unset or set to an unsupported value, Labs automatically falls back to the TCP transport so validation can still run with the host/port defaults.
 
-Optional variables such as the (deprecated) `SYN_SCHEMAS_DIR`, `LABS_EXPERIMENTS_DIR`, and
-`LABS_FAIL_FAST` tune validation and persistence behavior. `LABS_FAIL_FAST`
+Optional variables such as the (deprecated, STDIO-only) `SYN_SCHEMAS_DIR`,
+`LABS_EXPERIMENTS_DIR`, and `LABS_FAIL_FAST` tune validation and persistence
+behavior. `LABS_FAIL_FAST`
 defaults to strict (`1`) so CLI and experiment runs fail when the MCP adapter
 is unavailable; set it to `0`/`false` to downgrade MCP issues to warnings while
 still attempting validation. The transport helpers enforce a 1 MiB payload cap and

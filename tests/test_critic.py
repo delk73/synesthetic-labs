@@ -7,6 +7,7 @@ import sys
 
 import pytest
 
+from labs import mcp_stdio
 from labs.agents.critic import CriticAgent, MCPUnavailableError
 
 
@@ -197,3 +198,20 @@ def test_socket_endpoint_without_path_emits_socket_detail(tmp_path, base_asset, 
         "reason": "mcp_unavailable",
         "detail": "socket_unavailable",
     }
+
+
+def test_schemas_dir_emits_single_warning(monkeypatch, caplog, tmp_path) -> None:
+    monkeypatch.setenv("MCP_ENDPOINT", "stdio")
+    monkeypatch.setenv("MCP_ADAPTER_CMD", f"{sys.executable} -m labs.mcp_stub")
+    monkeypatch.setenv("SYN_SCHEMAS_DIR", str(tmp_path / "schemas"))
+    mcp_stdio._SCHEMAS_WARNING_EMITTED = False
+
+    with caplog.at_level(logging.WARNING):
+        validator = mcp_stdio.build_validator_from_env()
+        assert callable(validator)
+        another_validator = mcp_stdio.build_validator_from_env()
+        assert callable(another_validator)
+
+    warnings = [record for record in caplog.records if "SYN_SCHEMAS_DIR is deprecated" in record.message]
+    assert len(warnings) == 1
+    assert "STDIO" in warnings[0].message
