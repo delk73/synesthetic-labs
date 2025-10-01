@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shlex
 import socket
@@ -18,6 +19,10 @@ from labs.transport import (
     read_message,
     write_message,
 )
+
+
+_LOGGER = logging.getLogger(__name__)
+_SCHEMAS_WARNING_EMITTED = False
 
 
 
@@ -151,6 +156,13 @@ def build_validator_from_env(*, timeout: float = 10.0) -> Callable[[Dict[str, An
         env_overrides: Dict[str, str] = {}
         schemas_dir = os.getenv("SYN_SCHEMAS_DIR")
         if schemas_dir:
+            global _SCHEMAS_WARNING_EMITTED
+            if not _SCHEMAS_WARNING_EMITTED:
+                _LOGGER.warning(
+                    "SYN_SCHEMAS_DIR is deprecated and only supported for STDIO adapters; "
+                    "the override will be removed in a future release."
+                )
+                _SCHEMAS_WARNING_EMITTED = True
             env_overrides["SYN_SCHEMAS_DIR"] = normalize_resource_path(schemas_dir)
 
         validator = StdioMCPValidator(command, env=env_overrides or None, timeout=timeout)

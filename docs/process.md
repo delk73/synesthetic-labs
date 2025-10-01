@@ -38,6 +38,14 @@ All work follows the **Spec → Audit → Patch → Repeat** loop.
 
 ---
 
+## Transport Provenance
+
+* Labs resolves validation transports through `resolve_mcp_endpoint` (see `labs/mcp_stdio.py`).
+* The resolver accepts `tcp`, `stdio`, or `socket` and falls back to TCP when the environment is unset or invalid.
+* Maintainers must exercise the resolver tests (`tests/test_tcp.py`) whenever MCP transport defaults or env naming change to avoid drift against the spec.
+
+---
+
 ## 3. Patch
 
 * Patches flow **only from audit gaps.**  

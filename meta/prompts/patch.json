@@ -1,76 +1,40 @@
 {
-  "task": "Close all Synesthetic Labs v0.3.3 audit gaps",
-  "objective": "Bring Labs implementation, tests, and docs into full compliance with docs/labs_spec.md v0.3.3. Address missing test coverage, README/env/doc cleanup, and agent role refresh.",
+  "task": "Close remaining Synesthetic Labs v0.3.3 audit gaps",
+  "objective": "Align runtime, env, and docs with v0.3.3 spec. Add deprecation warning for SYN_SCHEMAS_DIR, mark it deprecated in .env, and reference resolver fallback in maintainer docs.",
   "changes": [
     {
-      "id": "critic_socket_failure_test",
-      "description": "Add test to ensure critic emits socket_unavailable detail when MCP_ENDPOINT=socket but MCP_SOCKET_PATH unset.",
+      "id": "schemas_dir_warning",
+      "description": "Emit deprecation warning when SYN_SCHEMAS_DIR is forwarded under STDIO.",
       "edits": [
         {
-          "file": "tests/test_critic.py",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "import pytest, os\nfrom labs.agents.critic import Critic\n\n\ndef test_critic_socket_failure_emits_detail(monkeypatch):\n    monkeypatch.setenv(\"MCP_ENDPOINT\", \"socket\")\n    monkeypatch.delenv(\"MCP_SOCKET_PATH\", raising=False)\n    critic = Critic(fail_fast=True)\n    asset = {\"schema\": \"synesthetic-asset\", \"asset\": {\"meta\": {\"id\": \"t\", \"version\": \"0.0.0\"}}}\n    review = critic.review(asset)\n    assert review[\"ok\"] is False\n    detail = review.get(\"detail\") or {}\n    if isinstance(detail, dict):\n        assert \"socket\" in (detail.get(\"reason\", \"\") + detail.get(\"code\", \"\"))"
-        }
-      ]
-    },
-    {
-      "id": "resolver_fallback_tests",
-      "description": "Cover resolve_mcp_endpoint fallback for unset and invalid MCP_ENDPOINT values.",
-      "edits": [
-        {
-          "file": "tests/test_tcp.py",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "import pytest, os\nfrom labs.mcp_stdio import resolve_mcp_endpoint\n\n\ndef test_resolve_mcp_endpoint_unset_defaults_to_tcp(monkeypatch):\n    monkeypatch.delenv(\"MCP_ENDPOINT\", raising=False)\n    ep = resolve_mcp_endpoint()\n    assert ep.kind == \"tcp\"\n\n\ndef test_resolve_mcp_endpoint_invalid_defaults_to_tcp(monkeypatch):\n    monkeypatch.setenv(\"MCP_ENDPOINT\", \"bogus\")\n    ep = resolve_mcp_endpoint()\n    assert ep.kind == \"tcp\""
-        }
-      ]
-    },
-    {
-      "id": "readme_resolver_notes",
-      "description": "Update README to mention resolver fallback behavior.",
-      "edits": [
-        {
-          "file": "README.md",
-          "pattern": "TCP is the default transport.*",
-          "multiple": true,
-          "replacement": "TCP is the default transport. Socket is optional. If MCP_ENDPOINT is unset or invalid, Labs falls back to TCP by default."
+          "file": "labs/mcp_stdio.py",
+          "pattern": "if schemas_dir:",
+          "multiple": false,
+          "replacement": "if schemas_dir:\n        import sys\n        import logging\n        logging.warning(\"SYN_SCHEMAS_DIR is deprecated and only supported for STDIO; will be removed in a future release.\")"
         }
       ]
     },
     {
       "id": "env_cleanup",
-      "description": "Deprecate or remove SYN_SCHEMAS_DIR from .example.env per spec cleanup.",
+      "description": "Update .env sample so SYN_SCHEMAS_DIR is marked deprecated and STDIO-only.",
       "edits": [
         {
-          "file": ".example.env",
-          "pattern": "SYN_SCHEMAS_DIR.*",
+          "file": ".env",
+          "pattern": "SYN_SCHEMAS_DIR=.*",
           "multiple": true,
-          "replacement": "# (deprecated) SYN_SCHEMAS_DIR=/abs/path/to/schemas"
+          "replacement": "# Deprecated: Only used for STDIO adapter; avoid in new setups\n# SYN_SCHEMAS_DIR=/abs/path/to/schemas"
         }
       ]
     },
     {
-      "id": "spec_doc_update",
-      "description": "Ensure labs_spec.md references resolver fallback and env cleanup.",
+      "id": "maintainer_docs_resolver",
+      "description": "Add explicit reference to resolve_mcp_endpoint in maintainer docs for provenance clarity.",
       "edits": [
         {
-          "file": "docs/labs_spec.md",
-          "pattern": "## Scope \\(v0.3.3 Spec Alignment\\)[\\s\\S]*?### Exit Criteria",
-          "multiple": true,
-          "replacement": "## Scope (v0.3.3 Spec Alignment)\n\n* **Test Coverage Gaps:** Add explicit tests for resolve_mcp_endpoint fallback and critic socket failure handling.\n* **Docs Cleanup:** Update docs/labs_spec.md and README to reference resolver fallback.\n* **Environment Cleanup:** Remove or clearly deprecate SYN_SCHEMAS_DIR from .example.env and docs.\n* **AGENTS.md Refresh:** Update with current agent roles.\n\n### Exit Criteria\n\n* Tests cover resolve_mcp_endpoint fallback and critic socket failure.\n* README and docs reference resolver fallback.\n* .env pruned of unused vars.\n* AGENTS.md up-to-date.\n* CI passes."
-        }
-      ]
-    },
-    {
-      "id": "agents_doc_refresh",
-      "description": "Refresh AGENTS.md snapshot to reflect current Labs roles and transports.",
-      "edits": [
-        {
-          "file": "AGENTS.md",
+          "file": "docs/process.md",
           "pattern": ".*",
           "multiple": true,
-          "replacement": "# Synesthetic Labs Agents (v0.3.3)\n\n## Generator\n- Produces Synesthetic assets from prompts.\n- Supports local, Gemini, and OpenAI engines.\n- Ensures MCP validation before persistence.\n\n## Critic\n- Validates assets in strict/relaxed modes.\n- Emits reason/detail on failure.\n- Handles TCP (default), STDIO, optional socket.\n- Logs reviews and rating stubs.\n\n## MCP Resolver\n- Reads MCP_ENDPOINT, MCP_HOST, MCP_PORT, MCP_SOCKET_PATH.\n- Falls back to TCP if unset or invalid.\n\n## Patch Lifecycle\n- Preview, apply, rate flows.\n- Logged under meta/output/labs/patches.jsonl.\n\n## Logging\n- Generator, critic, external, and patches all log JSONL to meta/output/labs/.\n- Determinism required.\n\n---\n\n_Last reviewed: v0.3.3 (2025-10-01)_"
+          "replacement": "# Synesthetic Labs Maintainer Process\n\n## Transport Provenance\n\nLabs resolves its transport mode via `resolve_mcp_endpoint`. This checks MCP_ENDPOINT (tcp|stdio|socket) and falls back to TCP if unset or invalid. Maintainers should confirm resolver behavior when changing environment defaults.\n\n## Other Notes\n- Ensure .env remains aligned with labs_spec.\n- Deprecated vars such as SYN_SCHEMAS_DIR should not be reintroduced."
         }
       ]
     }
@@ -78,18 +42,16 @@
   "constraints": {
     "rules": [
       "No new dependencies.",
-      "Tests must be deterministic and CI-safe.",
-      "Edits confined to listed files.",
-      "Docs and .env must reflect v0.3.3 cleanup."
+      "Runtime changes limited to deprecation warning emission.",
+      "Docs must clearly mention resolver fallback and SYN_SCHEMAS_DIR policy.",
+      "Edits confined to listed files."
     ]
   },
   "exit_criteria": [
-    "Critic socket failure test present and passing.",
-    "resolve_mcp_endpoint fallback tests present and passing.",
-    "README updated with resolver fallback notes.",
-    ".example.env deprecates SYN_SCHEMAS_DIR.",
-    "labs_spec.md updated with v0.3.3 alignment.",
-    "AGENTS.md refreshed for current agent roles.",
-    "CI green with coverage increased; audit rerun has no Missing/Divergent rows."
+    "labs/mcp_stdio.py emits a single logger.warning when SYN_SCHEMAS_DIR is set under STDIO.",
+    ".env sample marks SYN_SCHEMAS_DIR as deprecated and STDIO-only.",
+    "docs/process.md (or maintainer doc) explicitly references resolve_mcp_endpoint and fallback behavior.",
+    "CI green with no regressions.",
+    "Audit rerun shows zero Missing/Divergent rows for v0.3.3."
   ]
 }
