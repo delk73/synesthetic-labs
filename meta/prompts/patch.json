@@ -1,57 +1,57 @@
 {
-  "task": "Close remaining Synesthetic Labs v0.3.3 audit gaps",
-  "objective": "Align runtime, env, and docs with v0.3.3 spec. Add deprecation warning for SYN_SCHEMAS_DIR, mark it deprecated in .env, and reference resolver fallback in maintainer docs.",
+  "task": "Align SYN_SCHEMAS_DIR handling with v0.3.3 spec",
+  "objective": "Update docs, env samples, and tests so SYN_SCHEMAS_DIR is marked deprecated and STDIO-only, with a regression test for the warning emission.",
   "changes": [
     {
-      "id": "schemas_dir_warning",
-      "description": "Emit deprecation warning when SYN_SCHEMAS_DIR is forwarded under STDIO.",
+      "id": "readme_update",
+      "description": "Clarify in README that SYN_SCHEMAS_DIR is deprecated and only applies to STDIO adapters.",
       "edits": [
         {
-          "file": "labs/mcp_stdio.py",
-          "pattern": "if schemas_dir:",
-          "multiple": false,
-          "replacement": "if schemas_dir:\n        import sys\n        import logging\n        logging.warning(\"SYN_SCHEMAS_DIR is deprecated and only supported for STDIO; will be removed in a future release.\")"
+          "file": "README.md",
+          "pattern": "SYN_SCHEMAS_DIR.*deprecated.*",
+          "multiple": true,
+          "replacement": "SYN_SCHEMAS_DIR (deprecated, STDIO-only): If set, forwards schemas to the STDIO adapter. Ignored for TCP and socket transports."
         }
       ]
     },
     {
-      "id": "env_cleanup",
-      "description": "Update .env sample so SYN_SCHEMAS_DIR is marked deprecated and STDIO-only.",
+      "id": "env_update",
+      "description": "Revise .example.env to mark SYN_SCHEMAS_DIR as deprecated/STDIO-only.",
       "edits": [
         {
-          "file": ".env",
+          "file": ".example.env",
           "pattern": "SYN_SCHEMAS_DIR=.*",
           "multiple": true,
-          "replacement": "# Deprecated: Only used for STDIO adapter; avoid in new setups\n# SYN_SCHEMAS_DIR=/abs/path/to/schemas"
+          "replacement": "# Deprecated: only used for STDIO adapter; ignored for TCP/socket\n# SYN_SCHEMAS_DIR=/abs/path/to/schemas"
         }
       ]
     },
     {
-      "id": "maintainer_docs_resolver",
-      "description": "Add explicit reference to resolve_mcp_endpoint in maintainer docs for provenance clarity.",
+      "id": "test_warning_emission",
+      "description": "Introduce regression test for SYN_SCHEMAS_DIR deprecation warning under STDIO.",
       "edits": [
         {
-          "file": "docs/process.md",
+          "file": "tests/test_critic.py",
           "pattern": ".*",
           "multiple": true,
-          "replacement": "# Synesthetic Labs Maintainer Process\n\n## Transport Provenance\n\nLabs resolves its transport mode via `resolve_mcp_endpoint`. This checks MCP_ENDPOINT (tcp|stdio|socket) and falls back to TCP if unset or invalid. Maintainers should confirm resolver behavior when changing environment defaults.\n\n## Other Notes\n- Ensure .env remains aligned with labs_spec.\n- Deprecated vars such as SYN_SCHEMAS_DIR should not be reintroduced."
+          "replacement": "import pytest, os\nfrom labs import mcp_stdio\n\n\ndef test_schemas_dir_emits_single_warning(monkeypatch, caplog):\n    monkeypatch.setenv(\"MCP_ENDPOINT\", \"stdio\")\n    monkeypatch.setenv(\"SYN_SCHEMAS_DIR\", \"/tmp/fake_schemas\")\n    caplog.clear()\n    _ = mcp_stdio.build_validator_from_env()\n    warnings = [r for r in caplog.records if \"SYN_SCHEMAS_DIR is deprecated\" in r.message]\n    assert len(warnings) == 1\n    assert \"STDIO\" in warnings[0].message"
         }
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "No new dependencies.",
-      "Runtime changes limited to deprecation warning emission.",
-      "Docs must clearly mention resolver fallback and SYN_SCHEMAS_DIR policy.",
+      "Do not alter runtime behavior beyond emitting the existing warning once.",
+      "Docs must clearly state STDIO-only deprecation.",
+      "Tests must be deterministic and CI-safe.",
       "Edits confined to listed files."
     ]
   },
   "exit_criteria": [
-    "labs/mcp_stdio.py emits a single logger.warning when SYN_SCHEMAS_DIR is set under STDIO.",
-    ".env sample marks SYN_SCHEMAS_DIR as deprecated and STDIO-only.",
-    "docs/process.md (or maintainer doc) explicitly references resolve_mcp_endpoint and fallback behavior.",
-    "CI green with no regressions.",
-    "Audit rerun shows zero Missing/Divergent rows for v0.3.3."
+    "README explicitly states SYN_SCHEMAS_DIR is STDIO-only.",
+    ".example.env marks SYN_SCHEMAS_DIR deprecated/STDIO-only.",
+    "Unit test asserts a single warning emission with caplog.",
+    "CI passes with no regressions.",
+    "Audit rerun shows no divergences for SYN_SCHEMAS_DIR handling."
   ]
 }
