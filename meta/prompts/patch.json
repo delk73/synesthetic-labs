@@ -1,57 +1,109 @@
 {
-  "task": "Align SYN_SCHEMAS_DIR handling with v0.3.3 spec",
-  "objective": "Update docs, env samples, and tests so SYN_SCHEMAS_DIR is marked deprecated and STDIO-only, with a regression test for the warning emission.",
+  "task": "Implement v0.3.4 external generator live-call compliance",
+  "objective": "Update external generator, CLI, logging, tests, and docs to meet v0.3.4 requirements (env-driven API keys, Authorization header, retry taxonomy, normalization defaults, structured logging, CLI flags, troubleshooting doc).",
   "changes": [
     {
-      "id": "readme_update",
-      "description": "Clarify in README that SYN_SCHEMAS_DIR is deprecated and only applies to STDIO adapters.",
+      "id": "external_http_client",
+      "description": "Implement API key/env handling, Authorization header injection, size guards, retry taxonomy, and failure reason/detail in external generator.",
+      "edits": [
+        {
+          "file": "labs/generator/external.py",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "# add imports\nimport os, hashlib, random, time\n\n# existing ExternalGenerator class ...\n# patch generate() to:\n# - load GEMINI_API_KEY/OPENAI_API_KEY and endpoints from env\n# - inject Authorization header\n# - enforce 256 KiB request, 1 MiB response\n# - exponential backoff with jitter, abort on auth_error/bad_response\n# - redact secrets in logs\n# - compute SHA-256 hash of raw response\n# - normalize asset with meta/controls defaults\n# - insert provenance under asset.meta.provenance\n# - emit structured failure.reason/detail"
+        }
+      ]
+    },
+    {
+      "id": "cli_flags",
+      "description": "Extend CLI generate command with seed, temperature, timeout, and strict/relaxed flags.",
+      "edits": [
+        {
+          "file": "labs/cli.py",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "# argparse setup\nparser.add_argument('--seed', type=int, help='Random seed')\nparser.add_argument('--temperature', type=float, help='Temperature override')\nparser.add_argument('--timeout-s', type=int, default=30, help='Request timeout seconds')\nparser.add_argument('--strict', dest='strict', action='store_true')\nparser.add_argument('--relaxed', dest='strict', action='store_false')\nparser.set_defaults(strict=True)\n\n# map strict/relaxed to LABS_FAIL_FAST env\nos.environ['LABS_FAIL_FAST'] = '1' if args.strict else '0'\n# pass seed/temperature/timeout through to ExternalGenerator"
+        }
+      ]
+    },
+    {
+      "id": "logging_metadata",
+      "description": "Augment generator, critic, and patch logging with trace_id, mode, transport, strict, and structured failure reason/detail.",
+      "edits": [
+        {
+          "file": "labs/agents/generator.py",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "# extend log payloads with trace_id, mode, transport, strict flag, and failure.reason/detail"
+        },
+        {
+          "file": "labs/agents/critic.py",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "# extend critic logs with trace_id, mode, transport, strict flag"
+        },
+        {
+          "file": "labs/patches.py",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "# extend patch logs with trace_id, strict flag, transport, and structured reason/detail"
+        }
+      ]
+    },
+    {
+      "id": "tests_external_live",
+      "description": "Add tests for header injection, size caps, retry taxonomy, normalization defaults, and CLI flag precedence.",
+      "edits": [
+        {
+          "file": "tests/test_external_generator.py",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "def test_live_header_injection(monkeypatch): ...\n\ndef test_request_response_size_caps(): ...\n\ndef test_retry_taxonomy_respects_abort(): ...\n\ndef test_normalization_defaults(): ...\n\ndef test_cli_flags_precedence(): ..."
+        }
+      ]
+    },
+    {
+      "id": "docs_update",
+      "description": "Update README, .example.env, and add troubleshooting doc for external live mode.",
       "edits": [
         {
           "file": "README.md",
-          "pattern": "SYN_SCHEMAS_DIR.*deprecated.*",
-          "multiple": true,
-          "replacement": "SYN_SCHEMAS_DIR (deprecated, STDIO-only): If set, forwards schemas to the STDIO adapter. Ignored for TCP and socket transports."
-        }
-      ]
-    },
-    {
-      "id": "env_update",
-      "description": "Revise .example.env to mark SYN_SCHEMAS_DIR as deprecated/STDIO-only.",
-      "edits": [
-        {
-          "file": ".example.env",
-          "pattern": "SYN_SCHEMAS_DIR=.*",
-          "multiple": true,
-          "replacement": "# Deprecated: only used for STDIO adapter; ignored for TCP/socket\n# SYN_SCHEMAS_DIR=/abs/path/to/schemas"
-        }
-      ]
-    },
-    {
-      "id": "test_warning_emission",
-      "description": "Introduce regression test for SYN_SCHEMAS_DIR deprecation warning under STDIO.",
-      "edits": [
-        {
-          "file": "tests/test_critic.py",
           "pattern": ".*",
           "multiple": true,
-          "replacement": "import pytest, os\nfrom labs import mcp_stdio\n\n\ndef test_schemas_dir_emits_single_warning(monkeypatch, caplog):\n    monkeypatch.setenv(\"MCP_ENDPOINT\", \"stdio\")\n    monkeypatch.setenv(\"SYN_SCHEMAS_DIR\", \"/tmp/fake_schemas\")\n    caplog.clear()\n    _ = mcp_stdio.build_validator_from_env()\n    warnings = [r for r in caplog.records if \"SYN_SCHEMAS_DIR is deprecated\" in r.message]\n    assert len(warnings) == 1\n    assert \"STDIO\" in warnings[0].message"
+          "replacement": "## External Generators (v0.3.4)\nSet GEMINI_API_KEY/OPENAI_API_KEY in your environment and enable live calls with LABS_EXTERNAL_LIVE=1. Keys are redacted in logs.\nCLI flags: --engine, --seed, --temperature, --timeout-s, --strict/--relaxed.\nSee docs/troubleshooting_external.md for error taxonomy and remedies."
+        },
+        {
+          "file": ".example.env",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "# External generators (v0.3.4)\n# GEMINI_API_KEY=your_key_here\n# GEMINI_ENDPOINT=https://...\n# OPENAI_API_KEY=your_key_here\n# OPENAI_ENDPOINT=https://api.openai.com/v1\nLABS_EXTERNAL_LIVE=0"
+        },
+        {
+          "file": "docs/troubleshooting_external.md",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "# Troubleshooting External Generators\n\n- **auth_error**: invalid or missing API key.\n- **rate_limited**: too many requests.\n- **timeout**: request exceeded timeout.\n- **bad_response**: malformed JSON.\n- **server_error**: 5xx.\n- **network_error**: connection issue.\n\nFix: check API key, network, or retry later."
         }
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "Do not alter runtime behavior beyond emitting the existing warning once.",
-      "Docs must clearly state STDIO-only deprecation.",
-      "Tests must be deterministic and CI-safe.",
-      "Edits confined to listed files."
+      "Do not break existing mock mode (LABS_EXTERNAL_LIVE=0 must still work deterministically).",
+      "Ensure Authorization header only sent in live mode with API key present.",
+      "Retry/backoff must follow taxonomy; no retry on auth_error/bad_response.",
+      "Normalization must always produce schema-valid asset with defaults and provenance under asset.meta.",
+      "Logs must redact secrets and include trace_id, transport, mode, strict flag.",
+      "Docs must clearly explain env setup and troubleshooting."
     ]
   },
   "exit_criteria": [
-    "README explicitly states SYN_SCHEMAS_DIR is STDIO-only.",
-    ".example.env marks SYN_SCHEMAS_DIR deprecated/STDIO-only.",
-    "Unit test asserts a single warning emission with caplog.",
-    "CI passes with no regressions.",
-    "Audit rerun shows no divergences for SYN_SCHEMAS_DIR handling."
+    "External live calls functional with GEMINI_API_KEY/OPENAI_API_KEY set.",
+    "external.jsonl entries include transport, raw_response.hash/size, provenance, trace_id, strict flag.",
+    "CLI generate supports new flags and precedence tested.",
+    "Tests cover header injection, size caps, retry taxonomy, normalization defaults, and CLI flags.",
+    "README and .example.env document API key setup and live mode toggle.",
+    "Troubleshooting doc present with error taxonomy.",
+    "CI passes in mock mode with LABS_EXTERNAL_LIVE=0."
   ]
 }
