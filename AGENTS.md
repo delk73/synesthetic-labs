@@ -1,32 +1,31 @@
 # Synesthetic Labs Agents (v0.3.4 Audit)
 
-## Generator (Present)
-- AssetAssembler collects parameter indices, prunes dangling control mappings, and injects deterministic provenance for seeded runs `labs/generator/assembler.py:64`; `tests/test_determinism.py:10`
-- GeneratorAgent emits proposal snapshots with run metadata and archives experiment summaries for downstream analysis `labs/agents/generator.py:54`; `tests/test_generator.py:24`
+## Generator Agent — Present
+- AssetAssembler collects parameter indices, prunes dangling control mappings, and injects deterministic provenance for seeded runs `labs/generator/assembler.py:L50-L102`; `tests/test_generator_assembler.py:L12-L37`
+- GeneratorAgent logs proposal snapshots with trace/mode/transport/strict metadata and records MCP-reviewed experiments `labs/agents/generator.py:L48-L145`; `tests/test_generator.py:L11-L81`
 
-## Critic (Present)
-- CriticAgent enforces required field coverage, honors `LABS_FAIL_FAST`, and reports transport-specific validation errors `labs/agents/critic.py:63`; `tests/test_critic.py:187`
-- Rating events persist to `meta/output/labs/critic.jsonl`, supporting RLHF review loops `labs/agents/critic.py:182`; `tests/test_ratings.py:10`
+## Critic Agent — Present
+- Enforces required field coverage, resolves transports, and downgrades MCP outages when relaxed while emitting structured review records `labs/agents/critic.py:L61-L188`; `tests/test_critic.py:L161-L217`
+- Rating stubs persist trace/mode/transport metadata for RLHF loops `labs/agents/critic.py:L190-L217`; `tests/test_ratings.py:L7-L33`
 
-## MCP Resolver (Present)
-- `resolve_mcp_endpoint` defaults to TCP when unset or invalid and scaffolds stdio/socket/tcp transports with payload caps `labs/mcp_stdio.py:134`; `tests/test_tcp.py:163`
-- STDIO builder normalizes deprecated `SYN_SCHEMAS_DIR` and issues a one-time compatibility warning `labs/mcp_stdio.py:158`; `tests/test_critic.py:203`
+## MCP Resolver — Present
+- Defaults endpoint selection to TCP on unset/invalid values and validates stdio/socket/tcp payload caps `labs/mcp_stdio.py:L134-L205`; `tests/test_tcp.py:L140-L176`
+- STDIO builder normalizes deprecated `SYN_SCHEMAS_DIR` with a single compatibility warning `labs/mcp_stdio.py:L150-L168`; `tests/test_critic.py:L203-L217`
 
-## Patch Lifecycle (Divergent)
-- Preview/apply/rate flows reuse CriticAgent validation hooks to guard patch payloads `labs/patches.py:26`; `tests/test_patches.py:25`
-- Patch lifecycle logs omit spec-required `trace_id`, strict flag, and transport metadata `docs/labs_spec.md:155`; `labs/patches.py:57`
+## Patch Lifecycle — Present
+- Preview/apply/rate flows share critic validation, propagate trace/mode/transport/strict fields, and log failures with reason/detail `labs/patches.py:L47-L156`; `tests/test_patches.py:L11-L92`
 
-## External Generators (Divergent)
-- Gemini/OpenAI mock integrations capture attempt traces and surface MCP-reviewed results `labs/generator/external.py:115`; `tests/test_external_generator.py:16`
-- Live-call obligations (auth headers, env-driven endpoints, schema-normalized defaults, failure taxonomy) are not yet implemented `docs/labs_spec.md:108`; `labs/generator/external.py:275`
+## External Generators — Present with noted gaps
+- Gemini/OpenAI live mode gates on env keys, injects Authorization headers, redacts logs, and records provenance-rich attempts `labs/generator/external.py:L118-L515`; `tests/test_external_generator.py:L19-L260`
+- CLI dispatch forces MCP-reviewed persistence before writing artifacts `labs/cli.py:L115-L183`; `tests/test_pipeline.py:L200-L244`
 
-## External LIVE Spec (Missing coverage)
-- CLI lacks `--seed`, `--temperature`, `--timeout-s`, and `--strict` controls, and `LABS_EXTERNAL_LIVE` gating never wires API keys `docs/labs_spec.md:60`; `labs/cli.py:82`
-- Troubleshooting materials and tests do not exercise live-mode error taxonomy or response size guards `docs/labs_spec.md:205`; `tests/test_external_generator.py:52`
+## Logging — Present
+- Generator, critic, patch, and external flows append structured JSONL entries under `meta/output/labs/` capturing trace, mode, strict, transport, and failure taxonomy `labs/logging.py:L10-L35`; `labs/agents/generator.py:L48-L145`; `labs/agents/critic.py:L61-L217`; `labs/patches.py:L47-L156`; `labs/generator/external.py:L294-L349`
 
-## Logging (Divergent)
-- Generator, critic, patch, and external logs omit required fields (`trace_id`, mode, transport, strict flag, raw_response hash) `docs/labs_spec.md:155`; `labs/generator/external.py:170`
-- Failure reasons fall back to `api_failed`/`validation_failed` instead of enumerated taxonomy codes `docs/labs_spec.md:181`; `labs/generator/external.py:218`
+## Maintainer Docs — Present
+- Process guide anchors transport provenance expectations to `resolve_mcp_endpoint` to avoid drift `docs/process.md:L41-L45`
 
-## Maintainer Docs (Present)
-- Process guide anchors transport provenance expectations to `resolve_mcp_endpoint` to avoid drift `docs/process.md:41`
+## Outstanding Gaps — Divergent / Missing
+- Normalization drops unknown keys instead of rejecting them per spec `labs/generator/external.py:L609-L633`; `docs/labs_spec.md:L118-L126`
+- Pre-flight numeric bounds (e.g., haptic intensity in [0,1]) are not enforced before MCP validation `labs/generator/external.py:L538-L608`; `docs/labs_spec.md:L148-L153`
+- CLI lacks the spec-required `--engine=deterministic` alias `labs/cli.py:L82-L96`; `docs/labs_spec.md:L57-L62`
