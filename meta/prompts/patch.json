@@ -1,88 +1,73 @@
 {
-  "task": "Close v0.3.4 drift (normalization, bounds, deterministic alias)",
-  "objective": "Bring Labs implementation into full alignment with v0.3.4 spec by rejecting unknown keys, enforcing numeric bounds pre-MCP, and adding the --engine=deterministic alias.",
+  "task": "Align Labs generator pipeline with Synesthetic Labs Spec v0.3.4",
+  "objective": "Reshape generator output, normalization, CLI, and validation so generated assets are schema-valid SynestheticAssets as defined in v0.3.4.",
   "changes": [
     {
-      "id": "normalization_reject_unknowns",
-      "description": "Reject unknown sections/keys or wrong types during normalization instead of silently dropping them.",
-      "edits": [
-        {
-          "file": "labs/generator/external.py",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "# In normalization step:\n# - walk asset dict\n# - if any unexpected keys or wrong-typed values are found, raise structured error\n# - failure.reason = 'bad_response', failure.detail = 'unknown_key:<name>' or 'wrong_type:<path>'\n# - extend tests to assert rejection\n"
-        }
-      ]
+      "id": "asset_schema_alignment",
+      "description": "Update assembler to output flattened schema asset with $schemaRef, shader/tone/haptic/control/modulations/rule_bundle/meta_info sections.",
+      "edits": [{ "file": "labs/generator/assembler.py", "pattern": ".*", "multiple": true, "replacement": "# rewrite assemble_asset to build v0.3.4 schema form" }]
     },
     {
-      "id": "preflight_bounds",
-      "description": "Add pre-flight numeric bounds validation before MCP call (e.g., haptic intensity ∈ [0,1], parameter min/max).",
-      "edits": [
-        {
-          "file": "labs/generator/external.py",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "# Implement _validate_bounds(asset):\n# - check haptic.intensity between 0.0 and 1.0\n# - check shader/tone parameter defaults within declared min/max\n# - raise structured error if out-of-range with failure.reason='bad_response' and detail\n# Call _validate_bounds(asset) before MCP invocation\n"
-        }
-      ]
+      "id": "control_unification",
+      "description": "Replace legacy control/controls split with schema control.control_parameters.",
+      "edits": [{ "file": "labs/generator/assembler.py", "pattern": ".*", "multiple": true, "replacement": "# merge mappings into control_parameters array with label, unit, sensitivity, combo" }]
+    },
+    {
+      "id": "modulations_array",
+      "description": "Emit modulations as array not wrapped under 'modulation'.",
+      "edits": [{ "file": "labs/generator/assembler.py", "pattern": ".*", "multiple": true, "replacement": "# asset['modulations'] = [...]" }]
+    },
+    {
+      "id": "rule_bundle_alignment",
+      "description": "Reshape rule_bundle to spec: name, description, rules, meta_info (drop component/version/grid).",
+      "edits": [{ "file": "labs/generator/assembler.py", "pattern": ".*", "multiple": true, "replacement": "# rule_bundle matches v0.3.4 schema" }]
+    },
+    {
+      "id": "normalization_rejections",
+      "description": "Reject unknown keys/types during normalization; enforce numeric bounds pre-MCP.",
+      "edits": [{ "file": "labs/generator/external.py", "pattern": ".*", "multiple": true, "replacement": "# raise ExternalRequestError('bad_response', detail) on unknown keys/out-of-range" }]
+    },
+    {
+      "id": "provenance_schema",
+      "description": "Align provenance structure with spec (engine, endpoint, model, parameters, trace_id, mode, timestamp, response_hash).",
+      "edits": [{ "file": "labs/generator/external.py", "pattern": ".*", "multiple": true, "replacement": "# insert provenance under asset.meta.provenance" }]
     },
     {
       "id": "cli_deterministic_alias",
-      "description": "Support --engine=deterministic CLI alias.",
-      "edits": [
-        {
-          "file": "labs/cli.py",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "# In CLI parser:\nparser.add_argument('--engine', choices=['gemini','openai','deterministic','mock'], default='deterministic')\n# Map 'deterministic' to existing local/mock generator\n# Update help text and README snippets\n"
-        }
-      ]
+      "description": "Add --engine=deterministic alias in labs/cli.py and README.",
+      "edits": [{ "file": "labs/cli.py", "pattern": ".*", "multiple": true, "replacement": "# add deterministic to engine choices" }]
     },
     {
-      "id": "tests_bounds_and_alias",
-      "description": "Add unit tests for unknown key rejection, pre-flight bounds enforcement, and deterministic alias.",
-      "edits": [
-        {
-          "file": "tests/test_external_generator.py",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "def test_unknown_key_rejection(): ...\n\ndef test_preflight_bounds_enforced(): ...\n"
-        },
-        {
-          "file": "tests/test_pipeline.py",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "def test_cli_engine_deterministic_alias(tmp_path): ...\n"
-        }
-      ]
+      "id": "mcp_jsonrpc_envelope",
+      "description": "Wrap all MCP requests in {'jsonrpc':'2.0', ...} envelopes.",
+      "edits": [{ "file": "labs/mcp_stdio.py", "pattern": ".*", "multiple": true, "replacement": "# ensure jsonrpc field present" }]
     },
     {
-      "id": "docs_deterministic_alias",
-      "description": "Update README/docs to mention deterministic alias for CLI.",
+      "id": "tests_schema_and_rejections",
+      "description": "Add tests: schema validation, endpoint fallback, rejection on unknown keys/out-of-bounds.",
       "edits": [
-        {
-          "file": "README.md",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "## Engines\n- gemini: live or mock Gemini\n- openai: live or mock OpenAI\n- deterministic: built-in deterministic generator (baseline)\n- mock: legacy synonym for deterministic\n"
-        }
+        { "file": "tests/test_generator_schema.py", "pattern": ".*", "multiple": true, "replacement": "def test_generated_asset_schema_validates(): ...\n" },
+        { "file": "tests/test_mcp.py", "pattern": ".*", "multiple": true, "replacement": "def test_resolve_mcp_endpoint_fallback(): ...\n" },
+        { "file": "tests/test_external_generator.py", "pattern": ".*", "multiple": true, "replacement": "def test_rejects_unknown_keys(): ...\n" }
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "Do not break existing external generator mock/live flows.",
-      "Unknown key/type rejection must raise structured error with reason/detail logged.",
-      "Bounds validation must reject before MCP; do not rely on MCP alone.",
-      "Deterministic alias must be functionally identical to current local baseline.",
-      "Update tests to assert rejection cases and CLI alias works."
+      "Do not regress external generator live/mock mode.",
+      "Generated assets must validate against synesthetic-asset.schema.json.",
+      "Reject unknown keys and enforce numeric bounds before MCP.",
+      "MCP requests must always include jsonrpc: '2.0'.",
+      "CLI must support --engine=deterministic."
     ]
   },
   "exit_criteria": [
-    "Normalization rejects unknown keys/types with structured error and logged failure.",
-    "Pre-flight bounds validation enforced before MCP; out-of-range assets rejected.",
-    "CLI supports --engine=deterministic and docs updated.",
-    "Tests cover unknown key rejection, bounds enforcement, and deterministic alias.",
-    "CI green in both mock and live external modes."
+    "CLI generate emits schema-valid assets with $schemaRef.",
+    "Assets pass validation against synesthetic-asset.schema.json.",
+    "Normalization rejections and pre-flight bounds work as specified.",
+    "Provenance matches v0.3.4 schema.",
+    "MCP calls compliant with JSON-RPC 2.0.",
+    "Tests confirm endpoint fallback, rejection, schema compliance.",
+    "README and .env updated to document deterministic alias and live mode."
   ]
 }
