@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import os
+import uuid
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from labs.logging import log_jsonl
@@ -43,6 +44,20 @@ class CriticAgent:
         self.log_path = log_path
         self._logger = logging.getLogger(self.__class__.__name__)
 
+    @staticmethod
+    def _resolve_trace_id(asset: Dict[str, Any]) -> str:
+        meta_prov = asset.get("meta", {}).get("provenance", {}) if isinstance(asset, dict) else {}
+        trace_id = meta_prov.get("trace_id") if isinstance(meta_prov, dict) else None
+        if trace_id:
+            return trace_id
+        provenance = asset.get("provenance", {}) if isinstance(asset, dict) else {}
+        generator_block = provenance.get("generator") if isinstance(provenance, dict) else None
+        if isinstance(generator_block, dict):
+            trace_id = generator_block.get("trace_id")
+            if trace_id:
+                return trace_id
+        return str(uuid.uuid4())
+
     def review(self, asset: Dict[str, Any], *, patch_id: Optional[str] = None) -> Dict[str, Any]:
         """Inspect *asset* and return a review payload.
 
@@ -66,6 +81,7 @@ class CriticAgent:
         mcp_response: Optional[Dict[str, Any]] = None
         validation_error: Optional[Dict[str, str]] = None
         transport = resolve_mcp_endpoint()
+        trace_id = self._resolve_trace_id(asset)
 
         def _build_error_payload(message: str, *, unavailable: bool = True) -> Dict[str, str]:
             lowered = message.lower()
@@ -152,6 +168,10 @@ class CriticAgent:
             "reviewed_at": reviewed_at,
             "validation_status": validation_status,
             "mcp_response": mcp_response,
+            "transport": transport,
+            "strict": fail_fast,
+            "mode": "strict" if fail_fast else "relaxed",
+            "trace_id": trace_id,
         }
 
         if validation_reason is not None:
@@ -180,12 +200,17 @@ class CriticAgent:
             raise ValueError("patch_id must be a non-empty string")
 
         timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
+        strict_flag = is_fail_fast_enabled()
         record = {
             "type": "rating",
             "patch_id": patch_id,
             "asset_id": asset_id,
             "rating": dict(rating),
             "recorded_at": timestamp,
+            "trace_id": str(uuid.uuid4()),
+            "strict": strict_flag,
+            "mode": "strict" if strict_flag else "relaxed",
+            "transport": resolve_mcp_endpoint(),
         }
 
         self._logger.info("Recorded rating for patch %s", patch_id)

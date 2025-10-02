@@ -68,25 +68,28 @@ enable the socket transport tests.
 Generator and critic logs live under `meta/output/labs/`, and validated assets
 persist to `meta/output/labs/experiments/` when generation succeeds.
 
-## External engines (v0.3)
+## External engines (v0.3.4)
 
-External generators plug in through the CLI and reuse the critic + MCP validation path.
+External generators reuse the critic + MCP validation path and now support live API calls with provenance-rich logging.
 
 ```bash
 # Mocked (default) Gemini run
 python -m labs.cli generate --engine gemini "chromatic tides"
 
-# Enable live calls (requires transport wiring or API credentials)
+# Enable live mode with env-configured API keys
 export LABS_EXTERNAL_LIVE=1
-python -m labs.cli generate --engine openai "spectral chorus"
+export OPENAI_API_KEY=sk-...
+python -m labs.cli generate --engine openai \
+  --seed 42 --temperature 0.7 --timeout-s 20 --relaxed "spectral chorus"
 ```
 
 Highlights:
 
-- `labs/generator/external.py` implements a pluggable `ExternalGenerator` with retry/backoff and provenance injection.
-- Runs default to mock responses for CI determinism; enable live execution with `LABS_EXTERNAL_LIVE=1` and optional model/temperature overrides (`GEMINI_MODEL`, `OPENAI_MODEL`, `OPENAI_TEMPERATURE`).
-- Every invocation appends a record to `meta/output/labs/external.jsonl` capturing the prompt, raw API response, normalised asset, MCP result, critic review, and structured failure metadata.
-- Assets generated externally persist alongside local runs once validation passes, and CLI responses include the selected `engine`.
+- `labs/generator/external.py` loads provider credentials from env, injects `Authorization` headers in live mode, enforces 256 KiB/1 MiB size caps, and retries with exponential backoff based on the spec taxonomy.
+- Every run appends a JSONL entry under `meta/output/labs/external.jsonl` capturing the trace ID, transport, strict flag, redacted request headers, raw response hash/size, normalized asset, and MCP validation result.
+- Live runs require `LABS_EXTERNAL_LIVE=1` plus provider keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`); keys are redacted in logs and provenance metadata is written under `asset.meta.provenance`.
+- The CLI exposes `--seed`, `--temperature`, `--timeout-s`, and `--strict/--relaxed` flags so operators can control determinism, request budgets, and fail-fast behaviour.
+- See `docs/troubleshooting_external.md` for error taxonomy hints (`auth_error`, `rate_limited`, `timeout`, `bad_response`, `server_error`, `network_error`).
 
 ## Further Reading
 

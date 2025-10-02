@@ -86,6 +86,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         choices=("gemini", "openai"),
         help="Optional external engine to fulfil the prompt",
     )
+    generate_parser.add_argument("--seed", type=int, help="Optional random seed for generation")
+    generate_parser.add_argument("--temperature", type=float, help="Temperature override for external engines")
+    generate_parser.add_argument("--timeout-s", dest="timeout_s", type=int, help="Override external call timeout (seconds)")
+    strict_group = generate_parser.add_mutually_exclusive_group()
+    strict_group.add_argument("--strict", dest="strict", action="store_true", help="Fail-fast when MCP validation is unavailable")
+    strict_group.add_argument("--relaxed", dest="strict", action="store_false", help="Downgrade MCP outages to warnings")
+    generate_parser.set_defaults(strict=None)
 
     critique_parser = subparsers.add_parser("critique", help="Critique a proposal JSON payload")
     critique_parser.add_argument("asset", help="JSON string or file path pointing to the asset")
@@ -110,17 +117,29 @@ def main(argv: Optional[list[str]] = None) -> int:
         generator: Optional[GeneratorAgent] = None
         external_context: Optional[Dict[str, Any]] = None
 
+        if args.strict is not None:
+            os.environ["LABS_FAIL_FAST"] = "1" if args.strict else "0"
+
         if engine:
             external_generator = build_external_generator(engine)
+            external_parameters: Dict[str, Any] = {}
+            if args.temperature is not None:
+                external_parameters["temperature"] = args.temperature
+            timeout_value = float(args.timeout_s) if args.timeout_s is not None else None
             try:
-                asset, external_context = external_generator.generate(args.prompt)
+                asset, external_context = external_generator.generate(
+                    args.prompt,
+                    parameters=external_parameters or None,
+                    seed=args.seed,
+                    timeout=timeout_value,
+                )
             except ExternalGenerationError as exc:
                 external_generator.record_failure(exc)
                 _LOGGER.error("External generator %s failed: %s", engine, exc)
                 return 1
         else:
             generator = GeneratorAgent()
-            asset = generator.propose(args.prompt)
+            asset = generator.propose(args.prompt, seed=args.seed)
 
         try:
             validator_callback = _build_validator_optional()

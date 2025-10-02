@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+import types
 
 from labs import cli
 from labs.agents.generator import GeneratorAgent
 from labs.agents.critic import CriticAgent
-from labs.mcp_stdio import MCPUnavailableError
+from labs.mcp_stdio import MCPUnavailableError, resolve_mcp_endpoint
 from labs.generator.external import GeminiGenerator
 
 
@@ -143,10 +144,17 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
         logged_asset["provenance"]["generator"]["agent"]
         == LoggedGeneratorAgent.__name__
     )
+    assert logged_asset["mode"] == "local"
+    assert isinstance(logged_asset["strict"], bool)
+    assert logged_asset["transport"] == resolve_mcp_endpoint()
+    assert "trace_id" in logged_asset
     log_record = json.loads(log_lines[1])
     assert log_record["experiment_path"] == relative_path
     assert log_record["validation"]["ok"] is True
     assert log_record["validation"]["status"] == "passed"
+    assert log_record["mode"] in {"strict", "relaxed"}
+    assert isinstance(log_record["strict"], bool)
+    assert log_record["transport"] == resolve_mcp_endpoint()
 
 
 def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsys) -> None:
@@ -223,12 +231,71 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
     log_record = lines[0]
     assert log_record["engine"] == "gemini"
     assert log_record["status"] == "validation_passed"
-    assert log_record["review"]["ok"] is True
+    assert log_record["normalized_asset"]["provenance"]["generator"]["trace_id"]
+    assert log_record["raw_response"]["hash"]
+    assert log_record["raw_response"]["size"] > 0
+    assert log_record["transport"] == output["review"]["transport"]
+    assert log_record["strict"] == output["review"]["strict"]
+    assert log_record["mode"] == "mock"
     assert log_record["mcp_result"] == {"status": "ok", "asset_id": asset["id"]}
 
     persisted_files = list(experiments_dir.glob("*.json"))
     assert len(persisted_files) == 1
 
+
+
+
+def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
+    experiments_dir = tmp_path / "experiments"
+    external_log = tmp_path / "external.jsonl"
+    monkeypatch.setenv("LABS_EXPERIMENTS_DIR", str(experiments_dir))
+    recorded: dict[str, object] = {}
+
+    def build_external(engine: str):
+        generator = GeminiGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
+        original_generate = generator.generate
+
+        def wrapped(self, prompt: str, *, parameters=None, seed=None, timeout=None, trace_id=None):
+            recorded["seed"] = seed
+            recorded["parameters"] = parameters
+            recorded["timeout"] = timeout
+            return original_generate(prompt, parameters=parameters, seed=seed, timeout=timeout, trace_id=trace_id)
+
+        generator.generate = types.MethodType(wrapped, generator)
+        return generator
+
+    monkeypatch.setattr(cli, "build_external_generator", build_external)
+
+    class LoggedCriticAgent(CriticAgent):
+        def __init__(self, validator=None) -> None:  # pragma: no cover - trivial init
+            super().__init__(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
+
+    monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
+    monkeypatch.setattr(cli, "build_validator_from_env", lambda: (lambda payload: {"status": "ok", "asset_id": payload["id"]}))
+
+    args = [
+        "generate",
+        "--engine",
+        "gemini",
+        "--seed",
+        "42",
+        "--temperature",
+        "0.85",
+        "--timeout-s",
+        "12",
+        "--relaxed",
+        "flagged prompt",
+    ]
+    exit_code = cli.main(args)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    output = json.loads(captured.out)
+    assert output["review"]["strict"] is False
+    assert os.getenv("LABS_FAIL_FAST") == "0"
+    assert recorded["seed"] == 42
+    assert recorded["parameters"] == {"temperature": 0.85}
+    assert recorded["timeout"] == 12.0
 
 def test_cli_preview_command(monkeypatch, capsys) -> None:
     asset = {"id": "asset-10"}

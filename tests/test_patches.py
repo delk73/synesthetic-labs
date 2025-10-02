@@ -16,10 +16,16 @@ def test_preview_patch_logs(tmp_path) -> None:
     record = preview_patch(asset, patch, log_path=str(log_path))
 
     assert record["patch_id"] == "patch-1"
+    assert record["trace_id"]
+    assert record["mode"] in {"strict", "relaxed"}
+    assert isinstance(record["strict"], bool)
+    assert record["transport"]
     assert log_path.exists()
     logged = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
-    assert logged[0]["action"] == "preview"
-    assert logged[0]["changes"] == patch["updates"]
+    entry = logged[0]
+    assert entry["action"] == "preview"
+    assert entry["changes"] == patch["updates"]
+    assert entry["trace_id"] == record["trace_id"]
 
 
 def test_apply_patch_runs_critic(tmp_path) -> None:
@@ -47,8 +53,13 @@ def test_apply_patch_runs_critic(tmp_path) -> None:
     assert result["review"]["patch_id"] == "patch-2"
 
     logged = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
-    assert logged[0]["action"] == "apply"
-    assert logged[0]["review"]["validation_status"] == "passed"
+    entry = logged[0]
+    assert entry["action"] == "apply"
+    assert entry["review"]["validation_status"] == "passed"
+    assert entry["trace_id"]
+    assert entry["mode"] in {"strict", "relaxed"}
+    assert isinstance(entry["strict"], bool)
+    assert entry["transport"]
 
 
 def test_rate_patch_logs_rating(tmp_path) -> None:
@@ -66,10 +77,15 @@ def test_rate_patch_logs_rating(tmp_path) -> None:
 
     assert record["rating"]["score"] == 0.75
     assert record["critic_record"]["patch_id"] == "patch-3"
+    assert record["trace_id"]
+    assert isinstance(record["strict"], bool)
+    assert record["transport"]
 
     logged = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
-    assert logged[0]["action"] == "rate"
-    assert logged[0]["patch_id"] == "patch-3"
+    entry = logged[0]
+    assert entry["action"] == "rate"
+    assert entry["patch_id"] == "patch-3"
+    assert entry["trace_id"] == record["trace_id"]
 
     critic_logged = [json.loads(line) for line in critic_log.read_text(encoding="utf-8").splitlines()]
     assert critic_logged[0]["type"] == "rating"

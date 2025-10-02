@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from labs.agents.generator import GeneratorAgent
+from labs.mcp_stdio import resolve_mcp_endpoint
 
 
 def test_generator_propose_writes_log(tmp_path) -> None:
@@ -22,6 +23,7 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     assert generator_info["agent"] == "GeneratorAgent"
     assert generator_info["version"] == "v0.2"
     assert asset["provenance"]["version"] == "v0.2"
+    assert asset["meta"]["provenance"]["trace_id"] == generator_info["trace_id"]
 
     for section in ("shader", "tone", "haptic", "control", "meta", "modulation", "rule_bundle"):
         assert section in asset
@@ -34,6 +36,10 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     assert logged["id"] == asset["id"]
     assert logged["shader"]["component"] == "shader"
     assert logged["provenance"]["generator"]["agent"] == "GeneratorAgent"
+    assert logged["trace_id"] == asset["meta"]["provenance"]["trace_id"]
+    assert logged["mode"] == "local"
+    assert isinstance(logged["strict"], bool)
+    assert logged["transport"] == resolve_mcp_endpoint()
 
 
 def test_record_experiment_logs_experiment_path(tmp_path) -> None:
@@ -50,6 +56,10 @@ def test_record_experiment_logs_experiment_path(tmp_path) -> None:
         "issues": [],
         "validation_status": "passed",
         "reviewed_at": "2024-01-01T00:00:10+00:00",
+        "trace_id": "trace-123",
+        "strict": True,
+        "mode": "strict",
+        "transport": "tcp",
     }
 
     record = agent.record_experiment(
@@ -66,3 +76,7 @@ def test_record_experiment_logs_experiment_path(tmp_path) -> None:
     assert record["asset_id"] == "asset-123"
     assert record["experiment_path"] == "meta/output/labs/experiments/asset-123.json"
     assert record["validation"]["status"] == "passed"
+    assert record["trace_id"] == "trace-123"
+    assert record["mode"] == "strict"
+    assert record["strict"] is True
+    assert record["transport"] == "tcp"

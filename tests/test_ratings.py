@@ -15,7 +15,13 @@ def test_critic_records_rating(tmp_path) -> None:
 
     assert record["patch_id"] == "patch-logger"
     assert record["rating"]["score"] == 0.9
+    assert record["mode"] in {"strict", "relaxed"}
+    assert isinstance(record["strict"], bool)
+    assert record["transport"]
+    assert record["trace_id"]
 
     logged = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
-    assert logged[0]["type"] == "rating"
-    assert logged[0]["asset_id"] == "asset-x"
+    entry = logged[0]
+    assert entry["type"] == "rating"
+    assert entry["asset_id"] == "asset-x"
+    assert entry["trace_id"] == record["trace_id"]
