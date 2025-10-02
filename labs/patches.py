@@ -24,7 +24,7 @@ def _strict_mode_enabled() -> bool:
 
 def _trace_id_from_asset(asset: Mapping[str, Any]) -> str:
     if isinstance(asset, Mapping):
-        meta = asset.get("meta")
+        meta = asset.get("meta_info")
         if isinstance(meta, Mapping):
             provenance = meta.get("provenance")
             if isinstance(provenance, Mapping):
@@ -55,7 +55,7 @@ def preview_patch(
     strict_flag = _strict_mode_enabled()
     record = {
         "action": "preview",
-        "asset_id": asset.get("id"),
+        "asset_id": asset.get("asset_id"),
         "patch_id": patch.get("id"),
         "changes": patch.get("updates", {}),
         "timestamp": _timestamp(),
@@ -82,7 +82,7 @@ def apply_patch(
     if isinstance(updates, Mapping):
         patched_asset.update(updates)
 
-    patched_asset.setdefault("id", asset.get("id"))
+    patched_asset.setdefault("asset_id", asset.get("asset_id"))
     patch_id = patch.get("id")
 
     critic = critic or CriticAgent()
@@ -90,7 +90,7 @@ def apply_patch(
 
     record = {
         "action": "apply",
-        "asset_id": asset.get("id"),
+        "asset_id": asset.get("asset_id"),
         "patch_id": patch_id,
         "timestamp": _timestamp(),
         "review": review,

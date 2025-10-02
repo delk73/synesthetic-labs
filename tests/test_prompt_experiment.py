@@ -22,17 +22,9 @@ def test_prompt_experiment_writes_asset_files(tmp_path, monkeypatch) -> None:
             super().__init__(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
 
     def validator(payload: dict) -> dict:
-        for section in (
-            "shader",
-            "tone",
-            "haptic",
-            "control",
-            "meta",
-            "modulation",
-            "rule_bundle",
-        ):
+        for section in ("shader", "tone", "haptic", "control", "meta_info", "modulations", "rule_bundle"):
             assert section in payload
-        return {"status": "ok", "asset_id": payload["id"]}
+        return {"status": "ok", "asset_id": payload["asset_id"]}
 
     monkeypatch.setattr(prompt_experiment, "GeneratorAgent", build_generator)
     monkeypatch.setattr(prompt_experiment, "CriticAgent", LoggedCriticAgent)
@@ -52,7 +44,7 @@ def test_prompt_experiment_writes_asset_files(tmp_path, monkeypatch) -> None:
 
     asset_data = json.loads(generated_path.read_text(encoding="utf-8"))
     assert asset_data["prompt"] == "shimmer"
-    for section in ("shader", "tone", "haptic", "control", "meta", "modulation", "rule_bundle"):
+    for section in ("shader", "tone", "haptic", "control", "meta_info", "modulations", "rule_bundle"):
         assert section in asset_data
 
     run_record = json.loads(run_path.read_text(encoding="utf-8"))

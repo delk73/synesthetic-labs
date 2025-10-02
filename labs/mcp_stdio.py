@@ -7,6 +7,7 @@ import os
 import shlex
 import socket
 import subprocess
+import uuid
 from typing import Any, Callable, Dict, Mapping, MutableMapping, Optional, Sequence
 
 from labs.core import normalize_resource_path
@@ -23,6 +24,28 @@ from labs.transport import (
 
 _LOGGER = logging.getLogger(__name__)
 _SCHEMAS_WARNING_EMITTED = False
+
+
+def _jsonrpc_request(asset: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": str(uuid.uuid4()),
+        "method": "validate",
+        "params": {"asset": asset},
+    }
+
+
+def _unwrap_jsonrpc(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if payload.get("jsonrpc") == "2.0":
+        if "error" in payload:
+            error = payload["error"]
+            message = error.get("message") if isinstance(error, dict) else str(error)
+            raise MCPUnavailableError(f"MCP error response: {message}")
+        result = payload.get("result")
+        if isinstance(result, dict):
+            return result
+        raise MCPUnavailableError("MCP response missing result payload")
+    return payload
 
 
 
@@ -53,7 +76,7 @@ class StdioMCPValidator:
         """Send *asset* to the MCP adapter and return the validation payload."""
 
         try:
-            request_bytes = encode_payload({"action": "validate", "asset": asset})
+            request_bytes = encode_payload(_jsonrpc_request(asset))
         except PayloadTooLargeError as exc:
             raise MCPUnavailableError(f"MCP request payload too large: {exc}") from exc
 
@@ -93,7 +116,10 @@ class StdioMCPValidator:
         except (PayloadTooLargeError, InvalidPayloadError) as exc:
             raise MCPUnavailableError(f"Invalid MCP response: {exc}") from exc
 
-        return payload
+        if not isinstance(payload, dict):
+            raise MCPUnavailableError("Invalid MCP response payload")
+
+        return _unwrap_jsonrpc(payload)
 
 
 class SocketMCPValidator:
@@ -109,7 +135,7 @@ class SocketMCPValidator:
         """Send *asset* to the MCP socket server and return the validation payload."""
 
         try:
-            payload = {"action": "validate", "asset": asset}
+            payload = _jsonrpc_request(asset)
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
                 client.settimeout(self._timeout)
                 client.connect(self._path)
@@ -128,7 +154,9 @@ class SocketMCPValidator:
             response = decode_payload(response_bytes)
         except (PayloadTooLargeError, InvalidPayloadError) as exc:
             raise MCPUnavailableError(f"Invalid MCP response: {exc}") from exc
-        return response
+        if not isinstance(response, dict):
+            raise MCPUnavailableError("Invalid MCP response payload")
+        return _unwrap_jsonrpc(response)
 
 
 def resolve_mcp_endpoint() -> str:

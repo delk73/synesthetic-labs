@@ -21,19 +21,20 @@ def test_generator_to_critic_pipeline(tmp_path) -> None:
     asset = generator.propose("integration prompt")
 
     def validator(payload: dict) -> dict:
-        return {"validated": True, "asset_id": payload["id"]}
+        return {"validated": True, "asset_id": payload["asset_id"]}
 
     critic = CriticAgent(validator=validator, log_path=str(critic_log))
     review = critic.review(asset)
 
     assert "provenance" in asset
-    for section in ("shader", "tone", "haptic", "control", "meta", "modulation", "rule_bundle"):
-        assert section in asset
-        assert asset[section]["component"] == section
+    assert "meta_info" in asset
+    assert asset["control"]["control_parameters"]
+    assert asset["modulations"]
+    assert asset["rule_bundle"]["rules"]
     assert asset["provenance"]["generator"]["agent"] == "GeneratorAgent"
     assert review["ok"] is True
     assert review["validation_status"] == "passed"
-    assert review["mcp_response"] == {"validated": True, "asset_id": asset["id"]}
+    assert review["mcp_response"] == {"validated": True, "asset_id": asset["asset_id"]}
 
 
 def test_cli_critique_fails_when_mcp_unreachable(monkeypatch, tmp_path, capsys) -> None:
@@ -111,7 +112,7 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
     monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
 
     def validator(payload: dict) -> dict:
-        return {"status": "ok", "asset_id": payload["id"]}
+        return {"status": "ok", "asset_id": payload["asset_id"]}
 
     monkeypatch.setattr(cli, "build_validator_from_env", lambda: validator)
 
@@ -129,8 +130,11 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
 
     persisted_asset = json.loads(persisted_asset_path.read_text(encoding="utf-8"))
     assert persisted_asset["prompt"] == "aurora bloom"
-    for section in ("shader", "tone", "haptic", "control", "meta", "modulation", "rule_bundle"):
+    for section in ("shader", "tone", "haptic", "control", "meta_info", "modulations", "rule_bundle"):
         assert section in persisted_asset
+
+    assert persisted_asset["control"]["control_parameters"]
+    assert isinstance(persisted_asset["modulations"], list)
 
     relative_path = os.path.relpath(persisted_asset_path, os.getcwd())
     assert payload["experiment_path"] == relative_path
@@ -196,6 +200,32 @@ def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
     assert len(persisted_files) == 1
 
 
+def test_cli_generate_deterministic_alias(monkeypatch, tmp_path, capsys) -> None:
+    experiments_dir = tmp_path / "experiments"
+    monkeypatch.setenv("LABS_EXPERIMENTS_DIR", str(experiments_dir))
+
+    generator_log = tmp_path / "generator.jsonl"
+
+    class LoggedGeneratorAgent(GeneratorAgent):
+        def __init__(self) -> None:  # pragma: no cover - trivial init
+            super().__init__(log_path=str(generator_log))
+
+    monkeypatch.setattr(cli, "GeneratorAgent", LoggedGeneratorAgent)
+    monkeypatch.setattr(
+        cli,
+        "build_validator_from_env",
+        lambda: (lambda payload: {"status": "ok", "asset_id": payload["asset_id"]}),
+    )
+
+    exit_code = cli.main(["generate", "--engine", "deterministic", "alias prompt"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    output = json.loads(captured.out)
+    assert output["asset"]["prompt"] == "alias prompt"
+    assert "engine" not in output
+    assert output["review"]["ok"] is True
+
 def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> None:
     experiments_dir = tmp_path / "experiments"
     monkeypatch.setenv("LABS_EXPERIMENTS_DIR", str(experiments_dir))
@@ -212,7 +242,7 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
     monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
 
     def validator(payload: dict) -> dict:
-        return {"status": "ok", "asset_id": payload["id"]}
+        return {"status": "ok", "asset_id": payload["asset_id"]}
 
     monkeypatch.setattr(cli, "build_validator_from_env", lambda: validator)
 
@@ -231,13 +261,13 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
     log_record = lines[0]
     assert log_record["engine"] == "gemini"
     assert log_record["status"] == "validation_passed"
-    assert log_record["normalized_asset"]["provenance"]["generator"]["trace_id"]
+    assert log_record["normalized_asset"]["meta_info"]["provenance"]["trace_id"]
     assert log_record["raw_response"]["hash"]
     assert log_record["raw_response"]["size"] > 0
     assert log_record["transport"] == output["review"]["transport"]
     assert log_record["strict"] == output["review"]["strict"]
     assert log_record["mode"] == "mock"
-    assert log_record["mcp_result"] == {"status": "ok", "asset_id": asset["id"]}
+    assert log_record["mcp_result"] == {"status": "ok", "asset_id": asset["asset_id"]}
 
     persisted_files = list(experiments_dir.glob("*.json"))
     assert len(persisted_files) == 1
@@ -271,7 +301,7 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
             super().__init__(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
 
     monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
-    monkeypatch.setattr(cli, "build_validator_from_env", lambda: (lambda payload: {"status": "ok", "asset_id": payload["id"]}))
+    monkeypatch.setattr(cli, "build_validator_from_env", lambda: (lambda payload: {"status": "ok", "asset_id": payload["asset_id"]}))
 
     args = [
         "generate",
@@ -298,13 +328,13 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
     assert recorded["timeout"] == 12.0
 
 def test_cli_preview_command(monkeypatch, capsys) -> None:
-    asset = {"id": "asset-10"}
+    asset = {"asset_id": "asset-10"}
     patch = {"id": "patch-10"}
 
     def fake_preview(payload_asset, payload_patch):
         assert payload_asset == asset
         assert payload_patch == patch
-        return {"action": "preview", "asset_id": asset["id"], "patch_id": patch["id"]}
+        return {"action": "preview", "asset_id": asset["asset_id"], "patch_id": patch["id"]}
 
     monkeypatch.setattr(cli, "preview_patch", fake_preview)
 
@@ -317,11 +347,11 @@ def test_cli_preview_command(monkeypatch, capsys) -> None:
 
 
 def test_cli_apply_command(monkeypatch, capsys) -> None:
-    asset = {"id": "asset-20"}
+    asset = {"asset_id": "asset-20"}
     patch = {"id": "patch-20"}
 
     def fake_build_validator_optional():
-        return lambda payload: {"status": "ok", "asset_id": payload["id"]}
+        return lambda payload: {"status": "ok", "asset_id": payload["asset_id"]}
 
     def fake_apply(payload_asset, payload_patch, critic):
         assert payload_asset == asset

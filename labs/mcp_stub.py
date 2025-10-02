@@ -16,8 +16,24 @@ def _load_request() -> Dict[str, Any]:
 
 
 def _success_response(request: Dict[str, Any]) -> Dict[str, Any]:
+    if request.get("jsonrpc") == "2.0":
+        params = request.get("params")
+        asset: Dict[str, Any] = {}
+        if isinstance(params, dict):
+            asset = params.get("asset", {})
+        asset_id = asset.get("asset_id")
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {
+                "status": "ok",
+                "asset_id": asset_id,
+                "issues": [],
+            },
+        }
+
     asset = request.get("asset", {})
-    asset_id = asset.get("id")
+    asset_id = asset.get("asset_id")
     return {
         "status": "ok",
         "asset_id": asset_id,

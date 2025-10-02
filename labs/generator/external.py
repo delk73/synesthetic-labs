@@ -33,9 +33,13 @@ SENSITIVE_HEADERS = {"authorization"}
 
 _BASELINE_ASSET = AssetAssembler().generate("external-normalization-baseline", seed=0)
 _DEFAULT_SECTIONS = {
-    key: deepcopy(_BASELINE_ASSET[key]) for key in ("shader", "tone", "haptic", "control", "meta", "modulation", "rule_bundle")
+    key: deepcopy(_BASELINE_ASSET[key])
+    for key in ("shader", "tone", "haptic", "control", "meta_info", "rule_bundle")
 }
-_DEFAULT_CONTROLS = deepcopy(_BASELINE_ASSET.get("controls", []))
+_DEFAULT_MODULATIONS = deepcopy(_BASELINE_ASSET.get("modulations", []))
+_DEFAULT_CONTROL_PARAMETERS = deepcopy(
+    _BASELINE_ASSET.get("control", {}).get("control_parameters", [])
+)
 _DEFAULT_PARAMETER_INDEX = list(_BASELINE_ASSET.get("parameter_index", []))
 
 
@@ -220,6 +224,7 @@ class ExternalGenerator:
                     trace_id=run_trace_id,
                     mode="mock" if self.mock_mode else "live",
                     endpoint=endpoint,
+                    response_hash=response_hash,
                 )
 
                 context: JsonDict = {
@@ -234,7 +239,7 @@ class ExternalGenerator:
                     "request_headers": settings["log_headers"],
                     "response_hash": response_hash,
                     "response_size": len(raw_bytes),
-                    "asset_id": asset.get("id"),
+                    "asset_id": asset.get("asset_id"),
                     "generated_at": asset.get("timestamp")
                     or _dt.datetime.now(tz=_dt.timezone.utc).isoformat(),
                     "strict": strict_mode,
@@ -316,7 +321,7 @@ class ExternalGenerator:
             "raw_response": context.get("raw_response"),
             "normalized_asset": context.get("asset"),
             "mcp_result": review.get("mcp_response"),
-            "provenance": context.get("asset", {}).get("meta", {}).get("provenance"),
+            "provenance": context.get("asset", {}).get("meta_info", {}).get("provenance"),
             "asset_id": context.get("asset_id"),
             "generated_at": context.get("generated_at"),
             "experiment_path": experiment_path,
@@ -361,7 +366,7 @@ class ExternalGenerator:
             "prompt": prompt,
             "seed": parameters.get("seed"),
             "hints": {
-                "need_sections": ["shader", "tone", "haptic", "controls", "meta"],
+                "need_sections": ["shader", "tone", "haptic", "control", "modulations", "meta_info"],
                 "schema": "nested-synesthetic-asset@>=0.7.3",
                 "strict_json": True,
             },
@@ -419,6 +424,7 @@ class ExternalGenerator:
         trace_id: str,
         mode: str,
         endpoint: str,
+        response_hash: str,
     ) -> JsonDict:  # pragma: no cover - abstract
         raise NotImplementedError
 
@@ -546,65 +552,87 @@ class ExternalGenerator:
         trace_id: str,
         mode: str,
         endpoint: str,
+        response_hash: str,
     ) -> JsonDict:
         if not isinstance(asset_payload, dict):
             raise ExternalRequestError("bad_response", "asset_not_object", retryable=False)
 
-        asset = self._canonicalize_asset(asset_payload)
-        self._validate_bounds(asset)
+        canonical = self._canonicalize_asset(asset_payload)
+        self._validate_bounds(canonical)
 
-        timestamp = asset.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        asset_id = asset.get("id") or asset.get("asset_id") or str(uuid.uuid4())
-        asset["id"] = asset_id
-        asset["prompt"] = prompt
-        asset["timestamp"] = timestamp
-        asset["seed"] = parameters.get("seed")
+        timestamp = canonical.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
+        asset_id = (
+            canonical.get("asset_id")
+            or canonical.get("id")
+            or canonical.get("meta", {}).get("asset_id")
+            or str(uuid.uuid4())
+        )
 
-        parameter_index = self._collect_parameters(asset)
-        mappings = self._sanitize_controls(asset, parameter_index)
-        asset["controls"] = mappings
-        asset.setdefault("control", {})["mappings"] = mappings
-        asset["parameter_index"] = sorted(parameter_index)
+        shader_section = self._merge_structured_section("shader", canonical.get("shader"))
+        tone_section = self._merge_structured_section("tone", canonical.get("tone"))
+        haptic_section = self._merge_structured_section("haptic", canonical.get("haptic"))
 
-        provenance_block = {
-            "engine": self.engine,
-            "api_endpoint": endpoint,
-            "api_version": self.api_version,
-            "model": parameters.get("model"),
-            "parameters": {
-                "temperature": parameters.get("temperature"),
-                "seed": parameters.get("seed"),
-            },
-            "trace_id": trace_id,
-            "mode": mode,
+        parameter_index = self._collect_parameters(
+            {
+                "shader": shader_section,
+                "tone": tone_section,
+                "haptic": haptic_section,
+            }
+        )
+
+        control_section = self._build_control_section(
+            canonical.get("control"),
+            canonical.get("controls"),
+            parameter_index,
+        )
+
+        modulations = self._normalise_modulations(
+            canonical.get("modulations"),
+            canonical.get("modulation"),
+        )
+        if not modulations:
+            modulations = deepcopy(_DEFAULT_MODULATIONS)
+
+        rule_bundle = self._build_rule_bundle(canonical.get("rule_bundle"))
+
+        meta_info = self._build_meta_info(
+            canonical.get("meta"),
+            canonical.get("meta_info"),
+            timestamp=timestamp,
+            seed=parameters.get("seed"),
+            trace_id=trace_id,
+            endpoint=endpoint,
+            parameters=parameters,
+            mode=mode,
+            response_hash=response_hash,
+        )
+
+        provenance_block = self._build_external_provenance(
+            asset_id=asset_id,
+            parameters=parameters,
+            trace_id=trace_id,
+            mode=mode,
+            endpoint=endpoint,
+            response=response,
+            timestamp=timestamp,
+        )
+
+        asset: JsonDict = {
+            "$schemaRef": AssetAssembler.SCHEMA_REF,
+            "asset_id": asset_id,
+            "prompt": prompt,
+            "seed": parameters.get("seed"),
             "timestamp": timestamp,
+            "shader": shader_section,
+            "tone": tone_section,
+            "haptic": haptic_section,
+            "control": control_section,
+            "modulations": modulations,
+            "rule_bundle": rule_bundle,
+            "meta_info": meta_info,
+            "parameter_index": sorted(parameter_index),
+            "provenance": provenance_block,
         }
-
-        meta = asset.setdefault("meta", {})
-        defaults = deepcopy(_DEFAULT_SECTIONS["meta"])
-        for key, value in defaults.items():
-            meta.setdefault(key, value)
-        meta.setdefault("category", "multimodal")
-        meta.setdefault("complexity", "baseline")
-        meta.setdefault("tags", defaults.get("tags", ["external", self.engine]))
-        meta.setdefault("title", defaults.get("title", f"{self.engine.title()} synesthetic asset"))
-        meta.setdefault("description", defaults.get("description", "Generated externally"))
-        meta["provenance"] = provenance_block
-        asset["meta"] = meta
-
-        provenance = dict(asset.get("provenance") or {})
-        provenance.setdefault("agent", "ExternalGenerator")
-        provenance.setdefault("version", self.api_version)
-        provenance["generator"] = {
-            "agent": self.__class__.__name__,
-            "engine": self.engine,
-            "api_version": self.api_version,
-            "parameters": parameters,
-            "mode": mode,
-            "trace_id": trace_id,
-        }
-        provenance["external_response_id"] = response.get("id")
-        asset["provenance"] = provenance
 
         return asset
 
@@ -613,6 +641,7 @@ class ExternalGenerator:
             raise ExternalRequestError("bad_response", "asset_not_object", retryable=False)
 
         allowed_keys = {
+            "asset_id",
             "id",
             "prompt",
             "timestamp",
@@ -622,7 +651,9 @@ class ExternalGenerator:
             "control",
             "controls",
             "meta",
+            "meta_info",
             "modulation",
+            "modulations",
             "rule_bundle",
             "parameter_index",
             "seed",
@@ -638,39 +669,48 @@ class ExternalGenerator:
 
         sanitized: JsonDict = {}
 
-        for key in ("id", "prompt", "timestamp", "seed", "provenance"):
+        for key in ("asset_id", "id", "prompt", "timestamp", "seed", "provenance"):
             if key in payload:
                 sanitized[key] = deepcopy(payload[key])
 
-        for section in ("shader", "tone", "haptic", "control", "meta", "modulation", "rule_bundle"):
+        map_sections = {
+            "shader": dict,
+            "tone": dict,
+            "haptic": dict,
+            "control": dict,
+            "meta": dict,
+            "meta_info": dict,
+            "modulation": dict,
+            "rule_bundle": dict,
+        }
+
+        for section, expected_type in map_sections.items():
             if section in payload:
                 section_payload = payload[section]
-                if not isinstance(section_payload, dict):
+                if not isinstance(section_payload, expected_type):
                     raise ExternalRequestError(
                         "bad_response",
                         f"wrong_type:{section}",
                         retryable=False,
                     )
                 sanitized[section] = deepcopy(section_payload)
-            else:
-                sanitized[section] = deepcopy(_DEFAULT_SECTIONS[section])
+
+        if "modulations" in payload:
+            modulations = payload["modulations"]
+            if not isinstance(modulations, list):
+                raise ExternalRequestError("bad_response", "wrong_type:modulations", retryable=False)
+            if not all(isinstance(item, dict) for item in modulations):
+                raise ExternalRequestError("bad_response", "wrong_type:modulations[]", retryable=False)
+            sanitized["modulations"] = deepcopy(modulations)
 
         if "controls" in payload:
             controls = payload["controls"]
             if controls is None:
                 sanitized["controls"] = None
-            elif not isinstance(controls, list):
+            elif not isinstance(controls, list) or not all(isinstance(item, dict) for item in controls):
                 raise ExternalRequestError("bad_response", "wrong_type:controls", retryable=False)
             else:
-                if not all(isinstance(item, dict) for item in controls):
-                    raise ExternalRequestError(
-                        "bad_response",
-                        "wrong_type:controls[]",
-                        retryable=False,
-                    )
                 sanitized["controls"] = deepcopy(controls)
-        else:
-            sanitized["controls"] = deepcopy(_DEFAULT_CONTROLS)
 
         if "parameter_index" in payload:
             parameter_index = payload["parameter_index"]
@@ -745,47 +785,258 @@ class ExternalGenerator:
                     if max_value is not None and default_value > max_value:
                         _fail(f"out_of_range:{param_path}.default")
 
-
-    def _collect_parameters(self, asset: JsonDict) -> List[str]:
+    def _collect_parameters(self, sections: JsonDict) -> List[str]:
         parameters: List[str] = []
         for section_key in ("shader", "tone", "haptic"):
-            section = asset.get(section_key, {})
-            for entry in section.get("input_parameters", []):
+            section = sections.get(section_key, {})
+            input_parameters = []
+            if isinstance(section, dict):
+                input_parameters = section.get("input_parameters", [])  # type: ignore[assignment]
+            for entry in input_parameters:
+                if not isinstance(entry, dict):
+                    continue
                 parameter = entry.get("parameter")
-                if parameter and parameter not in parameters:
+                if isinstance(parameter, str) and parameter not in parameters:
                     parameters.append(parameter)
         if not parameters:
             parameters.extend(_DEFAULT_PARAMETER_INDEX)
         return parameters
 
-    def _sanitize_controls(self, asset: JsonDict, parameter_index: List[str]) -> List[JsonDict]:
-        control_component = asset.get("control", {})
-        mappings = control_component.get("mappings", []) if isinstance(control_component, dict) else []
-        sanitized: List[JsonDict] = []
-        required_mappings = {
-            ("mouse.x", "shader.u_px"),
-            ("mouse.y", "shader.u_py"),
+    def _build_control_section(
+        self,
+        control_payload: Any,
+        legacy_controls: Any,
+        parameter_index: List[str],
+    ) -> Dict[str, Any]:
+        base = deepcopy(_DEFAULT_SECTIONS["control"])
+        control_parameters = []
+        mappings: List[Dict[str, Any]] = []
+        if isinstance(control_payload, dict):
+            candidate = control_payload.get("mappings")
+            if isinstance(candidate, list):
+                mappings = [item for item in candidate if isinstance(item, dict)]
+            meta_info = control_payload.get("meta_info")
+            if isinstance(meta_info, dict):
+                base.setdefault("meta_info", {}).update(deepcopy(meta_info))
+            description = control_payload.get("description")
+            if isinstance(description, str):
+                base["description"] = description
+
+        if isinstance(legacy_controls, list) and not mappings:
+            mappings = [item for item in legacy_controls if isinstance(item, dict)]
+
+        control_parameters = self._build_control_parameters(mappings, parameter_index)
+        if not control_parameters:
+            control_parameters = deepcopy(_DEFAULT_CONTROL_PARAMETERS)
+
+        base["control_parameters"] = control_parameters
+        return base
+
+    def _build_control_parameters(
+        self,
+        mappings: List[Dict[str, Any]],
+        parameter_index: List[str],
+    ) -> List[Dict[str, Any]]:
+        parameters: List[Dict[str, Any]] = []
+        required_pairs = {
+            ("mouse", "x", "shader.u_px"),
+            ("mouse", "y", "shader.u_py"),
         }
         for mapping in mappings:
-            if not isinstance(mapping, dict):
-                continue
             parameter = mapping.get("parameter")
-            if parameter in parameter_index:
-                sanitized.append(mapping)
-                control = mapping.get("control")
-                if control and parameter:
-                    required_mappings.discard((control, parameter))
-        if not sanitized:
-            sanitized.extend(deepcopy(_DEFAULT_CONTROLS))
-        for control, parameter in list(required_mappings):
-            sanitized.append(
+            if parameter not in parameter_index:
+                continue
+            control_input = mapping.get("input")
+            device = None
+            axis = None
+            if isinstance(control_input, dict):
+                device = control_input.get("device")
+                axis = control_input.get("control")
+            pair = (device, axis, parameter)
+            if device and axis:
+                required_pairs.discard((device, axis, parameter))
+            parameters.append(
                 {
-                    "control": control,
+                    "id": mapping.get("id") or parameter.replace(".", "_"),
                     "parameter": parameter,
-                    "range": [-1.0, 1.0],
+                    "label": self._derive_control_label(device, axis, parameter),
+                    "unit": self._derive_control_unit(parameter),
+                    "sensitivity": mapping.get("sensitivity", 1.0),
+                    "combo": [
+                        {
+                            "device": device,
+                            "control": axis,
+                        }
+                    ],
+                    "mode": mapping.get("mode", "absolute"),
+                    "curve": mapping.get("curve", "linear"),
+                    "range": deepcopy(mapping.get("range")) if isinstance(mapping.get("range"), dict) else None,
+                    "invert": mapping.get("invert"),
                 }
             )
-        return sanitized
+
+        # Remove None values for range/invert to keep payload tidy
+        for entry in parameters:
+            if entry.get("range") is None:
+                entry.pop("range", None)
+            if entry.get("invert") is None:
+                entry.pop("invert", None)
+
+        if required_pairs:
+            default_lookup = {
+                item["parameter"]: item for item in _DEFAULT_CONTROL_PARAMETERS if isinstance(item, dict)
+            }
+            for device, axis, parameter in required_pairs:
+                default_entry = deepcopy(default_lookup.get(parameter, {}))
+                if not default_entry:
+                    default_entry = {
+                        "id": parameter.replace(".", "_"),
+                        "parameter": parameter,
+                        "label": self._derive_control_label(device, axis, parameter),
+                        "unit": self._derive_control_unit(parameter),
+                        "sensitivity": 1.0,
+                        "combo": [
+                            {
+                                "device": device,
+                                "control": axis,
+                            }
+                        ],
+                        "mode": "absolute",
+                        "curve": "linear",
+                        "range": {"minimum": -1.0, "maximum": 1.0},
+                    }
+                parameters.append(default_entry)
+
+        return parameters
+
+    def _normalise_modulations(
+        self,
+        modulations: Any,
+        modulation_block: Any,
+    ) -> List[Dict[str, Any]]:
+        if isinstance(modulations, list):
+            return [deepcopy(item) for item in modulations if isinstance(item, dict)]
+        if isinstance(modulation_block, dict):
+            candidate = modulation_block.get("modulators")
+            if isinstance(candidate, list):
+                return [deepcopy(item) for item in candidate if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _derive_control_label(
+        device: Optional[str], axis: Optional[str], parameter: str
+    ) -> str:
+        if device and axis:
+            return f"{device}.{axis}"
+        return parameter
+
+    @staticmethod
+    def _derive_control_unit(parameter: str) -> str:
+        if parameter.startswith("shader."):
+            return "normalized"
+        if parameter.startswith("tone."):
+            return "audio"
+        if parameter.startswith("haptic."):
+            return "haptic"
+        return "generic"
+
+    def _build_rule_bundle(self, payload: Any) -> Dict[str, Any]:
+        base = deepcopy(_DEFAULT_SECTIONS["rule_bundle"])
+        if isinstance(payload, dict):
+            base = self._deep_merge_dicts(base, payload)
+        base.setdefault("meta_info", {})
+        base["meta_info"].setdefault("version", self.api_version)
+        return base
+
+    def _build_meta_info(
+        self,
+        meta_payload: Any,
+        meta_info_payload: Any,
+        *,
+        timestamp: str,
+        seed: Optional[int],
+        trace_id: str,
+        endpoint: str,
+        parameters: JsonDict,
+        mode: str,
+        response_hash: str,
+    ) -> Dict[str, Any]:
+        base = deepcopy(_DEFAULT_SECTIONS["meta_info"])
+        for source in (meta_payload, meta_info_payload):
+            if isinstance(source, dict):
+                base = self._deep_merge_dicts(base, source)
+
+        tags = base.get("tags")
+        if not isinstance(tags, list):
+            base["tags"] = [self.engine, "external"]
+        elif self.engine not in tags:
+            base["tags"].append(self.engine)
+
+        base.setdefault("title", f"{self.engine.title()} synesthetic asset")
+        base.setdefault("description", "Generated via external engine normalization")
+        base.setdefault("category", "multimodal")
+        base.setdefault("complexity", "baseline")
+
+        base["provenance"] = {
+            "engine": self.engine,
+            "endpoint": endpoint,
+            "model": parameters.get("model"),
+            "parameters": {
+                "temperature": parameters.get("temperature"),
+                "seed": seed,
+            },
+            "trace_id": trace_id,
+            "mode": mode,
+            "timestamp": timestamp,
+            "response_hash": response_hash,
+        }
+        return base
+
+    def _build_external_provenance(
+        self,
+        *,
+        asset_id: str,
+        parameters: JsonDict,
+        trace_id: str,
+        mode: str,
+        endpoint: str,
+        response: JsonDict,
+        timestamp: str,
+    ) -> Dict[str, Any]:
+        return {
+            "agent": "ExternalGenerator",
+            "version": self.api_version,
+            "seed": parameters.get("seed"),
+            "assembled_at": timestamp,
+            "asset_id": asset_id,
+            "generator": {
+                "class": self.__class__.__name__,
+                "engine": self.engine,
+                "api_version": self.api_version,
+                "trace_id": trace_id,
+                "mode": mode,
+                "endpoint": endpoint,
+                "response_id": response.get("id"),
+            },
+        }
+
+    def _deep_merge_dicts(self, base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
+        merged = deepcopy(base)
+        for key, value in overrides.items():
+            if key not in merged:
+                merged[key] = deepcopy(value)
+                continue
+            if isinstance(merged.get(key), dict) and isinstance(value, dict):
+                merged[key] = self._deep_merge_dicts(merged[key], value)
+            else:
+                merged[key] = deepcopy(value)
+        return merged
+
+    def _merge_structured_section(self, section: str, payload: Any) -> Dict[str, Any]:
+        base = deepcopy(_DEFAULT_SECTIONS[section])
+        if isinstance(payload, dict):
+            base = self._deep_merge_dicts(base, payload)
+        return base
 
 
 class GeminiGenerator(ExternalGenerator):
@@ -809,15 +1060,37 @@ class GeminiGenerator(ExternalGenerator):
 
     def _mock_response(self, prompt: str, parameters: JsonDict) -> JsonDict:
         timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
+        default_mappings = []
+        for entry in _DEFAULT_CONTROL_PARAMETERS:
+            if not isinstance(entry, dict):
+                continue
+            combo_list = entry.get("combo")
+            combo = combo_list[0] if isinstance(combo_list, list) and combo_list else {}
+            if not isinstance(combo, dict):
+                combo = {}
+            mapping = {
+                "id": entry.get("id"),
+                "input": {
+                    "device": combo.get("device"),
+                    "control": combo.get("control"),
+                },
+                "parameter": entry.get("parameter"),
+                "mode": entry.get("mode", "absolute"),
+                "curve": entry.get("curve", "linear"),
+            }
+            range_block = entry.get("range")
+            if isinstance(range_block, dict):
+                mapping["range"] = deepcopy(range_block)
+            default_mappings.append(mapping)
         return {
             "id": f"gemini-mock-{uuid.uuid4()}",
             "asset": {
                 "shader": {"component": "shader", "style": "neon", "prompt": prompt},
                 "tone": {"component": "tone", "mood": "serene"},
                 "haptic": {"component": "haptic", "pattern": "soft"},
-                "control": {"component": "control", "mappings": deepcopy(_DEFAULT_CONTROLS)},
+                "control": {"component": "control", "mappings": default_mappings},
                 "meta": {"component": "meta", "tags": ["external", "gemini"]},
-                "modulation": {"component": "modulation", "modulators": []},
+                "modulations": [],
                 "rule_bundle": {"component": "rule_bundle", "rules": []},
                 "timestamp": timestamp,
             },
@@ -832,6 +1105,7 @@ class GeminiGenerator(ExternalGenerator):
         trace_id: str,
         mode: str,
         endpoint: str,
+        response_hash: str,
     ) -> JsonDict:
         asset_payload = response.get("asset")
         if not isinstance(asset_payload, dict):
@@ -844,6 +1118,7 @@ class GeminiGenerator(ExternalGenerator):
             trace_id=trace_id,
             mode=mode,
             endpoint=endpoint,
+            response_hash=response_hash,
         )
 
 
@@ -874,6 +1149,28 @@ class OpenAIGenerator(ExternalGenerator):
 
     def _mock_response(self, prompt: str, parameters: JsonDict) -> JsonDict:
         timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
+        default_mappings = []
+        for entry in _DEFAULT_CONTROL_PARAMETERS:
+            if not isinstance(entry, dict):
+                continue
+            combo_list = entry.get("combo")
+            combo = combo_list[0] if isinstance(combo_list, list) and combo_list else {}
+            if not isinstance(combo, dict):
+                combo = {}
+            mapping = {
+                "id": entry.get("id"),
+                "input": {
+                    "device": combo.get("device"),
+                    "control": combo.get("control"),
+                },
+                "parameter": entry.get("parameter"),
+                "mode": entry.get("mode", "absolute"),
+                "curve": entry.get("curve", "linear"),
+            }
+            range_block = entry.get("range")
+            if isinstance(range_block, dict):
+                mapping["range"] = deepcopy(range_block)
+            default_mappings.append(mapping)
         return {
             "id": f"openai-mock-{uuid.uuid4()}",
             "object": "synesthetic.asset",
@@ -881,9 +1178,9 @@ class OpenAIGenerator(ExternalGenerator):
                 "shader": {"component": "shader", "style": "prismatic", "prompt": prompt},
                 "tone": {"component": "tone", "mood": "uplifting"},
                 "haptic": {"component": "haptic", "pattern": "pulse"},
-                "control": {"component": "control", "mappings": deepcopy(_DEFAULT_CONTROLS)},
+                "control": {"component": "control", "mappings": default_mappings},
                 "meta": {"component": "meta", "tags": ["external", "openai"]},
-                "modulation": {"component": "modulation", "modulators": []},
+                "modulations": [],
                 "rule_bundle": {"component": "rule_bundle", "rules": []},
                 "timestamp": timestamp,
             },
@@ -898,6 +1195,7 @@ class OpenAIGenerator(ExternalGenerator):
         trace_id: str,
         mode: str,
         endpoint: str,
+        response_hash: str,
     ) -> JsonDict:
         asset_payload = response.get("asset")
         if not isinstance(asset_payload, dict):
@@ -910,6 +1208,7 @@ class OpenAIGenerator(ExternalGenerator):
             trace_id=trace_id,
             mode=mode,
             endpoint=endpoint,
+            response_hash=response_hash,
         )
         provenance = dict(asset.get("provenance") or {})
         provenance["openai_object"] = response.get("object")

@@ -25,14 +25,14 @@ def test_asset_assembler_end_to_end(tmp_path) -> None:
     recorded_targets = []
 
     def validator(payload: dict) -> dict:
-        recorded_targets.append(payload["id"])
-        return {"status": "ok", "asset_id": payload["id"]}
+        recorded_targets.append(payload["asset_id"])
+        return {"status": "ok", "asset_id": payload["asset_id"]}
 
     critic_log = output_dir / "critic.jsonl"
     critic = CriticAgent(validator=validator, log_path=str(critic_log))
     review = critic.review(asset)
 
-    assert recorded_targets == [asset["id"]]
+    assert recorded_targets == [asset["asset_id"]]
     assert review["ok"] is True
     assert review["validation_status"] == "passed"
     assert asset_path.exists()

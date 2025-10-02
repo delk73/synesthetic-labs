@@ -69,13 +69,13 @@ class GeneratorAgent:
         trace_id = generator_block.get("trace_id") or str(uuid.uuid4())
         generator_block["trace_id"] = trace_id
 
-        meta = asset.setdefault("meta", {})
+        meta = asset.setdefault("meta_info", {})
         meta_provenance = meta.setdefault("provenance", {})
         meta_provenance.setdefault("trace_id", trace_id)
         meta_provenance.setdefault("mode", "local")
         meta_provenance.setdefault("timestamp", timestamp)
 
-        self._logger.info("Generated asset %s", asset.get("id"))
+        self._logger.info("Generated asset %s", asset.get("asset_id"))
 
         log_entry = dict(asset)
         log_entry["trace_id"] = trace_id
@@ -95,12 +95,12 @@ class GeneratorAgent:
     ) -> Dict[str, Any]:
         """Log a validated experiment linking the asset to persisted output."""
 
-        if "id" not in asset:
-            raise ValueError("asset must include an 'id'")
+        if "asset_id" not in asset:
+            raise ValueError("asset must include an 'asset_id'")
 
         timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
 
-        trace_id = review.get("trace_id") or asset.get("meta", {}).get("provenance", {}).get("trace_id")
+        trace_id = review.get("trace_id") or asset.get("meta_info", {}).get("provenance", {}).get("trace_id")
         if not trace_id:
             trace_id = asset.get("provenance", {}).get("generator", {}).get("trace_id") or str(uuid.uuid4())
 
@@ -112,7 +112,7 @@ class GeneratorAgent:
         transport = review.get("transport") or resolve_mcp_endpoint()
 
         record = {
-            "asset_id": asset["id"],
+            "asset_id": asset["asset_id"],
             "prompt": asset.get("prompt"),
             "experiment_path": experiment_path,
             "trace_id": trace_id,
@@ -144,7 +144,7 @@ class GeneratorAgent:
         log_jsonl(self.log_path, record)
         self._logger.info(
             "Recorded experiment for asset %s (persisted=%s)",
-            asset["id"],
+            asset["asset_id"],
             bool(experiment_path),
         )
         return record

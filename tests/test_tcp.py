@@ -66,9 +66,13 @@ def _start_tcp_server(handler) -> tuple[threading.Thread, int, List[BaseExceptio
 def test_tcp_round_trip() -> None:
     def handler(raw: bytes) -> Dict[str, object]:
         request = decode_payload(raw)
-        assert request["action"] == "validate"
-        asset = request["asset"]
-        return {"status": "ok", "asset_id": asset.get("id")}
+        assert request["jsonrpc"] == "2.0"
+        asset = request["params"]["asset"]
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {"status": "ok", "asset_id": asset.get("asset_id")},
+        }
 
     try:
         thread, port, errors = _start_tcp_server(handler)
@@ -76,7 +80,7 @@ def test_tcp_round_trip() -> None:
         pytest.skip("TCP sockets are not permitted in this sandbox")
 
     validator = TcpMCPValidator("127.0.0.1", port)
-    response = validator.validate({"id": "tcp-1"})
+    response = validator.validate({"asset_id": "tcp-1"})
 
     thread.join(timeout=1.0)
     assert not thread.is_alive()
@@ -87,7 +91,11 @@ def test_tcp_round_trip() -> None:
 def test_build_validator_from_env_tcp(monkeypatch) -> None:
     def handler(raw: bytes) -> Dict[str, object]:
         request = decode_payload(raw)
-        return {"status": "ok", "endpoint": request["asset"].get("id")}
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {"status": "ok", "endpoint": request["params"]["asset"].get("asset_id")},
+        }
 
     try:
         thread, port, errors = _start_tcp_server(handler)
@@ -99,7 +107,7 @@ def test_build_validator_from_env_tcp(monkeypatch) -> None:
     monkeypatch.setenv("MCP_PORT", str(port))
 
     validator = build_validator_from_env(timeout=2.0)
-    response = validator({"id": "tcp-env"})
+    response = validator({"asset_id": "tcp-env"})
 
     thread.join(timeout=1.0)
     assert not thread.is_alive()
@@ -109,7 +117,7 @@ def test_build_validator_from_env_tcp(monkeypatch) -> None:
 
 def test_tcp_payload_cap() -> None:
     def handler(_: bytes) -> Dict[str, object]:  # pragma: no cover - not expected to run
-        return {"status": "unexpected"}
+        return {"jsonrpc": "2.0", "id": "1", "result": {"status": "unexpected"}}
 
     try:
         thread, port, errors = _start_tcp_server(handler)
@@ -120,7 +128,7 @@ def test_tcp_payload_cap() -> None:
     oversize = "x" * (MAX_PAYLOAD_BYTES + 10)
 
     with pytest.raises(MCPUnavailableError) as excinfo:
-        validator.validate({"id": "large", "data": oversize})
+        validator.validate({"asset_id": "large", "data": oversize})
 
     assert "too large" in str(excinfo.value)
 
@@ -133,14 +141,18 @@ def test_tcp_payload_cap() -> None:
 def test_tcp_connection_error() -> None:
     validator = TcpMCPValidator("127.0.0.1", 65530)
     with pytest.raises(MCPUnavailableError) as excinfo:
-        validator.validate({"id": "missing"})
+        validator.validate({"asset_id": "missing"})
     assert "connection error" in str(excinfo.value).lower()
 
 
 def test_build_validator_from_env_defaults_to_tcp(monkeypatch) -> None:
     def handler(raw: bytes) -> Dict[str, object]:
         request = decode_payload(raw)
-        return {"status": "ok", "endpoint": request["asset"].get("id")}
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {"status": "ok", "endpoint": request["params"]["asset"].get("asset_id")},
+        }
 
     try:
         thread, port, errors = _start_tcp_server(handler)
@@ -152,7 +164,7 @@ def test_build_validator_from_env_defaults_to_tcp(monkeypatch) -> None:
     monkeypatch.setenv("MCP_PORT", str(port))
 
     validator = build_validator_from_env(timeout=2.0)
-    response = validator({"id": "tcp-default"})
+    response = validator({"asset_id": "tcp-default"})
 
     thread.join(timeout=1.0)
     assert not thread.is_alive()

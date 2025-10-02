@@ -14,10 +14,11 @@ from labs.agents.critic import CriticAgent, MCPUnavailableError
 @pytest.fixture()
 def base_asset() -> dict:
     return {
-        "id": "proposal-1",
+        "asset_id": "proposal-1",
         "timestamp": "2024-01-01T00:00:00+00:00",
         "prompt": "aurora sweep",
         "provenance": {"agent": "GeneratorAgent"},
+        "meta_info": {"provenance": {"trace_id": "trace-1"}},
     }
 
 
@@ -25,7 +26,7 @@ def test_missing_fields_flagged(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("MCP_ENDPOINT", "tcp")
     monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
     critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
-    review = critic.review({"id": "only"})
+    review = critic.review({"asset_id": "only"})
 
     assert review["ok"] is False
     assert any("missing required field" in item for item in review["issues"])
@@ -41,7 +42,7 @@ def test_missing_fields_flagged(tmp_path, monkeypatch) -> None:
 def test_successful_validation(tmp_path, base_asset) -> None:
 
     def validator(payload: dict) -> dict:
-        return {"status": "ok", "asset_id": payload["id"]}
+        return {"status": "ok", "asset_id": payload["asset_id"]}
 
     critic = CriticAgent(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
     review = critic.review(base_asset)

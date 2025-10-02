@@ -32,7 +32,7 @@ def is_fail_fast_enabled() -> bool:
 class CriticAgent:
     """Review assets and surface issues before handing off to MCP validation."""
 
-    REQUIRED_KEYS = ("id", "timestamp", "prompt", "provenance")
+    REQUIRED_KEYS = ("asset_id", "timestamp", "prompt", "provenance")
 
     def __init__(
         self,
@@ -46,7 +46,7 @@ class CriticAgent:
 
     @staticmethod
     def _resolve_trace_id(asset: Dict[str, Any]) -> str:
-        meta_prov = asset.get("meta", {}).get("provenance", {}) if isinstance(asset, dict) else {}
+        meta_prov = asset.get("meta_info", {}).get("provenance", {}) if isinstance(asset, dict) else {}
         trace_id = meta_prov.get("trace_id") if isinstance(meta_prov, dict) else None
         if trace_id:
             return trace_id
@@ -183,7 +183,7 @@ class CriticAgent:
         if patch_id is not None:
             review["patch_id"] = patch_id
 
-        self._logger.info("Completed review for asset %s", asset.get("id"))
+        self._logger.info("Completed review for asset %s", asset.get("asset_id"))
         log_jsonl(self.log_path, review)
         return review
 

@@ -14,7 +14,7 @@ def test_generator_propose_writes_log(tmp_path) -> None:
 
     asset = agent.propose("synthwave pulse")
 
-    for field in ("id", "timestamp", "prompt", "provenance"):
+    for field in ("asset_id", "timestamp", "prompt", "provenance", "meta_info"):
         assert field in asset
 
     assert asset["prompt"] == "synthwave pulse"
@@ -23,20 +23,24 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     assert generator_info["agent"] == "GeneratorAgent"
     assert generator_info["version"] == "v0.2"
     assert asset["provenance"]["version"] == "v0.2"
-    assert asset["meta"]["provenance"]["trace_id"] == generator_info["trace_id"]
+    assert asset["meta_info"]["provenance"]["trace_id"] == generator_info["trace_id"]
 
-    for section in ("shader", "tone", "haptic", "control", "meta", "modulation", "rule_bundle"):
+    for section in ("shader", "tone", "haptic"):
         assert section in asset
-        assert asset[section]["component"] == section
+        assert "input_parameters" in asset[section]
+
+    assert "control_parameters" in asset["control"]
+    assert isinstance(asset["modulations"], list)
+    assert isinstance(asset["rule_bundle"], dict)
 
     assert log_path.exists()
     lines = log_path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
     logged = json.loads(lines[0])
-    assert logged["id"] == asset["id"]
-    assert logged["shader"]["component"] == "shader"
+    assert logged["asset_id"] == asset["asset_id"]
+    assert "input_parameters" in logged["shader"]
     assert logged["provenance"]["generator"]["agent"] == "GeneratorAgent"
-    assert logged["trace_id"] == asset["meta"]["provenance"]["trace_id"]
+    assert logged["trace_id"] == asset["meta_info"]["provenance"]["trace_id"]
     assert logged["mode"] == "local"
     assert isinstance(logged["strict"], bool)
     assert logged["transport"] == resolve_mcp_endpoint()
@@ -47,9 +51,12 @@ def test_record_experiment_logs_experiment_path(tmp_path) -> None:
     agent = GeneratorAgent(log_path=str(log_path))
 
     asset = {
-        "id": "asset-123",
+        "asset_id": "asset-123",
         "prompt": "synthwave pulse",
         "timestamp": "2024-01-01T00:00:00+00:00",
+        "meta_info": {
+            "provenance": {"trace_id": "trace-123"}
+        },
     }
     review = {
         "ok": True,

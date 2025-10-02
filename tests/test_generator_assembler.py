@@ -23,16 +23,16 @@ def test_asset_assembler_produces_consistent_payload() -> None:
     asset = assembler.generate("assembler smoke test")
 
     assert asset["prompt"] == "assembler smoke test"
-    assert isinstance(asset["id"], str)
+    assert isinstance(asset["asset_id"], str)
+    assert asset["$schemaRef"].endswith("synesthetic-asset.schema.json#/SynestheticAsset")
     assert asset["provenance"]["agent"] == "AssetAssembler"
 
     parameters = _parameter_names(asset)
     assert parameters  # surfaces should not be empty
 
-    for mapping in asset["control"]["mappings"]:
-        assert mapping["parameter"] in parameters
+    for control_parameter in asset["control"]["control_parameters"]:
+        assert control_parameter["parameter"] in parameters
 
-    assert asset["modulation"]["component"] == "modulation"
-    assert asset["rule_bundle"]["component"] == "rule_bundle"
-    assert asset["modulation"]["modulators"]
+    assert isinstance(asset["modulations"], list)
+    assert asset["modulations"]
     assert asset["rule_bundle"]["rules"]

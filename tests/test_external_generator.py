@@ -27,8 +27,8 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     assert provenance["engine"] == "gemini"
     assert provenance["mode"] == "mock"
     assert provenance["api_version"] == generator.api_version
-    assert asset["shader"]["component"] == "shader"
-    assert asset["tone"]["component"] == "tone"
+    assert asset["control"]["control_parameters"]
+    assert asset["meta_info"]["provenance"]["engine"] == "gemini"
 
     review = {
         "ok": True,
@@ -51,8 +51,10 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     record = entries[0]
     assert record["engine"] == "gemini"
     assert record["status"] == "validation_passed"
-    assert record["normalized_asset"]["provenance"]["generator"]["trace_id"] == context["trace_id"]
-    assert record["normalized_asset"]["meta"]["provenance"]["trace_id"] == context["trace_id"]
+    assert (
+        record["normalized_asset"]["meta_info"]["provenance"]["trace_id"]
+        == context["trace_id"]
+    )
     assert record["raw_response"]["hash"] == context["raw_response"]["hash"]
     assert record["raw_response"]["size"] == context["raw_response"]["size"]
     assert record["transport"] == "tcp"
@@ -105,7 +107,8 @@ def _minimal_asset_payload() -> dict:
             "haptic": {},
             "control": {},
             "meta": {},
-            "modulation": {},
+            "meta_info": {},
+            "modulations": [],
             "rule_bundle": {},
         }
     }
@@ -135,7 +138,7 @@ def test_live_header_injection(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(OpenAIGenerator, "_post_json", fake_post_json, raising=False)
 
     asset, context = generator.generate("live prompt", seed=7, timeout=5)
-    assert asset["meta"]["provenance"]["mode"] == "live"
+    assert asset["meta_info"]["provenance"]["mode"] == "live"
     assert captured["headers"]["Authorization"] == "Bearer live-123"
     assert context["request_headers"]["Authorization"] == "***redacted***"
     assert context["mode"] == "live"
@@ -254,7 +257,7 @@ def test_rate_limited_retries(monkeypatch) -> None:
     asset, context = generator.generate("rate limited")
 
     assert call_count["n"] == 3
-    assert asset["id"]
+    assert asset["asset_id"]
     assert len(context["attempts"]) == 3
     assert context["attempts"][0]["status"] == "error"
     assert context["attempts"][-1]["status"] == "ok"
@@ -270,7 +273,8 @@ def test_normalization_populates_defaults() -> None:
             "haptic": {},
             "control": {},
             "meta": {},
-            "modulation": {},
+            "meta_info": {},
+            "modulations": [],
             "rule_bundle": {},
         },
     }
@@ -282,9 +286,80 @@ def test_normalization_populates_defaults() -> None:
         trace_id="trace",
         mode="mock",
         endpoint="https://example.com",
+        response_hash="abc123def4567890",
     )
-    assert asset["meta"]["provenance"]["engine"] == "gemini"
-    assert asset["controls"]
-    control_pairs = {(item.get("control"), item.get("parameter")) for item in asset["controls"]}
-    assert ("mouse.x", "shader.u_px") in control_pairs
-    assert ("mouse.y", "shader.u_py") in control_pairs
+    assert asset["meta_info"]["provenance"]["engine"] == "gemini"
+    control_pairs = {
+        tuple((combo.get("device"), combo.get("control")))
+        for parameter in asset["control"]["control_parameters"]
+        for combo in parameter.get("combo", [])
+        if isinstance(combo, dict)
+    }
+    assert ("mouse", "x") in control_pairs
+    assert ("mouse", "y") in control_pairs
+
+
+def test_normalization_rejects_unknown_keys() -> None:
+    generator = GeminiGenerator(mock_mode=True, sleeper=lambda _: None)
+    payload = {
+        "shader": {},
+        "tone": {},
+        "haptic": {},
+        "control": {},
+        "meta": {},
+        "meta_info": {},
+        "modulations": [],
+        "rule_bundle": {},
+        "unexpected": {},
+    }
+    with pytest.raises(ExternalRequestError) as excinfo:
+        generator._normalise_asset(
+            payload,
+            prompt="prompt",
+            parameters={},
+            response={"asset": payload},
+            trace_id="trace",
+            mode="mock",
+            endpoint="mock://gemini",
+            response_hash="abc1230000000000",
+        )
+    assert excinfo.value.reason == "bad_response"
+    assert excinfo.value.detail.startswith("unknown_key")
+
+
+def test_normalization_rejects_out_of_range_values() -> None:
+    generator = GeminiGenerator(mock_mode=True, sleeper=lambda _: None)
+    payload = {
+        "shader": {
+            "input_parameters": [
+                {
+                    "parameter": "shader.u_px",
+                    "minimum": -1.0,
+                    "maximum": 1.0,
+                    "default": 5.0,
+                }
+            ]
+        },
+        "tone": {},
+        "haptic": {
+            "profile": {"intensity": 2.0}
+        },
+        "control": {},
+        "meta": {},
+        "meta_info": {},
+        "modulations": [],
+        "rule_bundle": {},
+    }
+    with pytest.raises(ExternalRequestError) as excinfo:
+        generator._normalise_asset(
+            payload,
+            prompt="prompt",
+            parameters={},
+            response={"asset": payload},
+            trace_id="trace",
+            mode="mock",
+            endpoint="mock://gemini",
+            response_hash="abc1230000000000",
+        )
+    assert excinfo.value.reason == "bad_response"
+    assert "out_of_range" in excinfo.value.detail or "invalid_bounds" in excinfo.value.detail

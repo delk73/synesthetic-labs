@@ -10,8 +10,8 @@ from labs.patches import apply_patch, preview_patch, rate_patch
 
 def test_preview_patch_logs(tmp_path) -> None:
     log_path = tmp_path / "patches.jsonl"
-    asset = {"id": "asset-1"}
-    patch = {"id": "patch-1", "updates": {"meta": {"title": "Updated"}}}
+    asset = {"asset_id": "asset-1"}
+    patch = {"id": "patch-1", "updates": {"meta_info": {"title": "Updated"}}}
 
     record = preview_patch(asset, patch, log_path=str(log_path))
 
@@ -33,22 +33,22 @@ def test_apply_patch_runs_critic(tmp_path) -> None:
     critic_log = tmp_path / "critic.jsonl"
 
     def validator(payload: dict) -> dict:
-        return {"status": "ok", "asset_id": payload["id"]}
+        return {"status": "ok", "asset_id": payload["asset_id"]}
 
     critic = CriticAgent(validator=validator, log_path=str(critic_log))
 
     asset = {
-        "id": "asset-2",
-        "meta": {"title": "Original"},
+        "asset_id": "asset-2",
+        "meta_info": {"title": "Original"},
         "timestamp": "2024-01-01T00:00:00+00:00",
         "prompt": "baseline",
         "provenance": {"agent": "GeneratorAgent"},
     }
-    patch = {"id": "patch-2", "updates": {"meta": {"title": "Patched"}}}
+    patch = {"id": "patch-2", "updates": {"meta_info": {"title": "Patched"}}}
 
     result = apply_patch(asset, patch, critic=critic, log_path=str(log_path))
 
-    assert result["asset"]["meta"] == {"title": "Patched"}
+    assert result["asset"]["meta_info"] == {"title": "Patched"}
     assert result["review"]["ok"] is True
     assert result["review"]["patch_id"] == "patch-2"
 

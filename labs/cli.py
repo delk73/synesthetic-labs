@@ -36,13 +36,13 @@ def _experiments_dir() -> str:
 
 
 def _persist_asset(asset: Dict[str, Any]) -> str:
-    if "id" not in asset:
-        raise ValueError("asset must include an 'id'")
+    if "asset_id" not in asset:
+        raise ValueError("asset must include an 'asset_id'")
 
     experiments_dir = _experiments_dir()
     os.makedirs(experiments_dir, exist_ok=True)
 
-    path = os.path.join(experiments_dir, f"{asset['id']}.json")
+    path = os.path.join(experiments_dir, f"{asset['asset_id']}.json")
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(asset, handle, sort_keys=True, indent=2)
         handle.write("\n")
@@ -83,7 +83,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     generate_parser.add_argument("prompt", help="Prompt text for the generator")
     generate_parser.add_argument(
         "--engine",
-        choices=("gemini", "openai"),
+        choices=("gemini", "openai", "deterministic"),
         help="Optional external engine to fulfil the prompt",
     )
     generate_parser.add_argument("--seed", type=int, help="Optional random seed for generation")
@@ -120,7 +120,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         if args.strict is not None:
             os.environ["LABS_FAIL_FAST"] = "1" if args.strict else "0"
 
-        if engine:
+        if engine and engine != "deterministic":
             external_generator = build_external_generator(engine)
             external_parameters: Dict[str, Any] = {}
             if args.temperature is not None:
@@ -176,7 +176,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "experiment_path": experiment_path,
         }
 
-        if engine:
+        if engine and engine != "deterministic":
             output_payload["engine"] = engine
 
         print(json.dumps(output_payload, indent=2))
