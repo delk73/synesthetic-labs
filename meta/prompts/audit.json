@@ -1,6 +1,6 @@
 {
-  "task": "Audit synesthetic-labs repo state (v0.3.3 External Generators, TCP-default, hardening)",
-  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md v0.3.3. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot.",
+  "task": "Audit synesthetic-labs repo state (v0.3.4 Asset Generation Calls, External Generators live, TCP-default, hardening)",
+  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md v0.3.4. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot.",
   "constraints": {
     "style": "deterministic, terse, Markdown headings with bullets/tables",
     "rules": [
@@ -19,6 +19,8 @@
       "Socket transport MUST have failure coverage in critic tests to assert socket_unavailable detail",
       "resolve_mcp_endpoint fallback MUST be unit-tested to lock default/fallback behaviour",
       "Maintainer docs MUST reference transport provenance resolver to avoid drift in future agents",
+      "External live calls MUST handle API keys via env, set Authorization headers, redact secrets in logs, enforce 256KiB req / 1MiB resp caps, and implement retry/backoff with correct no-retry taxonomy",
+      "external.jsonl MUST include provenance (engine, endpoint, model, params, trace_id, mode) and failure.reason/detail when applicable",
       "Audit is incomplete unless both output files are created or overwritten with non-empty content"
     ],
     "sections": [
@@ -31,11 +33,12 @@
       "Patch lifecycle (bullets: preview, apply, rate stubs, logging)",
       "MCP integration (bullets: STDIO, TCP-default, socket-optional validation; failure handling; strict vs relaxed mode; 1 MiB caps; reason/detail logging; resolver fallback)",
       "External generator integration (bullets: Gemini/OpenAI interface, provenance logging, CLI flags, error handling, MCP-enforced validation)",
-      "Test coverage (table: Feature → Tested? → Evidence, including socket failure coverage and resolver fallback)",
+      "External generation LIVE (v0.3.4) (bullets: env keys, endpoint resolution, Authorization headers, timeout, retry/backoff, size guards, redaction, normalization → schema-valid)",
+      "Test coverage (table: Feature → Tested? → Evidence, including socket failure coverage, resolver fallback, header injection, size caps, retry taxonomy)",
       "Dependencies and runtime (table: Package → Used in → Required/Optional)",
       "Environment variables (bullets: name, default, transport defaults, behavior when MCP/external API unreachable, deprecated knobs)",
       "Logging (bullets: structured JSONL, provenance fields, patch/rating/external fields, reason/detail on transport failures, location under meta/output/)",
-      "Documentation accuracy (bullets: README vs. labs_spec.md; TCP as default, socket optional; maintainer docs reference resolver; env cleanup)",
+      "Documentation accuracy (bullets: README vs. labs_spec.md; TCP as default, socket optional; maintainer docs reference resolver; env cleanup; v0.3.4 setup for API keys/live mode)",
       "Detected divergences",
       "Recommendations"
     ]
@@ -46,11 +49,14 @@
       "docs/labs_spec.md",
       "requirements.txt",
       "labs/*.py",
+      "labs/generator/*.py",
+      "labs/cli.py",
       "tests/*.py",
       "meta/",
       "AGENTS.md",
       ".github/workflows/",
-      ".env.example"
+      ".env.example",
+      ".env.sample"
     ]
   },
   "output": {
@@ -65,18 +71,22 @@
   "exit_criteria": [
     "meta/output/labs_state.md is written and non-empty",
     "AGENTS.md snapshot updated with current audit findings",
-    "Spec v0.3.3 (TCP-default, socket-optional, hardening) features mapped to Present / Missing / Divergent in table form",
+    "Spec v0.3.4 features mapped to Present / Missing / Divergent in table form (including live external calls)",
     "Generator, Critic, Assembler, and Patch lifecycle explicitly verified",
     "MCP validation integration checked for STDIO, TCP (default), and socket (optional) with doc status",
     "Strict vs relaxed mode both invoke MCP; if failures occur, logs contain reason/detail (no skips)",
     "External generator provenance, MCP-enforced validation, and error handling verified",
+    "External LIVE path verified: env keys present, endpoint resolution, Authorization header, timeout/retry/backoff behavior, size caps (256KiB req / 1MiB resp), redaction in logs",
+    "external.jsonl presence and schema verified (provenance, request params, response hash/size, failure fields)",
     "Critic socket failure coverage test verified",
     "Unit test for resolve_mcp_endpoint fallback verified",
+    "Header injection test verified for live mode; no header in mock mode",
+    "Normalization contract verified (unknown keys rejected; canonical defaults filled; required sections present)",
     "Maintainer docs reference transport provenance resolver",
-    "Test coverage summarized in a table with evidence, including TCP and resolver fallback; socket may be skipped if documented",
+    "Test coverage summarized in a table with evidence, including TCP default and resolver fallback; socket may be skipped if documented",
     "Dependencies mapped to imports in a table with evidence",
-    "Environment variables listed with defaults (TCP default), and deprecated/unused knobs identified or removed",
+    "Environment variables listed with defaults (TCP default), deprecated/unused knobs identified or removed (SYN_SCHEMAS_DIR marked STDIO-only deprecated)",
     "Logging practices verified (structured JSONL, provenance, patch/rating/external, reason/detail, meta/output/)",
-    "README cross-checked against docs/labs_spec.md for TCP default, socket optional, resolver reference, and env cleanup"
+    "README cross-checked against docs/labs_spec.md for TCP default, socket optional, resolver reference, env cleanup, and v0.3.4 live-call setup"
   ]
 }
