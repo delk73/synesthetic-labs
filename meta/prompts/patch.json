@@ -1,109 +1,88 @@
 {
-  "task": "Implement v0.3.4 external generator live-call compliance",
-  "objective": "Update external generator, CLI, logging, tests, and docs to meet v0.3.4 requirements (env-driven API keys, Authorization header, retry taxonomy, normalization defaults, structured logging, CLI flags, troubleshooting doc).",
+  "task": "Close v0.3.4 drift (normalization, bounds, deterministic alias)",
+  "objective": "Bring Labs implementation into full alignment with v0.3.4 spec by rejecting unknown keys, enforcing numeric bounds pre-MCP, and adding the --engine=deterministic alias.",
   "changes": [
     {
-      "id": "external_http_client",
-      "description": "Implement API key/env handling, Authorization header injection, size guards, retry taxonomy, and failure reason/detail in external generator.",
+      "id": "normalization_reject_unknowns",
+      "description": "Reject unknown sections/keys or wrong types during normalization instead of silently dropping them.",
       "edits": [
         {
           "file": "labs/generator/external.py",
           "pattern": ".*",
           "multiple": true,
-          "replacement": "# add imports\nimport os, hashlib, random, time\n\n# existing ExternalGenerator class ...\n# patch generate() to:\n# - load GEMINI_API_KEY/OPENAI_API_KEY and endpoints from env\n# - inject Authorization header\n# - enforce 256 KiB request, 1 MiB response\n# - exponential backoff with jitter, abort on auth_error/bad_response\n# - redact secrets in logs\n# - compute SHA-256 hash of raw response\n# - normalize asset with meta/controls defaults\n# - insert provenance under asset.meta.provenance\n# - emit structured failure.reason/detail"
+          "replacement": "# In normalization step:\n# - walk asset dict\n# - if any unexpected keys or wrong-typed values are found, raise structured error\n# - failure.reason = 'bad_response', failure.detail = 'unknown_key:<name>' or 'wrong_type:<path>'\n# - extend tests to assert rejection\n"
         }
       ]
     },
     {
-      "id": "cli_flags",
-      "description": "Extend CLI generate command with seed, temperature, timeout, and strict/relaxed flags.",
+      "id": "preflight_bounds",
+      "description": "Add pre-flight numeric bounds validation before MCP call (e.g., haptic intensity ∈ [0,1], parameter min/max).",
+      "edits": [
+        {
+          "file": "labs/generator/external.py",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "# Implement _validate_bounds(asset):\n# - check haptic.intensity between 0.0 and 1.0\n# - check shader/tone parameter defaults within declared min/max\n# - raise structured error if out-of-range with failure.reason='bad_response' and detail\n# Call _validate_bounds(asset) before MCP invocation\n"
+        }
+      ]
+    },
+    {
+      "id": "cli_deterministic_alias",
+      "description": "Support --engine=deterministic CLI alias.",
       "edits": [
         {
           "file": "labs/cli.py",
           "pattern": ".*",
           "multiple": true,
-          "replacement": "# argparse setup\nparser.add_argument('--seed', type=int, help='Random seed')\nparser.add_argument('--temperature', type=float, help='Temperature override')\nparser.add_argument('--timeout-s', type=int, default=30, help='Request timeout seconds')\nparser.add_argument('--strict', dest='strict', action='store_true')\nparser.add_argument('--relaxed', dest='strict', action='store_false')\nparser.set_defaults(strict=True)\n\n# map strict/relaxed to LABS_FAIL_FAST env\nos.environ['LABS_FAIL_FAST'] = '1' if args.strict else '0'\n# pass seed/temperature/timeout through to ExternalGenerator"
+          "replacement": "# In CLI parser:\nparser.add_argument('--engine', choices=['gemini','openai','deterministic','mock'], default='deterministic')\n# Map 'deterministic' to existing local/mock generator\n# Update help text and README snippets\n"
         }
       ]
     },
     {
-      "id": "logging_metadata",
-      "description": "Augment generator, critic, and patch logging with trace_id, mode, transport, strict, and structured failure reason/detail.",
-      "edits": [
-        {
-          "file": "labs/agents/generator.py",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "# extend log payloads with trace_id, mode, transport, strict flag, and failure.reason/detail"
-        },
-        {
-          "file": "labs/agents/critic.py",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "# extend critic logs with trace_id, mode, transport, strict flag"
-        },
-        {
-          "file": "labs/patches.py",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "# extend patch logs with trace_id, strict flag, transport, and structured reason/detail"
-        }
-      ]
-    },
-    {
-      "id": "tests_external_live",
-      "description": "Add tests for header injection, size caps, retry taxonomy, normalization defaults, and CLI flag precedence.",
+      "id": "tests_bounds_and_alias",
+      "description": "Add unit tests for unknown key rejection, pre-flight bounds enforcement, and deterministic alias.",
       "edits": [
         {
           "file": "tests/test_external_generator.py",
           "pattern": ".*",
           "multiple": true,
-          "replacement": "def test_live_header_injection(monkeypatch): ...\n\ndef test_request_response_size_caps(): ...\n\ndef test_retry_taxonomy_respects_abort(): ...\n\ndef test_normalization_defaults(): ...\n\ndef test_cli_flags_precedence(): ..."
+          "replacement": "def test_unknown_key_rejection(): ...\n\ndef test_preflight_bounds_enforced(): ...\n"
+        },
+        {
+          "file": "tests/test_pipeline.py",
+          "pattern": ".*",
+          "multiple": true,
+          "replacement": "def test_cli_engine_deterministic_alias(tmp_path): ...\n"
         }
       ]
     },
     {
-      "id": "docs_update",
-      "description": "Update README, .example.env, and add troubleshooting doc for external live mode.",
+      "id": "docs_deterministic_alias",
+      "description": "Update README/docs to mention deterministic alias for CLI.",
       "edits": [
         {
           "file": "README.md",
           "pattern": ".*",
           "multiple": true,
-          "replacement": "## External Generators (v0.3.4)\nSet GEMINI_API_KEY/OPENAI_API_KEY in your environment and enable live calls with LABS_EXTERNAL_LIVE=1. Keys are redacted in logs.\nCLI flags: --engine, --seed, --temperature, --timeout-s, --strict/--relaxed.\nSee docs/troubleshooting_external.md for error taxonomy and remedies."
-        },
-        {
-          "file": ".example.env",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "# External generators (v0.3.4)\n# GEMINI_API_KEY=your_key_here\n# GEMINI_ENDPOINT=https://...\n# OPENAI_API_KEY=your_key_here\n# OPENAI_ENDPOINT=https://api.openai.com/v1\nLABS_EXTERNAL_LIVE=0"
-        },
-        {
-          "file": "docs/troubleshooting_external.md",
-          "pattern": ".*",
-          "multiple": true,
-          "replacement": "# Troubleshooting External Generators\n\n- **auth_error**: invalid or missing API key.\n- **rate_limited**: too many requests.\n- **timeout**: request exceeded timeout.\n- **bad_response**: malformed JSON.\n- **server_error**: 5xx.\n- **network_error**: connection issue.\n\nFix: check API key, network, or retry later."
+          "replacement": "## Engines\n- gemini: live or mock Gemini\n- openai: live or mock OpenAI\n- deterministic: built-in deterministic generator (baseline)\n- mock: legacy synonym for deterministic\n"
         }
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "Do not break existing mock mode (LABS_EXTERNAL_LIVE=0 must still work deterministically).",
-      "Ensure Authorization header only sent in live mode with API key present.",
-      "Retry/backoff must follow taxonomy; no retry on auth_error/bad_response.",
-      "Normalization must always produce schema-valid asset with defaults and provenance under asset.meta.",
-      "Logs must redact secrets and include trace_id, transport, mode, strict flag.",
-      "Docs must clearly explain env setup and troubleshooting."
+      "Do not break existing external generator mock/live flows.",
+      "Unknown key/type rejection must raise structured error with reason/detail logged.",
+      "Bounds validation must reject before MCP; do not rely on MCP alone.",
+      "Deterministic alias must be functionally identical to current local baseline.",
+      "Update tests to assert rejection cases and CLI alias works."
     ]
   },
   "exit_criteria": [
-    "External live calls functional with GEMINI_API_KEY/OPENAI_API_KEY set.",
-    "external.jsonl entries include transport, raw_response.hash/size, provenance, trace_id, strict flag.",
-    "CLI generate supports new flags and precedence tested.",
-    "Tests cover header injection, size caps, retry taxonomy, normalization defaults, and CLI flags.",
-    "README and .example.env document API key setup and live mode toggle.",
-    "Troubleshooting doc present with error taxonomy.",
-    "CI passes in mock mode with LABS_EXTERNAL_LIVE=0."
+    "Normalization rejects unknown keys/types with structured error and logged failure.",
+    "Pre-flight bounds validation enforced before MCP; out-of-range assets rejected.",
+    "CLI supports --engine=deterministic and docs updated.",
+    "Tests cover unknown key rejection, bounds enforcement, and deterministic alias.",
+    "CI green in both mock and live external modes."
   ]
 }

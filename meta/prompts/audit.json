@@ -21,6 +21,8 @@
       "Maintainer docs MUST reference transport provenance resolver to avoid drift in future agents",
       "External live calls MUST handle API keys via env, set Authorization headers, redact secrets in logs, enforce 256KiB req / 1MiB resp caps, and implement retry/backoff with correct no-retry taxonomy",
       "external.jsonl MUST include provenance (engine, endpoint, model, params, trace_id, mode) and failure.reason/detail when applicable",
+      "Normalization MUST reject unknown top-level keys and wrong-typed sections, returning bad_response errors (labs/generator/external.py).",
+      "Pre-flight numeric bounds (haptic intensity, parameter defaults vs min/max) MUST be enforced before MCP validation; violations must raise bad_response/out_of_range with reason/detail logging.",
       "Audit is incomplete unless both output files are created or overwritten with non-empty content"
     ],
     "sections": [
@@ -81,6 +83,8 @@
     "Critic socket failure coverage test verified",
     "Unit test for resolve_mcp_endpoint fallback verified",
     "Header injection test verified for live mode; no header in mock mode",
+    "Normalization contract verified: unknown keys/types rejected, canonical defaults applied, and bad_response errors emitted on failure.",
+    "Pre-flight numeric bounds enforced before MCP validation; out-of-range values trigger bad_response/out_of_range with logged detail.",
     "Normalization contract verified (unknown keys rejected; canonical defaults filled; required sections present)",
     "Maintainer docs reference transport provenance resolver",
     "Test coverage summarized in a table with evidence, including TCP default and resolver fallback; socket may be skipped if documented",

@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 import uuid
 from copy import deepcopy
+from numbers import Real
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from labs.generator.assembler import AssetAssembler
@@ -547,9 +548,10 @@ class ExternalGenerator:
         endpoint: str,
     ) -> JsonDict:
         if not isinstance(asset_payload, dict):
-            raise ValueError("response missing 'asset' dictionary payload")
+            raise ExternalRequestError("bad_response", "asset_not_object", retryable=False)
 
         asset = self._canonicalize_asset(asset_payload)
+        self._validate_bounds(asset)
 
         timestamp = asset.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
         asset_id = asset.get("id") or asset.get("asset_id") or str(uuid.uuid4())
@@ -607,6 +609,9 @@ class ExternalGenerator:
         return asset
 
     def _canonicalize_asset(self, payload: JsonDict) -> JsonDict:
+        if not isinstance(payload, dict):
+            raise ExternalRequestError("bad_response", "asset_not_object", retryable=False)
+
         allowed_keys = {
             "id",
             "prompt",
@@ -623,14 +628,123 @@ class ExternalGenerator:
             "seed",
             "provenance",
         }
+        unexpected = sorted(key for key in payload.keys() if key not in allowed_keys)
+        if unexpected:
+            raise ExternalRequestError(
+                "bad_response",
+                f"unknown_key:{unexpected[0]}",
+                retryable=False,
+            )
+
         sanitized: JsonDict = {}
-        for key in allowed_keys:
+
+        for key in ("id", "prompt", "timestamp", "seed", "provenance"):
             if key in payload:
                 sanitized[key] = deepcopy(payload[key])
+
         for section in ("shader", "tone", "haptic", "control", "meta", "modulation", "rule_bundle"):
-            if section not in sanitized or not isinstance(sanitized[section], dict):
+            if section in payload:
+                section_payload = payload[section]
+                if not isinstance(section_payload, dict):
+                    raise ExternalRequestError(
+                        "bad_response",
+                        f"wrong_type:{section}",
+                        retryable=False,
+                    )
+                sanitized[section] = deepcopy(section_payload)
+            else:
                 sanitized[section] = deepcopy(_DEFAULT_SECTIONS[section])
+
+        if "controls" in payload:
+            controls = payload["controls"]
+            if controls is None:
+                sanitized["controls"] = None
+            elif not isinstance(controls, list):
+                raise ExternalRequestError("bad_response", "wrong_type:controls", retryable=False)
+            else:
+                if not all(isinstance(item, dict) for item in controls):
+                    raise ExternalRequestError(
+                        "bad_response",
+                        "wrong_type:controls[]",
+                        retryable=False,
+                    )
+                sanitized["controls"] = deepcopy(controls)
+        else:
+            sanitized["controls"] = deepcopy(_DEFAULT_CONTROLS)
+
+        if "parameter_index" in payload:
+            parameter_index = payload["parameter_index"]
+            if not isinstance(parameter_index, list) or not all(
+                isinstance(entry, str) for entry in parameter_index
+            ):
+                raise ExternalRequestError(
+                    "bad_response",
+                    "wrong_type:parameter_index",
+                    retryable=False,
+                )
+            sanitized["parameter_index"] = list(parameter_index)
+
         return sanitized
+
+
+    def _validate_bounds(self, asset: JsonDict) -> None:
+        def _fail(detail: str) -> None:
+            raise ExternalRequestError("bad_response", detail, retryable=False)
+
+        def _as_number(value: Any, path: str) -> float:
+            if isinstance(value, bool) or not isinstance(value, Real):
+                _fail(f"wrong_type:{path}")
+            return float(value)
+
+        haptic = asset.get("haptic", {})
+        if not isinstance(haptic, dict):
+            _fail("wrong_type:haptic")
+        profile = haptic.get("profile")
+        if isinstance(profile, dict) and "intensity" in profile:
+            intensity = _as_number(profile["intensity"], "haptic.profile.intensity")
+            if not 0.0 <= intensity <= 1.0:
+                _fail("out_of_range:haptic.profile.intensity")
+
+        for section_key in ("shader", "tone", "haptic"):
+            section = asset.get(section_key, {})
+            if not isinstance(section, dict):
+                _fail(f"wrong_type:{section_key}")
+            input_parameters = section.get("input_parameters")
+            if input_parameters is None:
+                continue
+            if not isinstance(input_parameters, list):
+                _fail(f"wrong_type:{section_key}.input_parameters")
+            for index, parameter in enumerate(input_parameters):
+                if not isinstance(parameter, dict):
+                    _fail(f"wrong_type:{section_key}.input_parameters[{index}]")
+                name = parameter.get("parameter")
+                param_path = (
+                    f"{section_key}.input_parameters.{name}"
+                    if isinstance(name, str) and name
+                    else f"{section_key}.input_parameters[{index}]"
+                )
+                minimum = parameter.get("minimum")
+                maximum = parameter.get("maximum")
+                default = parameter.get("default")
+
+                min_value = None
+                max_value = None
+
+                if minimum is not None:
+                    min_value = _as_number(minimum, f"{param_path}.minimum")
+                if maximum is not None:
+                    max_value = _as_number(maximum, f"{param_path}.maximum")
+
+                if min_value is not None and max_value is not None and min_value > max_value:
+                    _fail(f"invalid_bounds:{param_path}")
+
+                if default is not None:
+                    default_value = _as_number(default, f"{param_path}.default")
+                    if min_value is not None and default_value < min_value:
+                        _fail(f"out_of_range:{param_path}.default")
+                    if max_value is not None and default_value > max_value:
+                        _fail(f"out_of_range:{param_path}.default")
+
 
     def _collect_parameters(self, asset: JsonDict) -> List[str]:
         parameters: List[str] = []
