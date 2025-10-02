@@ -1,6 +1,6 @@
 ---
-version: v0.3.3
-lastReviewed: 2025-10-01
+version: v0.3.4
+lastReviewed: 2025-10-02
 owner: labs-core
 ---
 
@@ -14,248 +14,235 @@ owner: labs-core
 
 ---
 
-## Scope (v0.1)
+## Historical Scopes (≤ v0.3.3)
 
-- **Generator agent** produces a minimal `nested-synesthetic-asset`.
-- **Critic agent** coordinates MCP validation and logging.
-- Assemble Shader, Tone, Haptic sections with canonical defaults.
-- Wire through MCP validation (`validate_asset` over STDIO).
-- Log validated assets under `meta/output/labs/`.
-- CLI exposes `generate` subcommand.
+Versions **v0.1 → v0.3.3** covered:
+- Initial generator/critic pipeline and canonical baseline assets.
+- Validation over STDIO, then Unix socket, then TCP (1 MiB caps).
+- Logging streams (`generator.jsonl`, `critic.jsonl`, `patches.jsonl`).
+- Patch lifecycle stubs, rating stub, container hardening.
+- External generator scaffolding (Gemini/OpenAI) in **mock mode**.
+- Spec alignment + resolver fallback tests; `SYN_SCHEMAS_DIR` deprecated for TCP/socket.
 
-### Canonical Baseline (v0.1)
-- Shader: CircleSDF (`u_px`, `u_py`, `u_r`).
-- Tone: `Tone.Synth` with envelope + detune.
-- Haptic: Generic device with `intensity`.
-- Controls: mouse.x → shader.u_px, mouse.y → shader.u_py (invert).
-- Meta: title, description, category=multimodal, complexity=medium, tags.
-
-### Validation (v0.1)
-- Pre-flight ensures primary sections exist.
-- MCP validation must pass.
-- Fail-fast toggle (`LABS_FAIL_FAST`).
-- MCP invoked via `MCP_ADAPTER_CMD`; no TCP.
-
-### Logging (v0.1)
-- Every run logs: prompt, seed, generated asset, MCP result.
-
-### Tests (v0.1)
-- Unit, integration, and end-to-end.
-- Determinism enforced.
-
-### Exit Criteria (v0.1)
-- Generator produces validated asset.
-- Logs under `meta/output/labs/`.
-- CLI works inside/outside Docker.
-- Tests green.
+> Full details for v0.1–v0.3.3 are **culled** from this document (refer to Git history).
 
 ---
 
-## Scope (v0.2)
+## Scope (v0.3.4 Asset Generation Calls)
 
-- Add **Unix socket transport** for MCP.
-- Implement **patch lifecycle orchestration**: preview, apply, rate.
-- Expand critic to record **ratings stub**.
-- Harden container: non-root user, path traversal guard.
-- Align docs/tests to cover STDIO and socket.
+### Objectives
+- Implement **live external API calls** for Gemini and OpenAI.
+- Keep CI deterministic: **mock mode by default**; live mode behind env guard.
+- Normalize any external output into a **schema-valid nested synesthetic asset** and **always** run MCP validation.
 
-### Canonical Baseline (v0.2)
-- Add **modulation stubs** (ADSR on tone).
-- Add **rule bundle stub** (e.g., radius modulation rule).
+### Interfaces
 
-### Validation (v0.2)
-- Unix socket validation.
-- Path normalization + traversal rejection.
-- Critic validates patched assets before apply.
+#### ExternalGenerator (contract)
+```python
+class ExternalGenerator(Protocol):
+    name: str                    # "gemini" | "openai"
+    model: str                   # from env
+    endpoint: Optional[str]      # base URL (can be None in mock mode)
 
-### Logging (v0.2)
-- Extend logs with patch ops + rating stubs.
+    def generate(
+        self,
+        prompt: str,
+        seed: Optional[int] = None,
+        params: Optional[dict[str, Any]] = None,
+        trace_id: Optional[str] = None
+    ) -> dict:                   # returns normalized SynestheticAsset (nested)
+        ...
+```
 
-### Tests (v0.2)
-- Socket round-trip, traversal rejection, patch lifecycle integration, rating stub logging, container non-root.
+#### CLI
+```
+labs generate --engine=<gemini|openai|deterministic> "prompt text"
+    [--seed <int>] [--temperature <float>] [--timeout-s <int>]
+    [--strict|--relaxed]  # maps to LABS_FAIL_FAST=1 or 0
+```
 
-### Exit Criteria (v0.2)
-- Socket transport functional.
-- Patch lifecycle stubbed and logged.
-- Critic logs ratings.
-- Container hardened.
-- Docs updated.
-
----
-
-## Scope (v0.2-TCP)
-
-- Add **TCP transport** for MCP.
-- Support `MCP_HOST`/`MCP_PORT` in env.
-- Implement `TcpMCPValidator` with **1 MiB** cap.
-- Update CLI dispatch (`MCP_ENDPOINT=tcp`).
-- Add TCP tests: round-trip, oversize payload, error handling.
-- Critic emits structured reason/detail on TCP failures.
-- Docs updated with TCP workflows.
-
-### Exit Criteria (v0.2-TCP)
-- TCP validator and tests pass.
-- Docs and `.env` accurate.
-- Critic structured error fields present.
-
----
-
-## Scope (v0.3 External Generators)
-
-- Add **Gemini/OpenAI integration** as optional generator sources (`labs/generator/external.py`).
-- Define an `ExternalGenerator` interface with prompt → JSON asset/patch parsing plus provenance injection.
-- Wire into Labs pipeline so external candidates still run through MCP + critic review (`labs/cli.py`).
-- Add retry/backoff + structured error logging for API outages (`ExternalGenerationError`).
-- Default to mock mode for CI; enable live calls via `LABS_EXTERNAL_LIVE=1` and optional transport overrides.
-- Extend CLI:
-  - `generate --engine=gemini "prompt"`
-  - `generate --engine=openai "prompt"`
-- Persist provenance (engine name, version, parameters) in generated asset.
-- Allow side-by-side runs: deterministic vs external.
-
-### Canonical Baseline (v0.3)
-- External generator yields shader+tone+haptic variants beyond stubs.
-- Provenance includes engine + API details.
-
-### Validation (v0.3)
-- All external outputs must pass MCP validation before persistence.
-- Validator outages still honour fail-fast vs relaxed modes, mirroring local runs.
-- Critic and external logs capture structured `validation_failed` reasons on failure.
-
-### Logging (v0.3)
-- Provenance extended with `engine: gemini|openai`, `api_version`, `parameters`, and per-run `trace_id`.
-- External runs logged under `meta/output/labs/external.jsonl` with prompt, raw API response, normalised asset, MCP result, critic review, and failure metadata when applicable.
-- `log_external_generation` helper appends JSONL entries alongside existing generator/critic streams.
-
-### Tests (v0.3)
-- Mocked API calls for determinism (`tests/test_external_generator.py`).
-- CLI flag parsing + end-to-end validation for `--engine` (`tests/test_pipeline.py`).
-- Logging helper writes structured external entries (`tests/test_logging.py`).
-
-### Exit Criteria (v0.3)
-- External generators pluggable, retried on failure, and validated via MCP.
-- Provenance extended and persisted assets include engine/API metadata.
-- External runs recorded in `meta/output/labs/external.jsonl`.
-- CLI flag usage and documentation updated to cover external engines.
-- Tests pass with mocks and no live API requirements.
-
----
-
-## Scope (v0.3.1 Hardening)
-
-- Make **TCP the default** MCP transport for Labs.
-- Clarify that **Unix socket transport** is optional and only tested if supported by the environment (`LABS_SOCKET_TESTS`).
-- Enforce MCP validation calls in all modes — relaxed mode may downgrade failures to warnings, but **never skip validation**.
-- Prune unused backend variables from `.env` and documentation to reduce drift.
-- Document socket optionality in README and CI guidance and remove legacy backend environment knobs from samples.
-
-### Exit Criteria (v0.3.1)
-- TCP transport remains primary and passes tests in CI.
-- Socket tests are explicitly marked optional; not counted as failures if skipped.
-- MCP validation is always invoked, with relaxed mode changing severity not behavior.
-- `.env` and README accurately reflect required vars only.
-- Deprecated backend environment knobs are removed or clearly marked in docs and samples.
-
----
-
-## Scope (v0.3.3 Spec Alignment)
-
-- **Test Coverage Gaps:** Add explicit tests for `resolve_mcp_endpoint` fallback and critic **socket** failure handling.
-- **Docs Cleanup:** Update `docs/labs_spec.md` and README to reference **resolver fallback**.
-- **Environment Note (DEPRECATED var retained):** Keep `SYN_SCHEMAS_DIR` for **STDIO adapters only**.
-  - Status: **Deprecated**; ignored for TCP and Unix socket.
-  - Precedence: prefer MCP-managed schema lookup; `SYN_SCHEMAS_DIR` is an optional override forwarded to STDIO adapters via env.
-  - Sunsetting target: **no earlier than v0.5**, subject to adapter readiness.
-- **AGENTS.md Refresh:** Update with current agent roles and responsibilities.
-
-### Exit Criteria (v0.3.3)
-- Tests cover `resolve_mcp_endpoint` fallback and critic socket failure.
-- README and spec reference resolver fallback.
-- `.env` and README mark `SYN_SCHEMAS_DIR` as **deprecated (STDIO-only)**; TCP/socket paths ignore it.
-- A deprecation warning is logged when `SYN_SCHEMAS_DIR` is forwarded to STDIO.
-- `AGENTS.md` up-to-date.
-- CI passes with new tests green.
-
----
-
-## Environment Variables (authoritative)
+### Environment Variables (authoritative)
 
 | Var | Purpose | Required | Default / Notes |
-| --- | --- | --- | --- |
-| `MCP_ENDPOINT` | Select validator transport | No | `tcp` (primary). Accepts `tcp` \| `stdio` \| `socket`. Invalid → **fallback to `tcp`**. |
+|---|---|---|---|
+| `MCP_ENDPOINT` | Select validator transport | No | `tcp` (primary). Accepts `tcp` \| `stdio` \| `socket`. Invalid → fallback `tcp`. |
 | `MCP_HOST` | TCP host | When `MCP_ENDPOINT=tcp` | e.g., `127.0.0.1` |
 | `MCP_PORT` | TCP port | When `MCP_ENDPOINT=tcp` | e.g., `7000` |
-| `MCP_ADAPTER_CMD` | STDIO adapter command | When `MCP_ENDPOINT=stdio` | Adapter binary + args |
-| `MCP_SOCKET_PATH` | Unix socket path | When `MCP_ENDPOINT=socket` | e.g., `/tmp/mcp.sock` |
+| `MCP_ADAPTER_CMD` | STDIO adapter command | When `stdio` | Adapter binary + args |
+| `MCP_SOCKET_PATH` | Unix socket path | When `socket` | e.g., `/tmp/mcp.sock` |
 | `LABS_FAIL_FAST` | Fail-fast toggle | No | `0` (relaxed) / `1` (strict) |
-| `LABS_EXTERNAL_LIVE` | Enable live external calls | No | `0` for CI (mocks) |
-| `GEMINI_MODEL` | Gemini model id | No | — |
-| `OPENAI_MODEL` | OpenAI model id | No | — |
-| `OPENAI_TEMPERATURE` | OpenAI temp | No | — |
+| `LABS_EXTERNAL_LIVE` | Enable live external calls | No | `0` (mocks only) |
+| `GEMINI_MODEL` | Gemini model id | No | used if engine=gemini |
+| `GEMINI_API_KEY` | Gemini API key | For live Gemini | — |
+| `GEMINI_ENDPOINT` | Gemini API base URL | No | sensible default if unset |
+| `OPENAI_MODEL` | OpenAI model id | No | used if engine=openai |
+| `OPENAI_TEMPERATURE` | Default temp for OpenAI | No | CLI flag overrides |
+| `OPENAI_API_KEY` | OpenAI API key | For live OpenAI | — |
+| `OPENAI_ENDPOINT` | OpenAI API base URL | No | `https://api.openai.com/v1` |
 | `LABS_SOCKET_TESTS` | Enable socket tests | No | `0` (skip if unsupported) |
-| `SYN_SCHEMAS_DIR` | **Deprecated** schema override for STDIO adapters | No | **STDIO-only; ignored for TCP/socket; removal not before v0.5** |
+| `SYN_SCHEMAS_DIR` | **Deprecated** (STDIO only) | No | Ignored for TCP/socket; warn once when forwarded. |
 
-> Transport caps: All transports must enforce **1 MiB** payload cap and propagate oversize failures with structured reason/detail.
+> **Transport caps:** All validator transports enforce **1 MiB** payload caps and propagate oversize failures with structured `reason`/`detail`.
+
+### Request/Response Mapping
+
+#### Common request envelope (before provider-specific mapping)
+```json
+{
+  "trace_id": "<uuid4>",
+  "prompt": "<user string>",
+  "seed": 12345,
+  "hints": {
+    "need_sections": ["shader", "tone", "haptic", "controls", "meta"],
+    "schema": "nested-synesthetic-asset@>=0.7.3",
+    "strict_json": true
+  },
+  "parameters": {
+    "model": "<provider model>",
+    "temperature": <float|null>,
+    "max_tokens": <int|null>
+  }
+}
+```
+
+- **Headers (live mode)**: `Authorization: Bearer <API_KEY>`, `Content-Type: application/json`.
+- **Timeouts**: connect **5s**, read **30s**, total **35s** (configurable via CLI `--timeout-s`).
+- **Size guards**: reject request bodies > **256 KiB**; reject raw responses > **1 MiB** pre-parse.
+
+#### Provider specifics
+- **Gemini**: POST to `${GEMINI_ENDPOINT}/…` (exact path configurable in code; default chosen to Gemini text JSON generation). Body created from the common envelope.
+- **OpenAI**: POST to `${OPENAI_ENDPOINT}/chat/completions` or compatible JSON endpoint. System+user messages serialized from the common envelope.
+
+### Normalization Contract (external → SynestheticAsset)
+
+- **Must output** nested asset object with **sections present**:
+  - `shader`: CircleSDF or provider-proposed shader; require uniforms and `input_parameters`.
+  - `tone`: `Tone.Synth` baseline unless provider supplies richer but schema-valid synth.
+  - `haptic`: generic device with `intensity` [0..1].
+  - `controls`: at minimum `mouse.x → shader.u_px`, `mouse.y (inverted) → shader.u_py`.
+  - `meta`: `title`, `description`, `category="multimodal"`, `complexity`, `tags`.
+- **Fill defaults** for missing optional fields using canonical baseline.
+- **Reject**: unknown keys, wrong types, missing required fields.
+- **Coerce**: numeric strings → numbers where unambiguous.
+- **Provenance injection** (see below) is mandatory.
+
+### Provenance & Redaction
+
+Provenance **must** be included under `asset.meta.provenance`:
+```json
+{
+  "engine": "gemini|openai",
+  "api_endpoint": "<base URL>",
+  "api_version": "<string|unknown>",
+  "model": "<model id>",
+  "parameters": {"temperature": <float|null>, "seed": <int|null>},
+  "trace_id": "<uuid4>",
+  "mode": "mock|live",
+  "timestamp": "<ISO-8601 UTC>"
+}
+```
+- **Never** persist secrets. Redact keys in logs (`***redacted***`).
+- Optionally store a short `response_hash` (SHA-256 of canonicalized raw JSON, hex, 16 chars).
+
+### Validation (unchanged policy, explicit steps)
+
+1. **Pre-flight**: check required sections exist; enforce numeric bounds (e.g., intensity 0..1).
+2. **MCP**: invoke validator via resolved transport; **always** call even in relaxed mode.
+3. **Fail-fast**:
+   - Strict: any pre-flight or MCP failure → non-zero exit, log `severity=error`.
+   - Relaxed: proceed to log with `severity=warning`, but **do not** persist invalid assets.
+
+### Logging (authoritative)
+
+- Directory: `meta/output/labs/`
+  - `external.jsonl` (append-only, one JSON per line)
+  - `generator.jsonl`, `critic.jsonl`, `patches.jsonl` (existing)
+- **external.jsonl** entry schema (minimum):
+```json
+{
+  "ts": "<ISO-8601 UTC>",
+  "trace_id": "<uuid4>",
+  "engine": "gemini|openai",
+  "mode": "mock|live",
+  "transport": "<tcp|stdio|socket>",
+  "strict": true,
+  "prompt": "<string>",
+  "request": {"model": "<id>", "temperature": 0.2},
+  "raw_response": {"hash": "<16-hex>", "size": 12345, "redacted": true},
+  "normalized_asset": { /* nested Synesthetic asset */ },
+  "mcp_result": {"ok": true, "errors": []},
+  "provenance": { /* as above */ },
+  "failure": null  /* or { "reason": "auth_error|timeout|bad_response|rate_limited|network_error", "detail": "<string>" } */
+}
+```
+
+### Error Taxonomy & Retry
+
+- **Reasons**:
+  - `auth_error` (401/403),
+  - `rate_limited` (429),
+  - `timeout` (client-side expiry),
+  - `network_error` (connect/reset),
+  - `bad_response` (malformed JSON / schema-invalid),
+  - `server_error` (5xx).
+- **Retry policy** (idempotent POST):
+  - `RETRY_MAX=3`, exponential backoff with jitter:
+    - base **200 ms**, factor **2.0**, cap **5 s**.
+  - **Do not retry** `auth_error` or `bad_response`.
+- **Surface**: all terminal failures must populate `failure.reason` + `failure.detail`.
+
+### Security
+
+- Keys only from env; never accept via CLI args.
+- Mask keys in all logs.
+- Disallow file/URL fetches embedded in model outputs (no external I/O during normalization).
+
+### Tests (authoritative matrix additions for v0.3.4)
+
+- **Unit**
+  - Endpoint resolution precedence: CLI flag > env > default.
+  - Header injection: `Authorization` present only in live mode with key.
+  - Size guards enforce 256 KiB request / 1 MiB response caps.
+  - Retry policy honors taxonomy (no retry on auth/bad_response).
+  - Normalization rejects unknown keys; fills canonical defaults.
+- **Integration (mock)**
+  - `labs generate --engine=gemini "prompt"` → normalized + MCP ok → persisted.
+  - `labs generate --engine=openai "prompt"` → same.
+  - Strict vs relaxed behavior tones (invalid asset not persisted in relaxed).
+- **Error paths (mock)**
+  - 401 → `auth_error`, no retry.
+  - 429 → retries then `rate_limited`.
+  - Timeout → retries then `timeout`.
+  - Malformed JSON → `bad_response`, no retry.
+- **Live (optional, skipped in CI)**
+  - Gated on `LABS_EXTERNAL_LIVE=1` + provider key present.
+  - Smoke: call provider, normalize, validate, persist (marked `mode=live`).
+- **Validator**
+  - MCP invoked in all modes (assert call count ≥1).
+  - Oversize payload → structured failure bubbles to `external.jsonl`.
+
+### Exit Criteria (v0.3.4)
+
+- Live calls functional when `LABS_EXTERNAL_LIVE=1` and corresponding API key present.
+- Normalized assets always run through MCP; invalid assets are **not** persisted.
+- `external.jsonl` entries include provenance, request params, response hash, and failure (if any).
+- CLI flags work; env precedence documented and tested.
+- CI green with mocks; live tests optional and skipped by default.
+
+### Docs & Ops
+
+- Update `docs/labs_spec.md` with this v0.3.4 section.
+- Update README:
+  - How to set `GEMINI_API_KEY` / `OPENAI_API_KEY`.
+  - Live-mode guard: `LABS_EXTERNAL_LIVE=1`.
+  - Example CLI invocations.
+- `.env.sample`: add new vars with empty values and comments.
+- Add `docs/troubleshooting_external.md` covering error taxonomy and remedies.
+
+### Non-Goals (v0.3.4)
+
+- No provider-specific fine-tuning flows.
+- No streaming responses; only JSON POST/parse.
+- No new dependencies beyond standard HTTP client already used in repo.
 
 ---
-
-## Logging (authoritative)
-
-- JSONL logs live under `meta/output/labs/`:
-  - `generator.jsonl`, `critic.jsonl`, `patches.jsonl`, `external.jsonl`.
-- Each entry includes: timestamp, trace id, transport, mode (strict/relaxed), reason/detail on failure.
-- External runs also include raw API response (redacted if needed), normalized asset, and provenance.
-
----
-
-## Tests (authoritative matrix)
-
-- **Transports:** TCP default, STDIO/socket optional; include oversize + error propagation tests.
-- **Resolver:** Invalid `MCP_ENDPOINT` → TCP fallback (asserted).
-- **STDIO deprecation:** When `SYN_SCHEMAS_DIR` is set and endpoint=STDIO:
-  - var is forwarded to child env,
-  - a single deprecation warning is logged,
-  - TCP/socket paths **do not** forward it.
-- **Pipeline:** generator→critic integration (strict/relaxed), determinism, patch lifecycle, rating stub, external mocks.
-
----
-
-## Scope (v0.4 RLHF)
-
-- Deliver first **RLHF loop**: generator → critic → rating logged.
-- Implement **patch rating storage/retrieval**.
-- Add **dataset persistence**: rated assets to `meta/dataset/`.
-- Provide CLI to **list/filter/export** rated assets.
-- Begin **multi-asset orchestration**.
-
-### Canonical Baseline (v0.4)
-- Expand modulation set (e.g., LFO on tone frequency).
-- Add compound rule bundle (mouse+keyboard → shader+tone).
-
-### Validation (v0.4)
-- Ratings only on validated assets.
-- Patch diffs schema-checked before rating.
-
-### Logging (v0.4)
-- Ratings include patch_id, asset_id, score, critic metadata.
-- Dataset persisted under `meta/dataset/` JSONL.
-
-### Tests (v0.4)
-- RLHF loop integration.
-- Dataset export/filter.
-- Determinism checks.
-
-### Exit Criteria (v0.4)
-- Ratings retrievable via CLI.
-- Dataset persisted.
-- Multi-asset orchestration stubbed.
-- CI passes.
-
----
-
-## Backlog (v0.5+)
-
-- Full RLHF dataset curation.
-- Multi-agent orchestration with feedback loops.
-- Rich modulation/rule libraries.
-- Backend persistence and API integration.
