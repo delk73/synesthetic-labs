@@ -142,6 +142,38 @@ def test_live_header_injection(monkeypatch, tmp_path) -> None:
     assert context["endpoint"] == "https://api.example.com/v1"
 
 
+def test_mock_mode_headers_are_empty(tmp_path) -> None:
+    log_path = tmp_path / "mock.jsonl"
+    generator = OpenAIGenerator(
+        log_path=str(log_path),
+        mock_mode=True,
+        sleeper=lambda _: None,
+    )
+
+    _asset, context = generator.generate("mock prompt")
+    assert context["mode"] == "mock"
+    assert context["request_headers"] == {}
+    assert context["endpoint"].startswith("mock://openai")
+
+    review = {
+        "ok": True,
+        "validation_status": "passed",
+        "mcp_response": {"status": "ok"},
+        "transport": "tcp",
+        "strict": True,
+        "mode": "strict",
+        "trace_id": context["trace_id"],
+    }
+
+    generator.record_run(context=context, review=review, experiment_path="experiments/mock.json")
+
+    lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["engine"] == "openai"
+    assert entry["request_headers"] == {}
+
+
 def test_request_body_size_cap(monkeypatch) -> None:
     monkeypatch.setenv("LABS_EXTERNAL_LIVE", "1")
     monkeypatch.setenv("GEMINI_API_KEY", "key")

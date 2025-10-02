@@ -1,14 +1,14 @@
 ## Summary of repo state
-- External generators now gate live mode on `LABS_EXTERNAL_LIVE`, enforce Authorization headers, redact secrets, normalize assets, and capture failure taxonomy with retry/backoff and size caps `labs/generator/external.py:118-515`; `tests/test_external_generator.py:19-229`
+- External generators now gate live mode on `LABS_EXTERNAL_LIVE`, enforce Authorization headers, redact secrets, normalize assets, and capture failure taxonomy with retry/backoff and size caps while mock-mode runs keep `request_headers` empty to prevent leaks `labs/generator/external.py:118-515`; `tests/test_external_generator.py:19-229`; `tests/test_external_generator.py:118-176`
 - `labs.cli generate` orchestrates internal and external engines with seed/temperature/timeout/strict flags, persisting MCP-validated assets and logging experiment context `labs/cli.py:82-183`; `tests/test_pipeline.py:200-298`
 - Generator, critic, and patch modules emit JSONL logs carrying trace IDs, strict/mode flags, transport provenance, and structured failure detail under `meta/output/labs/` `labs/agents/generator.py:61-145`; `labs/agents/critic.py:164-188`; `labs/patches.py:55-156`; `tests/test_patches.py:11-88`
 - MCP validation resolves transports with TCP as the default, exercises STDIO/socket branches, and enforces 1 MiB caps through shared helpers `labs/mcp_stdio.py:134-199`; `tests/test_tcp.py:140-176`; `tests/test_socket.py:1-88`; `tests/test_critic.py:187-200`
 - Docs and env samples describe live-call setup, troubleshooting taxonomy, and resolver expectations `README.md:71-92`; `.example.env:1-26`; `docs/troubleshooting_external.md:1-18`; `docs/process.md:31-46`
 
 ## Top gaps & fixes (3-5 bullets)
-- Add a `deterministic` option to `--engine` so the CLI matches the spec interface while continuing to default to the local assembler `docs/labs_spec.md:57-61`; `labs/cli.py:85-88`
-- Extend external generator tests to assert mock-mode calls never emit Authorization headers, complementing the existing live-mode coverage `docs/labs_spec.md:204-205`; `tests/test_external_generator.py:114-143`
+- Add a `deterministic` option to `--engine` so the CLI matches the spec interface while continuing to default to the local assembler, and cover the alias in pipeline tests `docs/labs_spec.md:57-61`; `labs/cli.py:85-88`; `tests/test_pipeline.py:248-298`
 - Add normalization tests that feed extra keys and confirm `_canonicalize_asset` drops them before MCP validation `docs/labs_spec.md:118-125`; `labs/generator/external.py:609-633`; `tests/test_external_generator.py:231-257`
+- Update README/CLI help once the deterministic alias lands so user-facing docs stay aligned with the spec `docs/labs_spec.md:57-61`; `README.md:68-92`
 
 ## Alignment with labs_spec.md (table: Spec item → Status → Evidence)
 | Spec item | Status | Evidence |
@@ -22,7 +22,7 @@
 | CLI exposes `--seed/--temperature/--timeout-s/--strict` controls | Present | `labs/cli.py:89-135`; `tests/test_pipeline.py:248-298` |
 | CLI accepts `--engine=deterministic` alias | Divergent | `docs/labs_spec.md:57-61`; `labs/cli.py:85-88` |
 | Normalization rejects unknown keys (verified) | Missing | `docs/labs_spec.md:118-125`; `labs/generator/external.py:609-633`; `tests/test_external_generator.py:231-257` |
-| Mock-mode external runs omit Authorization headers (verified) | Missing | `docs/labs_spec.md:204-205`; `tests/test_external_generator.py:114-143` |
+| Mock-mode external runs omit Authorization headers (verified) | Present | `docs/labs_spec.md:204-205`; `labs/generator/external.py:188-245`; `tests/test_external_generator.py:118-176` |
 
 ## Generator implementation (table: Component → Status → Evidence)
 | Component | Status | Evidence |
@@ -79,7 +79,7 @@
 | External header injection & redaction in live mode | Yes | `tests/test_external_generator.py:114-143` |
 | External request/response size caps (256 KiB / 1 MiB) | Yes | `tests/test_external_generator.py:145-184` |
 | Retry taxonomy (`auth_error` no retry, `rate_limited` retries) | Yes | `tests/test_external_generator.py:186-229` |
-| Mock-mode external run omits Authorization headers | No | `docs/labs_spec.md:204-205`; `tests/test_external_generator.py:19-61` |
+| Mock-mode external run omits Authorization headers | Yes | `docs/labs_spec.md:204-205`; `labs/generator/external.py:188-245`; `tests/test_external_generator.py:118-176` |
 | Normalization rejects unknown keys | No | `docs/labs_spec.md:118-125`; `labs/generator/external.py:609-633`; `tests/test_external_generator.py:231-257` |
 
 ## Dependencies and runtime (table: Package → Used in → Required/Optional)
@@ -114,5 +114,5 @@
 
 ## Recommendations
 - Add a `deterministic` option to `labs.cli` argument parsing and extend CLI tests to cover the explicit alias `docs/labs_spec.md:57-61`; `labs/cli.py:85-135`; `tests/test_pipeline.py:248-298`
-- Introduce an external generator test that asserts mock-mode runs leave `request_headers` empty, ensuring secrets never leak when live mode is disabled `docs/labs_spec.md:204-205`; `labs/generator/external.py:188-245`; `tests/test_external_generator.py:19-143`
+- Update CLI help/README snippets once the deterministic alias ships so the user guidance stays synced with the spec `docs/labs_spec.md:57-61`; `README.md:68-92`
 - Add a normalization test that supplies unsupported keys and verifies `_canonicalize_asset` drops them before MCP review `docs/labs_spec.md:118-125`; `labs/generator/external.py:609-633`; `tests/test_external_generator.py:231-257`
