@@ -24,7 +24,7 @@ def test_asset_assembler_produces_consistent_payload() -> None:
 
     assert asset["prompt"] == "assembler smoke test"
     assert isinstance(asset["asset_id"], str)
-    assert asset["$schemaRef"].endswith("synesthetic-asset.schema.json#/SynestheticAsset")
+    assert asset["$schema"] == AssetAssembler.SCHEMA_URL
     assert asset["provenance"]["agent"] == "AssetAssembler"
 
     parameters = _parameter_names(asset)

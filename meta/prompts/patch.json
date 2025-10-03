@@ -1,73 +1,86 @@
 {
-  "task": "Align Labs generator pipeline with Synesthetic Labs Spec v0.3.4",
-  "objective": "Reshape generator output, normalization, CLI, and validation so generated assets are schema-valid SynestheticAssets as defined in v0.3.4.",
+  "task": "Align MCP validation with v0.2.8 spec ($schema enforcement)",
+  "objective": "Make MCP validator require top-level $schema in assets, reject legacy schema/$schemaRef params, and update tests/docs/fixtures accordingly.",
   "changes": [
     {
-      "id": "asset_schema_alignment",
-      "description": "Update assembler to output flattened schema asset with $schemaRef, shader/tone/haptic/control/modulations/rule_bundle/meta_info sections.",
-      "edits": [{ "file": "labs/generator/assembler.py", "pattern": ".*", "multiple": true, "replacement": "# rewrite assemble_asset to build v0.3.4 schema form" }]
-    },
-    {
-      "id": "control_unification",
-      "description": "Replace legacy control/controls split with schema control.control_parameters.",
-      "edits": [{ "file": "labs/generator/assembler.py", "pattern": ".*", "multiple": true, "replacement": "# merge mappings into control_parameters array with label, unit, sensitivity, combo" }]
-    },
-    {
-      "id": "modulations_array",
-      "description": "Emit modulations as array not wrapped under 'modulation'.",
-      "edits": [{ "file": "labs/generator/assembler.py", "pattern": ".*", "multiple": true, "replacement": "# asset['modulations'] = [...]" }]
-    },
-    {
-      "id": "rule_bundle_alignment",
-      "description": "Reshape rule_bundle to spec: name, description, rules, meta_info (drop component/version/grid).",
-      "edits": [{ "file": "labs/generator/assembler.py", "pattern": ".*", "multiple": true, "replacement": "# rule_bundle matches v0.3.4 schema" }]
-    },
-    {
-      "id": "normalization_rejections",
-      "description": "Reject unknown keys/types during normalization; enforce numeric bounds pre-MCP.",
-      "edits": [{ "file": "labs/generator/external.py", "pattern": ".*", "multiple": true, "replacement": "# raise ExternalRequestError('bad_response', detail) on unknown keys/out-of-range" }]
-    },
-    {
-      "id": "provenance_schema",
-      "description": "Align provenance structure with spec (engine, endpoint, model, parameters, trace_id, mode, timestamp, response_hash).",
-      "edits": [{ "file": "labs/generator/external.py", "pattern": ".*", "multiple": true, "replacement": "# insert provenance under asset.meta.provenance" }]
-    },
-    {
-      "id": "cli_deterministic_alias",
-      "description": "Add --engine=deterministic alias in labs/cli.py and README.",
-      "edits": [{ "file": "labs/cli.py", "pattern": ".*", "multiple": true, "replacement": "# add deterministic to engine choices" }]
-    },
-    {
-      "id": "mcp_jsonrpc_envelope",
-      "description": "Wrap all MCP requests in {'jsonrpc':'2.0', ...} envelopes.",
-      "edits": [{ "file": "labs/mcp_stdio.py", "pattern": ".*", "multiple": true, "replacement": "# ensure jsonrpc field present" }]
-    },
-    {
-      "id": "tests_schema_and_rejections",
-      "description": "Add tests: schema validation, endpoint fallback, rejection on unknown keys/out-of-bounds.",
+      "id": "validator_require_$schema",
+      "description": "Update validate_asset and validate_many to require $schema in asset and return validation_failed at /$schema when missing.",
       "edits": [
-        { "file": "tests/test_generator_schema.py", "pattern": ".*", "multiple": true, "replacement": "def test_generated_asset_schema_validates(): ...\n" },
-        { "file": "tests/test_mcp.py", "pattern": ".*", "multiple": true, "replacement": "def test_resolve_mcp_endpoint_fallback(): ...\n" },
-        { "file": "tests/test_external_generator.py", "pattern": ".*", "multiple": true, "replacement": "def test_rejects_unknown_keys(): ...\n" }
+        {
+          "file": "mcp/validate.py",
+          "pattern": "def validate_asset\\(asset, schema.*\\):",
+          "multiple": false,
+          "replacement": "def validate_asset(asset, *_):"
+        },
+        {
+          "file": "mcp/validate.py",
+          "pattern": "if not schema:",
+          "multiple": true,
+          "replacement": "if \"$schema\" not in asset:\n        return {\"ok\": False, \"reason\": \"validation_failed\", \"errors\": [{\"path\": \"/$schema\", \"msg\": \"top-level $schema is required\"}]}"
+        },
+        {
+          "file": "mcp/validate.py",
+          "pattern": "if 'schema' in params.*",
+          "multiple": true,
+          "replacement": "# legacy schema param removed per v0.2.8 spec"
+        }
+      ]
+    },
+    {
+      "id": "reject_$schemaRef",
+      "description": "Remove support for $schemaRef stripping.",
+      "edits": [
+        {
+          "file": "mcp/validate.py",
+          "pattern": "if '\\$schemaRef' in asset.*",
+          "multiple": true,
+          "replacement": "if \"$schemaRef\" in asset:\n        return {\"ok\": False, \"reason\": \"validation_failed\", \"errors\": [{\"path\": \"/$schema\", \"msg\": \"$schemaRef is no longer supported (use $schema)\"}]}"
+        }
+      ]
+    },
+    {
+      "id": "tests_update",
+      "description": "Update golden fixtures and tests to use $schema instead of schema/$schemaRef.",
+      "edits": [
+        {
+          "file": "tests/fixtures/golden.jsonl",
+          "pattern": "\"schema\":",
+          "multiple": true,
+          "replacement": "\"$schema\":"
+        },
+        {
+          "file": "libs/synesthetic-schemas/examples/SynestheticAsset_Example1.json",
+          "pattern": "\"\\$schemaRef\"",
+          "multiple": true,
+          "replacement": "\"$schema\""
+        }
+      ]
+    },
+    {
+      "id": "docs_update",
+      "description": "Update README docs to show $schema usage.",
+      "edits": [
+        {
+          "file": "README.md",
+          "pattern": "schema param",
+          "multiple": true,
+          "replacement": "top-level $schema field"
+        }
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "Do not regress external generator live/mock mode.",
-      "Generated assets must validate against synesthetic-asset.schema.json.",
-      "Reject unknown keys and enforce numeric bounds before MCP.",
-      "MCP requests must always include jsonrpc: '2.0'.",
-      "CLI must support --engine=deterministic."
+      "No new dependencies.",
+      "Only modify validator, fixtures, and docs.",
+      "All tests must pass with examples containing $schema only."
     ]
   },
   "exit_criteria": [
-    "CLI generate emits schema-valid assets with $schemaRef.",
-    "Assets pass validation against synesthetic-asset.schema.json.",
-    "Normalization rejections and pre-flight bounds work as specified.",
-    "Provenance matches v0.3.4 schema.",
-    "MCP calls compliant with JSON-RPC 2.0.",
-    "Tests confirm endpoint fallback, rejection, schema compliance.",
-    "README and .env updated to document deterministic alias and live mode."
+    "validate_asset/validate_many fail with missing $schema",
+    "schema/$schemaRef rejected explicitly",
+    "tests and fixtures reference $schema only",
+    "README documents $schema contract",
+    "pytest passes with updated examples"
   ]
 }

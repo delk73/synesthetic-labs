@@ -4,7 +4,7 @@
   "title": "SynestheticAsset",
   "type": "object",
   "required": [
-    "$schemaRef",
+    "$schema",
     "asset_id",
     "prompt",
     "timestamp",
@@ -19,7 +19,7 @@
     "provenance"
   ],
   "properties": {
-    "$schemaRef": {
+    "$schema": {
       "type": "string"
     },
     "asset_id": {

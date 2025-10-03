@@ -618,7 +618,7 @@ class ExternalGenerator:
         )
 
         asset: JsonDict = {
-            "$schemaRef": AssetAssembler.SCHEMA_REF,
+            "$schema": AssetAssembler.SCHEMA_URL,
             "asset_id": asset_id,
             "prompt": prompt,
             "seed": parameters.get("seed"),

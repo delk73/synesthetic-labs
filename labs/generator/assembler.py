@@ -20,7 +20,7 @@ from .tone import ToneGenerator
 class AssetAssembler:
     """Compose component generators into a full Synesthetic asset."""
 
-    SCHEMA_REF = "meta/schemas/synesthetic-asset.schema.json#/SynestheticAsset"
+    SCHEMA_URL = "meta/schemas/synesthetic-asset.schema.json"
 
     def __init__(
         self,
@@ -85,7 +85,7 @@ class AssetAssembler:
         )
 
         asset: Dict[str, object] = {
-            "$schemaRef": self.SCHEMA_REF,
+            "$schema": self.SCHEMA_URL,
             "asset_id": asset_id,
             "prompt": prompt,
             "seed": seed,
