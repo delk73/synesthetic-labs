@@ -1,6 +1,6 @@
 {
-  "task": "Add schema_version branching and $schema enforcement for Labs generator",
-  "objective": "Introduce schema_version input (env + CLI), branch generator output between 0.7.3 and 0.7.4+, switch $schema to versioned corpus URLs, and extend external logging with schema_version and null failure entries.",
+  "task": "Implement schema_version branching and $schema enforcement in Labs generator",
+  "objective": "Make AssetAssembler output compliant with both 0.7.3 (legacy) and ≥0.7.4 (enriched). Default schema_version comes from env/CLI. Ensure external logs include schema metadata.",
   "changes": [
     {
       "id": "cli_schema_version",
@@ -10,43 +10,31 @@
           "file": "labs/cli.py",
           "pattern": "parser.add_argument\\('--seed'.*\\)",
           "multiple": true,
-          "replacement": "parser.add_argument('--schema-version', type=str, default=os.getenv('LABS_SCHEMA_VERSION', '0.7.3'), help='Target schema version (default: 0.7.3)')\n    parser.add_argument('--seed'"
+          "replacement": "parser.add_argument('--schema-version', type=str, default=os.getenv('LABS_SCHEMA_VERSION', AssetAssembler.DEFAULT_SCHEMA_VERSION), help='Target schema version (default: 0.7.3)')\n    parser.add_argument('--seed'"
         }
       ]
     },
     {
-      "id": "assembler_branching",
-      "description": "Branch AssetAssembler output on schema_version; emit legacy (0.7.3) fields vs enriched (0.7.4+).",
+      "id": "assembler_generate",
+      "description": "Branch AssetAssembler.generate based on schema_version: strip forbidden fields for 0.7.3, add enriched fields for ≥0.7.4, always attach $schema URL.",
       "edits": [
         {
           "file": "labs/generator/assembler.py",
-          "pattern": "def assemble_asset\\(prompt, seed.*\\):",
+          "pattern": "def generate\\(",
           "multiple": false,
-          "replacement": "def assemble_asset(prompt, seed=None, schema_version='0.7.3', **kwargs):"
+          "replacement": "def generate(self, prompt: str, *, seed: Optional[int] = None, schema_version: str = DEFAULT_SCHEMA_VERSION) -> Dict[str, object]:"
         },
         {
           "file": "labs/generator/assembler.py",
-          "pattern": "asset = {",
+          "pattern": "return asset",
           "multiple": false,
-          "replacement": "if schema_version == '0.7.3':\n        asset = {\n            \"$schema\": f\"https://schemas.synesthetic.dev/{schema_version}/SynestheticAsset.schema.json\",\n            \"name\": prompt,\n            # legacy minimal fields only\n        }\n    else:\n        asset = {\n            \"$schema\": f\"https://schemas.synesthetic.dev/{schema_version}/SynestheticAsset.schema.json\",\n            \"asset_id\": str(uuid.uuid4()),\n            \"prompt\": prompt,\n            \"timestamp\": datetime.utcnow().isoformat() + 'Z',\n            \"parameter_index\": [],\n            \"provenance\": {},\n            # enriched fields follow\n        }"
+          "replacement": "if schema_version.startswith('0.7.3'):\n            # legacy: no asset_id, no timestamp, no prompt, provenance only under meta_info\n            asset.pop('asset_id', None)\n            asset.pop('timestamp', None)\n            asset.pop('prompt', None)\n            asset.pop('parameter_index', None)\n            asset.pop('provenance', None)\n        else:\n            # enriched: must include asset_id, timestamp, prompt, parameter_index, provenance\n            if 'asset_id' not in asset: asset['asset_id'] = asset_id\n            if 'timestamp' not in asset: asset['timestamp'] = timestamp\n            if 'prompt' not in asset: asset['prompt'] = prompt\n            if 'parameter_index' not in asset: asset['parameter_index'] = sorted(parameter_index)\n            if 'provenance' not in asset: asset['provenance'] = provenance_block\n        return asset"
         }
       ]
     },
     {
-      "id": "assembler_provenance",
-      "description": "Embed provenance consistently under meta_info.provenance for 0.7.3 and top-level provenance for >=0.7.4.",
-      "edits": [
-        {
-          "file": "labs/generator/assembler.py",
-          "pattern": "asset\\[\"provenance\"\\] =.*",
-          "multiple": true,
-          "replacement": "if schema_version == '0.7.3':\n        asset.setdefault('meta_info', {})['provenance'] = provenance\n    else:\n        asset['provenance'] = provenance"
-        }
-      ]
-    },
-    {
-      "id": "external_logging_schema",
-      "description": "Extend external generator logs to include schema_version, $schema, and null failure on success.",
+      "id": "external_logging",
+      "description": "Extend external generator logs with schema_version and $schema, set failure=null when success.",
       "edits": [
         {
           "file": "labs/generator/external.py",
@@ -56,45 +44,45 @@
         },
         {
           "file": "labs/generator/external.py",
-          "pattern": "entry\\[\"mcp_result\"\\] =.*",
-          "multiple": true,
-          "replacement": "entry[\"mcp_result\"] = mcp_result\n    if entry.get(\"failure\") is None:\n        entry[\"failure\"] = null"
+          "pattern": "log_json\\(entry\\)",
+          "multiple": false,
+          "replacement": "if entry.get('failure') is None:\n        entry['failure'] = None\n    log_json(entry)"
         }
       ]
     },
     {
       "id": "docs_update",
-      "description": "Update labs_spec.md and README to document schema_version branching and $schema URLs.",
+      "description": "Document schema-version branching and $schema URLs.",
       "edits": [
         {
           "file": "docs/labs_spec.md",
-          "pattern": "## Scope.*",
+          "pattern": "## Scope",
           "multiple": false,
-          "replacement": "## Scope (v0.3.5 Schema-Aware Generator)\n\nGenerator now accepts --schema-version/ LABS_SCHEMA_VERSION, defaults to 0.7.3. Assets include top-level $schema pointing to https://schemas.synesthetic.dev/<version>/. Branching rules:\n- 0.7.3: legacy minimal fields (root name).\n- >=0.7.4: enriched fields (asset_id, prompt, timestamp, parameter_index, provenance, effects, input_parameters)."
+          "replacement": "## Scope (v0.3.5 Schema-Aware Generator)\n\nThe generator accepts --schema-version/ LABS_SCHEMA_VERSION (default 0.7.3). Assets always include top-level $schema URL.\n- 0.7.3 (legacy): root has name only, no asset_id/timestamp/prompt, provenance stays under meta_info.\n- ≥0.7.4 (enriched): root includes asset_id, prompt, timestamp, parameter_index, provenance."
         },
         {
           "file": "README.md",
-          "pattern": "Labs generator.*",
+          "pattern": "Labs generator",
           "multiple": true,
-          "replacement": "Labs generator emits schema-valid assets for the requested schema_version (default 0.7.3). Use --schema-version flag or LABS_SCHEMA_VERSION env. Assets must include a top-level $schema URL from https://schemas.synesthetic.dev/<version>/."
+          "replacement": "Labs generator emits schema-valid assets based on schema_version (default 0.7.3). Use --schema-version flag or LABS_SCHEMA_VERSION env. Assets always include a top-level $schema URL."
         }
       ]
     }
   ],
   "constraints": {
     "rules": [
+      "Do not keep forbidden fields in 0.7.3 output",
+      "Always include enriched fields in ≥0.7.4 output",
       "No new dependencies",
-      "Keep CLI default schema_version=0.7.3",
-      "Only generator, assembler, external logging, and docs are modified"
+      "Keep CLI default schema_version=0.7.3"
     ]
   },
   "exit_criteria": [
-    "CLI and env allow setting schema_version; default 0.7.3",
-    "AssetAssembler branches correctly: legacy vs enriched",
+    "With LABS_SCHEMA_VERSION=0.7.3, asset has no asset_id/timestamp/prompt/provenance, but has name + meta_info.provenance",
+    "With LABS_SCHEMA_VERSION=0.7.4, asset has asset_id, prompt, timestamp, parameter_index, provenance",
     "All assets include $schema URL from corpus",
-    "Provenance placement matches schema_version",
-    "external.jsonl entries include schema_version, $schema, and failure: null on success",
-    "README and labs_spec.md document schema-version branching",
-    "pytest passes with schema_version=0.7.3 and 0.7.4 runs"
+    "external.jsonl entries include schema_version, $schema, and failure=null on success",
+    "Docs reflect schema-version branching",
+    "pytest passes both modes"
   ]
 }
