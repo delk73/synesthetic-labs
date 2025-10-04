@@ -1,6 +1,6 @@
 {
-  "task": "Correct schema_version branching and $schema enforcement in Labs generator",
-  "objective": "Ensure AssetAssembler outputs are valid against both 0.7.3 (legacy) and ≥0.7.4 (enriched). Legacy assets must strictly omit forbidden fields and use correct section names; enriched assets must include all required metadata. External logs must carry schema metadata consistently.",
+  "task": "Correct schema_version branching in Labs generator",
+  "objective": "Ensure AssetAssembler.generate outputs assets valid against both 0.7.3 (legacy) and ≥0.7.4 (enriched) schemas.",
   "changes": [
     {
       "id": "cli_schema_version",
@@ -15,32 +15,20 @@
       ]
     },
     {
-      "id": "assembler_generate",
-      "description": "Enforce strict branching: 0.7.3 drops enriched fields/sections, uses controls.mappings[]; ≥0.7.4 includes enriched metadata. Always attach $schema.",
+      "id": "assembler_branching",
+      "description": "Modify AssetAssembler.generate to branch on schema_version: 0.7.3 emits legacy fields only, ≥0.7.4 emits enriched fields.",
       "edits": [
         {
           "file": "labs/generator/assembler.py",
           "pattern": "return asset",
           "multiple": false,
-          "replacement": "if schema_version.startswith('0.7.3'):\n            # legacy: allowed fields only\n            asset.pop('asset_id', None)\n            asset.pop('timestamp', None)\n            asset.pop('prompt', None)\n            asset.pop('parameter_index', None)\n            asset.pop('provenance', None)\n            asset.pop('modulations', None)\n            asset.pop('rule_bundle', None)\n            asset.pop('seed', None)\n            if 'control' in asset:\n                asset['controls'] = asset.pop('control')\n        else:\n            # enriched: must include full metadata\n            if 'asset_id' not in asset: asset['asset_id'] = asset_id\n            if 'timestamp' not in asset: asset['timestamp'] = timestamp\n            if 'prompt' not in asset: asset['prompt'] = prompt\n            if 'parameter_index' not in asset: asset['parameter_index'] = sorted(parameter_index)\n            if 'provenance' not in asset: asset['provenance'] = provenance_block\n        return asset"
+          "replacement": "if schema_version.startswith('0.7.3'):\n            # Legacy mode: only 'name' at root, provenance under meta_info\n            asset = {\n                \"$schema\": schema_url,\n                \"name\": prompt,\n                \"shader\": shader_block,\n                \"tone\": tone_block,\n                \"haptic\": haptic_block,\n                \"control\": control_block,\n                \"modulations\": modulations_block,\n                \"rule_bundle\": rule_bundle_block,\n                \"meta_info\": meta_info_block,\n            }\n        else:\n            # Enriched mode: require enriched fields at root\n            asset.update({\n                \"asset_id\": asset_id,\n                \"prompt\": prompt,\n                \"timestamp\": timestamp,\n                \"parameter_index\": sorted(parameter_index),\n                \"provenance\": provenance_block,\n                \"control\": control_block,\n            })\n            asset.pop('name', None)\n        return asset"
         }
       ]
     },
     {
-      "id": "critic_schema_checks",
-      "description": "Make Critic validation schema-aware: require name + meta_info.provenance for 0.7.3; require asset_id/timestamp/prompt/provenance for ≥0.7.4.",
-      "edits": [
-        {
-          "file": "labs/agents/critic.py",
-          "pattern": "issues = \\[",
-          "multiple": false,
-          "replacement": "schema_url = str(asset.get('$schema', ''))\n    is_legacy = '0.7.3' in schema_url\n    issues = []\n    if is_legacy:\n        if 'name' not in asset:\n            issues.append('missing required field: name')\n        if not asset.get('meta_info', {}).get('provenance'):\n            issues.append('missing required field: meta_info.provenance')\n    else:\n        for req in ('asset_id','timestamp','prompt','provenance'):\n            if req not in asset:\n                issues.append(f'missing required field: {req}')"
-        }
-      ]
-    },
-    {
-      "id": "external_logging",
-      "description": "Extend external generator logs with schema_version and $schema, set failure=null on success.",
+      "id": "external_logging_schema",
+      "description": "Include schema_version and $schema in external logs; set failure=null on success.",
       "edits": [
         {
           "file": "labs/generator/external.py",
@@ -55,35 +43,22 @@
           "replacement": "if entry.get('failure') is None:\n        entry['failure'] = None\n    log_json(entry)"
         }
       ]
-    },
-    {
-      "id": "docs_update",
-      "description": "Document schema-version branching and $schema URLs explicitly.",
-      "edits": [
-        {
-          "file": "docs/labs_spec.md",
-          "pattern": "## Scope",
-          "multiple": false,
-          "replacement": "## Scope (v0.3.5 Schema-Aware Generator)\n\nGenerator now enforces schema_version branching.\n- 0.7.3 (legacy): root has name + meta_info.provenance only; forbidden fields asset_id/timestamp/prompt/provenance/modulations/rule_bundle/seed removed; controls section uses controls.mappings[].\n- ≥0.7.4 (enriched): root must include asset_id, prompt, timestamp, parameter_index, provenance; all other sections allowed.\n\nAll assets always include a top-level $schema URL."
-        }
-      ]
     }
   ],
   "constraints": {
     "rules": [
-      "Do not keep forbidden fields in 0.7.3 output",
-      "Always include enriched fields in ≥0.7.4 output",
-      "Critic must branch required fields based on schema_version",
-      "No new dependencies"
+      "Do not edit docs/specs",
+      "For schema_version=0.7.3: only root fields are $schema, name, shader, tone, haptic, control, modulations, rule_bundle, meta_info",
+      "For schema_version>=0.7.4: root must include asset_id, prompt, timestamp, parameter_index, provenance, plus shader/tone/haptic/control/modulations/rule_bundle/meta_info",
+      "Use 'control' key, never 'controls'",
+      "No 'seed' at root for enriched schemas",
+      "pytest must pass with both 0.7.3 and 0.7.4"
     ]
   },
   "exit_criteria": [
-    "With schema_version=0.7.3, asset has name + meta_info.provenance only; no asset_id/timestamp/prompt/provenance(mod top-level)/modulations/rule_bundle/seed",
-    "With schema_version=0.7.4, asset has asset_id, prompt, timestamp, parameter_index, provenance",
-    "Controls are output under controls.mappings[] in 0.7.3 mode",
-    "All assets include $schema URL",
-    "external.jsonl entries include schema_version, $schema, and failure=null on success",
-    "Docs reflect schema-version branching",
-    "pytest passes both modes"
+    "Assets validate cleanly against 0.7.3 and 0.7.4 schemas",
+    "Legacy output has only allowed fields; enriched output has all required enriched fields",
+    "All assets carry correct $schema URL",
+    "External logs always include schema_version, $schema, and failure=null"
   ]
 }
