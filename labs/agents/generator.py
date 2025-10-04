@@ -38,14 +38,22 @@ class GeneratorAgent:
         log_path: str = _DEFAULT_LOG_PATH,
         *,
         version: str = "v0.2",
+        schema_version: Optional[str] = None,
         assembler: Optional[AssetAssembler] = None,
     ) -> None:
         self.log_path = log_path
         self._logger = logging.getLogger(self.__class__.__name__)
         self.version = version
-        self._assembler = assembler or AssetAssembler(version=version)
+        self.schema_version = (schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION).strip()
+        self._assembler = assembler or AssetAssembler(version=version, schema_version=self.schema_version)
 
-    def propose(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, Any]:
+    def propose(
+        self,
+        prompt: str,
+        *,
+        seed: Optional[int] = None,
+        schema_version: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Return a fully assembled asset for *prompt*.
 
         The payload mirrors the canonical Synesthetic schema sections produced
@@ -56,21 +64,32 @@ class GeneratorAgent:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
 
-        asset = self._assembler.generate(prompt, seed=seed)
+        target_schema = (schema_version or self.schema_version).strip()
+        asset = self._assembler.generate(prompt, seed=seed, schema_version=target_schema)
 
         timestamp = asset.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        provenance = asset.setdefault("provenance", {})
-        provenance.setdefault("agent", "AssetAssembler")
-        provenance.setdefault("version", self._assembler.version)
-        generator_block = provenance.setdefault("generator", {})
+        is_legacy = AssetAssembler._is_legacy_schema(target_schema)
+
+        if is_legacy:
+            meta = asset.setdefault("meta_info", {})
+            meta_provenance = meta.setdefault("provenance", {})
+            asset_provenance = meta_provenance.setdefault("asset", {})
+        else:
+            asset_provenance = asset.setdefault("provenance", {})
+            meta = asset.setdefault("meta_info", {})
+            meta_provenance = meta.setdefault("provenance", {})
+
+        asset_provenance.setdefault("agent", "AssetAssembler")
+        asset_provenance.setdefault("version", self._assembler.version)
+        asset_provenance.setdefault("generated_at", timestamp)
+        asset_provenance.setdefault("seed", seed)
+        generator_block = asset_provenance.setdefault("generator", {})
         generator_block.setdefault("agent", self.__class__.__name__)
         generator_block.setdefault("version", self.version)
         generator_block.setdefault("generated_at", timestamp)
         trace_id = generator_block.get("trace_id") or str(uuid.uuid4())
         generator_block["trace_id"] = trace_id
 
-        meta = asset.setdefault("meta_info", {})
-        meta_provenance = meta.setdefault("provenance", {})
         meta_provenance.setdefault("trace_id", trace_id)
         meta_provenance.setdefault("mode", "local")
         meta_provenance.setdefault("timestamp", timestamp)
@@ -82,6 +101,7 @@ class GeneratorAgent:
         log_entry["mode"] = "local"
         log_entry["strict"] = _strict_mode_enabled()
         log_entry["transport"] = resolve_mcp_endpoint()
+        log_entry["schema_version"] = target_schema
 
         log_jsonl(self.log_path, log_entry)
         return asset
@@ -111,9 +131,11 @@ class GeneratorAgent:
         mode = review.get("mode") or ("strict" if strict_flag else "relaxed")
         transport = review.get("transport") or resolve_mcp_endpoint()
 
+        prompt_value = asset.get("prompt") or asset.get("name")
+
         record = {
             "asset_id": asset["asset_id"],
-            "prompt": asset.get("prompt"),
+            "prompt": prompt_value,
             "experiment_path": experiment_path,
             "trace_id": trace_id,
             "mode": mode,

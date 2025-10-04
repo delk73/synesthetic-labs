@@ -26,12 +26,12 @@ def test_generator_to_critic_pipeline(tmp_path) -> None:
     critic = CriticAgent(validator=validator, log_path=str(critic_log))
     review = critic.review(asset)
 
-    assert "provenance" in asset
     assert "meta_info" in asset
     assert asset["control"]["control_parameters"]
     assert asset["modulations"]
     assert asset["rule_bundle"]["rules"]
-    assert asset["provenance"]["generator"]["agent"] == "GeneratorAgent"
+    provenance = asset.get("provenance") or asset["meta_info"]["provenance"]["asset"]
+    assert provenance["generator"]["agent"] == "GeneratorAgent"
     assert review["ok"] is True
     assert review["validation_status"] == "passed"
     assert review["mcp_response"] == {"validated": True, "asset_id": asset["asset_id"]}
@@ -100,8 +100,8 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
     critic_log = tmp_path / "critic.jsonl"
 
     class LoggedGeneratorAgent(GeneratorAgent):
-        def __init__(self) -> None:  # pragma: no cover - construction logic trivial
-            super().__init__(log_path=str(generator_log))
+        def __init__(self, *args, schema_version: str | None = None, **kwargs) -> None:  # pragma: no cover - construction logic trivial
+            super().__init__(log_path=str(generator_log), schema_version=schema_version, *args, **kwargs)
 
     monkeypatch.setattr(cli, "GeneratorAgent", LoggedGeneratorAgent)
 
@@ -129,7 +129,7 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
     persisted_asset_path = persisted_files[0]
 
     persisted_asset = json.loads(persisted_asset_path.read_text(encoding="utf-8"))
-    assert persisted_asset["prompt"] == "aurora bloom"
+    assert (persisted_asset.get("prompt") or persisted_asset.get("name")) == "aurora bloom"
     for section in ("shader", "tone", "haptic", "control", "meta_info", "modulations", "rule_bundle"):
         assert section in persisted_asset
 
@@ -143,11 +143,10 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
     log_lines = generator_log.read_text(encoding="utf-8").strip().splitlines()
     assert len(log_lines) == 2
     logged_asset = json.loads(log_lines[0])
-    assert logged_asset["prompt"] == "aurora bloom"
-    assert (
-        logged_asset["provenance"]["generator"]["agent"]
-        == LoggedGeneratorAgent.__name__
-    )
+    logged_prompt = logged_asset.get("prompt") or logged_asset.get("name")
+    assert logged_prompt == "aurora bloom"
+    provenance = logged_asset.get("provenance") or logged_asset.get("meta_info", {}).get("provenance", {}).get("asset")
+    assert provenance["generator"]["agent"] == LoggedGeneratorAgent.__name__
     assert logged_asset["mode"] == "local"
     assert isinstance(logged_asset["strict"], bool)
     assert logged_asset["transport"] == resolve_mcp_endpoint()
@@ -171,8 +170,8 @@ def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
     critic_log = tmp_path / "critic.jsonl"
 
     class LoggedGeneratorAgent(GeneratorAgent):
-        def __init__(self) -> None:  # pragma: no cover - trivial init
-            super().__init__(log_path=str(generator_log))
+        def __init__(self, *args, schema_version: str | None = None, **kwargs) -> None:  # pragma: no cover - trivial init
+            super().__init__(log_path=str(generator_log), schema_version=schema_version, *args, **kwargs)
 
     monkeypatch.setattr(cli, "GeneratorAgent", LoggedGeneratorAgent)
 
@@ -207,8 +206,8 @@ def test_cli_generate_deterministic_alias(monkeypatch, tmp_path, capsys) -> None
     generator_log = tmp_path / "generator.jsonl"
 
     class LoggedGeneratorAgent(GeneratorAgent):
-        def __init__(self) -> None:  # pragma: no cover - trivial init
-            super().__init__(log_path=str(generator_log))
+        def __init__(self, *args, schema_version: str | None = None, **kwargs) -> None:  # pragma: no cover - trivial init
+            super().__init__(log_path=str(generator_log), schema_version=schema_version, *args, **kwargs)
 
     monkeypatch.setattr(cli, "GeneratorAgent", LoggedGeneratorAgent)
     monkeypatch.setattr(
@@ -285,11 +284,28 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
         generator = GeminiGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
         original_generate = generator.generate
 
-        def wrapped(self, prompt: str, *, parameters=None, seed=None, timeout=None, trace_id=None):
+        def wrapped(
+            self,
+            prompt: str,
+            *,
+            parameters=None,
+            seed=None,
+            timeout=None,
+            trace_id=None,
+            schema_version=None,
+        ):
             recorded["seed"] = seed
             recorded["parameters"] = parameters
             recorded["timeout"] = timeout
-            return original_generate(prompt, parameters=parameters, seed=seed, timeout=timeout, trace_id=trace_id)
+            recorded["schema_version"] = schema_version
+            return original_generate(
+                prompt,
+                parameters=parameters,
+                seed=seed,
+                timeout=timeout,
+                trace_id=trace_id,
+                schema_version=schema_version,
+            )
 
         generator.generate = types.MethodType(wrapped, generator)
         return generator

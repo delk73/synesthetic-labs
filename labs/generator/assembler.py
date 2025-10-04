@@ -20,12 +20,14 @@ from .tone import ToneGenerator
 class AssetAssembler:
     """Compose component generators into a full Synesthetic asset."""
 
-    SCHEMA_URL = "meta/schemas/synesthetic-asset.schema.json"
+    DEFAULT_SCHEMA_VERSION = "0.7.3"
+    SCHEMA_URL = f"https://schemas.synesthetic.dev/{DEFAULT_SCHEMA_VERSION}/synesthetic-asset.schema.json"
 
     def __init__(
         self,
         *,
         version: str = "v0.2",
+        schema_version: str = DEFAULT_SCHEMA_VERSION,
         shader_generator: Optional[ShaderGenerator] = None,
         tone_generator: Optional[ToneGenerator] = None,
         haptic_generator: Optional[HapticGenerator] = None,
@@ -35,6 +37,7 @@ class AssetAssembler:
         rule_bundle_generator: Optional[RuleBundleGenerator] = None,
     ) -> None:
         self.version = version
+        self.schema_version = schema_version
         self._shader = shader_generator or ShaderGenerator(version=version)
         self._tone = tone_generator or ToneGenerator(version=version)
         self._haptic = haptic_generator or HapticGenerator(version=version)
@@ -43,11 +46,21 @@ class AssetAssembler:
         self._modulation = modulation_generator or ModulationGenerator(version=version)
         self._rule_bundle = rule_bundle_generator or RuleBundleGenerator(version=version)
 
-    def generate(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, object]:
+    def generate(
+        self,
+        prompt: str,
+        *,
+        seed: Optional[int] = None,
+        schema_version: Optional[str] = None,
+    ) -> Dict[str, object]:
         """Return a fully wired Synesthetic asset for *prompt*."""
 
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
+
+        target_schema = (schema_version or self.schema_version or self.DEFAULT_SCHEMA_VERSION).strip()
+        schema_url = self.schema_url_for(target_schema)
+        legacy_schema = self._is_legacy_schema(target_schema)
 
         if seed is not None:
             asset_id, timestamp = self._deterministic_identifiers(prompt, seed)
@@ -76,6 +89,8 @@ class AssetAssembler:
         modulations_block = self._build_modulations(modulation)
         rule_bundle_block = self._build_rule_bundle(rule_bundle)
         meta_info_block = self._build_meta_info(meta, timestamp, seed, asset_id)
+        if not legacy_schema:
+            meta_info_block["title"] = prompt
 
         provenance_block = self._build_asset_provenance(
             timestamp=timestamp,
@@ -85,7 +100,7 @@ class AssetAssembler:
         )
 
         asset: Dict[str, object] = {
-            "$schema": self.SCHEMA_URL,
+            "$schema": schema_url,
             "asset_id": asset_id,
             "prompt": prompt,
             "seed": seed,
@@ -100,14 +115,34 @@ class AssetAssembler:
             "parameter_index": sorted(parameter_index),
             "provenance": provenance_block,
         }
-
-        meta_info_block.setdefault("provenance", self._build_meta_provenance(
-            timestamp=timestamp,
-            seed=seed,
-            trace_id=asset_id,
-        ))
+        meta_provenance = meta_info_block.setdefault(
+            "provenance",
+            self._build_meta_provenance(
+                timestamp=timestamp,
+                seed=seed,
+                trace_id=asset_id,
+            ),
+        )
+        if legacy_schema:
+            if isinstance(meta_provenance, dict):
+                meta_provenance.setdefault("asset", provenance_block)
 
         return asset
+
+    @staticmethod
+    def schema_url_for(version: str) -> str:
+        normalised = (version or AssetAssembler.DEFAULT_SCHEMA_VERSION).strip()
+        return f"https://schemas.synesthetic.dev/{normalised}/synesthetic-asset.schema.json"
+
+    @staticmethod
+    def _is_legacy_schema(version: str) -> bool:
+        try:
+            parts = tuple(int(piece) for piece in version.split("."))
+        except ValueError:
+            return False
+        while len(parts) < 3:
+            parts = parts + (0,)
+        return parts <= (0, 7, 3)
 
     def _deterministic_identifiers(self, prompt: str, seed: int) -> tuple[str, str]:
         digest = hashlib.sha1(f"{prompt}|{seed}|{self.version}".encode("utf-8")).hexdigest()

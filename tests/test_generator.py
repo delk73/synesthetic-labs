@@ -5,25 +5,29 @@ from __future__ import annotations
 import json
 
 from labs.agents.generator import GeneratorAgent
+from labs.generator.assembler import AssetAssembler
 from labs.mcp_stdio import resolve_mcp_endpoint
 
 
-def test_generator_propose_writes_log(tmp_path) -> None:
+def test_generator_propose_legacy_schema(tmp_path) -> None:
     log_path = tmp_path / "generator.jsonl"
-    agent = GeneratorAgent(log_path=str(log_path))
+    agent = GeneratorAgent(log_path=str(log_path), schema_version="0.7.3")
 
     asset = agent.propose("synthwave pulse")
 
-    for field in ("asset_id", "timestamp", "prompt", "provenance", "meta_info"):
-        assert field in asset
-
     assert asset["prompt"] == "synthwave pulse"
-    assert asset["provenance"]["agent"] == "AssetAssembler"
-    generator_info = asset["provenance"]["generator"]
+    assert "$schema" in asset
+    assert asset["$schema"] == AssetAssembler.schema_url_for("0.7.3")
+    assert "provenance" in asset
+
+    meta = asset["meta_info"]
+    meta_provenance = meta["provenance"]
+    asset_provenance = meta_provenance["asset"]
+    assert asset_provenance["agent"] == "AssetAssembler"
+    generator_info = asset_provenance["generator"]
     assert generator_info["agent"] == "GeneratorAgent"
     assert generator_info["version"] == "v0.2"
-    assert asset["provenance"]["version"] == "v0.2"
-    assert asset["meta_info"]["provenance"]["trace_id"] == generator_info["trace_id"]
+    assert meta_provenance["trace_id"] == generator_info["trace_id"]
 
     for section in ("shader", "tone", "haptic"):
         assert section in asset
@@ -33,16 +37,40 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     assert isinstance(asset["modulations"], list)
     assert isinstance(asset["rule_bundle"], dict)
 
-    assert log_path.exists()
     lines = log_path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1
     logged = json.loads(lines[0])
     assert logged["asset_id"] == asset["asset_id"]
-    assert "input_parameters" in logged["shader"]
-    assert logged["provenance"]["generator"]["agent"] == "GeneratorAgent"
-    assert logged["trace_id"] == asset["meta_info"]["provenance"]["trace_id"]
+    assert logged["prompt"] == "synthwave pulse"
+    assert logged["schema_version"] == "0.7.3"
+    assert logged["trace_id"] == meta_provenance["trace_id"]
     assert logged["mode"] == "local"
     assert isinstance(logged["strict"], bool)
+    assert logged["transport"] == resolve_mcp_endpoint()
+
+
+def test_generator_propose_enriched_schema(tmp_path) -> None:
+    log_path = tmp_path / "generator.jsonl"
+    agent = GeneratorAgent(log_path=str(log_path), schema_version="0.7.4")
+
+    asset = agent.propose("synthwave pulse", schema_version="0.7.4")
+
+    assert asset["prompt"] == "synthwave pulse"
+    assert asset["$schema"] == AssetAssembler.schema_url_for("0.7.4")
+    assert asset["provenance"]["agent"] == "AssetAssembler"
+    generator_info = asset["provenance"]["generator"]
+    assert generator_info["agent"] == "GeneratorAgent"
+    assert generator_info["version"] == "v0.2"
+    assert asset["meta_info"]["provenance"]["trace_id"] == generator_info["trace_id"]
+    assert asset["meta_info"]["title"] == "synthwave pulse"
+    assert "parameter_index" in asset
+
+    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    logged = json.loads(lines[0])
+    assert logged["prompt"] == "synthwave pulse"
+    assert logged["schema_version"] == "0.7.4"
+    assert logged["mode"] == "local"
     assert logged["transport"] == resolve_mcp_endpoint()
 
 

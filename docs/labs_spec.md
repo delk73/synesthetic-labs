@@ -24,12 +24,18 @@ owner: labs-core
 
 ## Scope (v0.3.5 Generator Schema Awareness)
 
+Generator runs now accept a `--schema-version` CLI flag with a `LABS_SCHEMA_VERSION` fallback (default `0.7.3`). The resolved
+version drives both the `$schema` URL (`https://schemas.synesthetic.dev/<version>/synesthetic-asset.schema.json`) and the payload
+shape. Assets targeting `0.7.3` keep the existing layout but mirror assembler provenance under `meta_info.provenance.asset`.
+Schema versions `0.7.4` and newer populate `meta_info.title` while continuing to emit the enriched layout with top-level
+`provenance`, `prompt`, and `parameter_index`.
+
 ### Objectives
 - Add **schema version targeting** for asset generation.
 - Generator output must include `$schema` pointing to the target corpus URL.
 - Branch behavior:
-  - **0.7.3**: emit legacy fields (root `name` required, no enrichment fields).
-  - **0.7.4+**: emit enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`); root `name` removed in favor of `meta_info.title`.
+  - **0.7.3**: reuse the existing enriched payload while ensuring assembler provenance appears under `meta_info.provenance.asset`.
+  - **0.7.4+**: populate `meta_info.title` alongside the enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`).
 - Always run MCP validation against the declared `$schema`.
 
 ---
@@ -87,11 +93,11 @@ labs generate --engine=<gemini|openai|deterministic> "prompt"
 
   * **0.7.3**:
 
-    * Require root `name`.
-    * Forbid enrichment fields.
+    * Mirror assembler provenance under `meta_info.provenance.asset`.
+    * Continue emitting the existing enriched sections.
   * **0.7.4+**:
 
-    * Drop root `name`; use `meta_info.title`.
+    * Populate `meta_info.title` with the generator prompt.
     * Include enrichment fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`).
 
 * Provenance injection rules remain unchanged from v0.3.4.

@@ -86,6 +86,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         choices=("gemini", "openai", "deterministic"),
         help="Optional external engine to fulfil the prompt",
     )
+    generate_parser.add_argument(
+        "--schema-version",
+        type=str,
+        default=None,
+        help="Target schema version (default: 0.7.3 or LABS_SCHEMA_VERSION)",
+    )
     generate_parser.add_argument("--seed", type=int, help="Optional random seed for generation")
     generate_parser.add_argument("--temperature", type=float, help="Temperature override for external engines")
     generate_parser.add_argument("--timeout-s", dest="timeout_s", type=int, help="Override external call timeout (seconds)")
@@ -113,6 +119,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "generate":
+        schema_version = (
+            args.schema_version
+            or os.getenv("LABS_SCHEMA_VERSION")
+            or "0.7.3"
+        ).strip()
         engine = getattr(args, "engine", None)
         generator: Optional[GeneratorAgent] = None
         external_context: Optional[Dict[str, Any]] = None
@@ -132,14 +143,15 @@ def main(argv: Optional[list[str]] = None) -> int:
                     parameters=external_parameters or None,
                     seed=args.seed,
                     timeout=timeout_value,
+                    schema_version=schema_version,
                 )
             except ExternalGenerationError as exc:
                 external_generator.record_failure(exc)
                 _LOGGER.error("External generator %s failed: %s", engine, exc)
                 return 1
         else:
-            generator = GeneratorAgent()
-            asset = generator.propose(args.prompt, seed=args.seed)
+            generator = GeneratorAgent(schema_version=schema_version)
+            asset = generator.propose(args.prompt, seed=args.seed, schema_version=schema_version)
 
         try:
             validator_callback = _build_validator_optional()

@@ -20,13 +20,14 @@ Run `python -m labs.cli --help` to explore the CLI:
 
 * `python -m labs.cli generate "describe the asset"`
 * `python -m labs.cli generate --engine deterministic "prompt"`
+* `python -m labs.cli generate --schema-version 0.7.4 "prompt"`
 * `python -m labs.cli generate --engine gemini "external prompt"`
 * `python -m labs.cli critique '{"asset_id": "abc", ...}'`
 * `python -m labs.cli preview '{"asset_id": "asset"}' '{"id": "patch", "updates": {...}}'`
 * `python -m labs.cli apply '{"asset_id": "asset"}' '{"id": "patch", "updates": {...}}'`
 * `python -m labs.cli rate patch-id '{"score": 0.9}' --asset-id asset-id`
 
-Use `--engine deterministic` to explicitly route generation through the local `AssetAssembler`; omitting `--engine` behaves the same way.
+Use `--engine deterministic` to explicitly route generation through the local `AssetAssembler`; omitting `--engine` behaves the same way. Pass `--schema-version` (or set `LABS_SCHEMA_VERSION`) to target a specific corpus version. Labs defaults to `0.7.3`, which retains the existing payload while mirroring assembler provenance under `meta_info.provenance.asset`. Versions `0.7.4` and newer additionally populate `meta_info.title` and continue emitting the enriched layout with top-level provenance, `prompt`, and `parameter_index`.
 
 Configure the MCP adapter transport using environment variables:
 
@@ -48,10 +49,8 @@ python -m labs.mcp --path "$MCP_SOCKET_PATH"  # launches the bundled adapter onc
 If `MCP_ENDPOINT` is unset or set to an unsupported value, Labs automatically falls back to the TCP transport so validation can still run with the host/port defaults.
 
 All assets emitted by the generator and accepted by the MCP validator are
-required to include a top-level `$schema` field that points at the bundled
-`meta/schemas/synesthetic-asset.schema.json`. Validator responses surface a
-`validation_failed` error on `/$schema` when the field is missing or when the
-legacy `$schemaRef` value is provided.
+required to include a top-level `$schema` field that points at
+`https://schemas.synesthetic.dev/<version>/synesthetic-asset.schema.json`. The version segment matches the schema target supplied via `--schema-version`/`LABS_SCHEMA_VERSION`. Validator responses surface a `validation_failed` error on `/$schema` when the field is missing or when the versioned corpus URL does not align with the payload.
 
 Optional variables such as the (deprecated, STDIO-only) `SYN_SCHEMAS_DIR`,
 `LABS_EXPERIMENTS_DIR`, and `LABS_FAIL_FAST` tune validation and persistence

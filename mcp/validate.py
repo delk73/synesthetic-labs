@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, MutableMapping
+from urllib.parse import urlparse
 
 import jsonschema
 from jsonschema import Draft202012Validator, ValidationError
@@ -21,6 +22,13 @@ def _resolve_schema_path(schema_identifier: str) -> Path:
 
     identifier = schema_identifier.strip()
     if identifier.startswith("http://") or identifier.startswith("https://"):
+        parsed = urlparse(identifier)
+        if parsed.netloc == "schemas.synesthetic.dev":
+            filename = Path(parsed.path).name
+            if not filename:
+                raise ValueError(f"schema path missing filename: {identifier}")
+            path = (_ROOT / "meta" / "schemas" / filename).resolve()
+            return path
         raise ValueError(f"remote schemas are not supported: {identifier}")
 
     path = Path(identifier)
