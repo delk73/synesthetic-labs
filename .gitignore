@@ -32,5 +32,4 @@ Thumbs.db
 
 # Logs and local outputs
 *.log
-meta/output/*
-!meta/output/.gitkeep
+.env

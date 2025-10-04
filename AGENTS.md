@@ -1,48 +1,31 @@
-# Synesthetic Labs Agents (v0.1)
+# Synesthetic Labs Agents (Schema Targeting Audit)
 
-The v0.1 lab focuses on a single loop: generator → critic with MCP-backed validation. This document summarizes what each agent is expected to do, how they interact, and the guardrails defined in `docs/labs_spec.md` and the initialization prompt.
+## Generator Agent — Missing schema targeting
+- CLI lacks the `--schema-version` flag and the env fallback described in the spec, so GeneratorAgent always emits legacy assets.【F:labs/cli.py†L82-L178】
+- AssetAssembler hardcodes `$schema` to `meta/schemas/...` and always returns enriched fields, leaving no branch for 0.7.3 vs ≥0.7.4 payloads.【F:labs/generator/assembler.py†L23-L110】
+- Generator tests cover logging and provenance only; no schema-version unit matrix exists.【F:tests/test_generator.py†L11-L87】
 
-## Design Principles
-- Keep implementations simple, deterministic, and dependency-light (Python ≥3.11).
-- Treat MCP adapters and `synesthetic-schemas` as the single source of truth for schema validation.
-- Run agents through the containerized harness; the local `pytest` workflow must mirror Docker execution.
-- Persist experiment artefacts and traces under `meta/output/` with structured logging so every run is auditable.
+## Critic Agent — Present
+- Enforces required keys, resolves transport defaults, and surfaces strict vs relaxed MCP failures with reason/detail logging.【F:labs/agents/critic.py†L61-L188】【F:tests/test_critic.py†L15-L204】
+- Rating stubs and patch lifecycles reuse critic logging metadata for RLHF bookkeeping.【F:labs/agents/critic.py†L190-L218】【F:tests/test_patches.py†L65-L92】
 
-## Generator Agent
-- **Goal**: propose candidate multimodal assets (e.g., shaders, tones, haptics) for critic review.
-- **Inputs**: configuration + prompts from `meta/prompts/`, optional dataset context, and CLI/runtime flags.
-- **Outputs**: structured proposals that include enough metadata for downstream validation and logging.
-- **Responsibilities**:
-  - Assemble reproducible prompts and seed data from repo-hosted sources.
-  - Attach provenance info (prompt ID, timestamp, config hash) to each proposal before logging to `meta/output/`.
-  - Hand off proposals to the critic without attempting schema validation locally.
-- **Implementation notes**:
-  - Provide a thin interface (class or protocol) to enable swapping generators as experiments evolve.
-  - Surface hooks for injecting MCP adapter stubs during tests.
-  - Ensure tests exercise prompt assembly and payload shaping (`tests/test_generator.py`).
+## MCP Resolver — Present
+- `resolve_mcp_endpoint` defaults to TCP, while STDIO/Socket builders validate env prerequisites and emit taxonomy-aligned errors.【F:labs/mcp_stdio.py†L162-L232】【F:tests/test_tcp.py†L175-L188】
+- Deprecated `SYN_SCHEMAS_DIR` warning fires once in STDIO mode, guarding legacy adapters.【F:labs/mcp_stdio.py†L178-L196】【F:tests/test_critic.py†L204-L217】
 
-## Critic Agent
-- **Goal**: analyse generator output, highlight issues, and prepare payloads ready for MCP validation.
-- **Inputs**: generator proposals plus any MCP adapter configuration provided by the runtime.
-- **Outputs**: critique notes, recommended actions, and validation-ready payloads for MCP adapters.
-- **Responsibilities**:
-  - Perform lightweight sanity checks while deferring authoritative validation to MCP.
-  - Generate structured feedback that maps back to the originating generator proposal.
-  - Invoke MCP validation hooks (or mocks in tests) and propagate pass/fail status to logs.
-  - Block or flag assets that fail MCP validation; never bypass schema enforcement.
-- **Implementation notes**:
-  - Maintain deterministic behaviour for reproducible test runs.
-  - Ensure critic logging captures references to both the generator artefact and MCP response.
-  - Cover review shaping and MCP handoff logic in `tests/test_critic.py`.
+## Patch Lifecycle — Present
+- Preview/apply/rate paths log trace/mode/transport data and reuse critic validation, preventing silent failures.【F:labs/patches.py†L47-L156】【F:tests/test_patches.py†L11-L92】
 
-## Generator → Critic Workflow
-1. CLI or lifecycle harness instantiates the generator with prompt/config context.
-2. Generator emits proposal package(s) and writes initial trace entries.
-3. Critic consumes proposals, attaches critiques, and calls MCP validation adapters.
-4. Final combined artefacts (proposal, critique, MCP result) are persisted under `meta/output/`.
-5. Integration tests (`tests/test_pipeline.py`) exercise the full path with mocked MCP responses.
+## External Generators — Present with Divergences
+- Live mode enforces env-gated Authorization headers, retry/backoff, size caps, and normalization with provenance logging.【F:labs/generator/external.py†L166-L780】【F:tests/test_external_generator.py†L117-L365】
+- `record_run` omits schema_version and `failure: null` on success, diverging from logging rules; provenance still uses `endpoint` instead of the spec’s `api_endpoint` alias.【F:labs/generator/external.py†L230-L339】【F:docs/labs_spec.md†L113-L133】
 
-## Container & Tooling Expectations
-- `labs/cli.py` should expose a `--help` entry point for running the loop locally and inside Docker.
-- `test.sh` remains the source of truth for path-to-green; it must build the container and run pytest.
-- Keep agent interfaces stable enough for future lifecycle orchestration and dataset replay modules.
+## Logging — Present with schema gaps
+- Generator, critic, patch, and external logs append structured JSONL under `meta/output/labs/`, but schema_version metadata is missing from external runs.【F:labs/logging.py†L10-L35】【F:labs/generator/external.py†L230-L339】
+
+## Maintainer Docs — Divergent
+- README and `.example.env` still reflect v0.3.4 behavior; the spec file has already advanced to v0.3.5 schema-awareness without corresponding code changes.【F:README.md†L19-L104】【F:docs/labs_spec.md†L1-L96】
+
+## Outstanding Gaps & Divergences
+- Implement schema_version inputs/branching and update `$schema` URLs to hosted corpus paths.【F:docs/labs_spec.md†L28-L133】【F:labs/generator/assembler.py†L23-L110】
+- Extend external logging to emit schema_version plus a null `failure` field when validation passes.【F:docs/labs_spec.md†L113-L133】【F:labs/generator/external.py†L230-L339】

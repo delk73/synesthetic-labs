@@ -1,57 +1,165 @@
-# synesthetic-labs Lab Spec (v0.1 Generator + Critic)
+---
+version: v0.3.5
+lastReviewed: 2025-10-03
+owner: labs-core
+---
+
+# Synesthetic Labs Spec
 
 ## Purpose
-- Deliver the first generator + critic workflow for **Synesthetic System** asset experiments.
-- Provide a safe playground for proposing assets while validation and persistence continue to live in `synesthetic-mcp` and `sdfk-backend`.
-- Labs does not replace the validation or persistence responsibilities owned by MCP adapters and backend services.
 
-## Scope (v0.1)
-- Implement a generator agent interface for producing candidate assets/patches.
-- Implement a critic agent that reviews generator output, surfaces issues, and prepares payloads while deferring schema authority to MCP validation.
-- Wire generator → critic handoff with hooks for MCP adapter validation.
-- Maintain repo structure needed to support these experiments (labs modules, tests, Docker harness).
+- Extend v0.3.4 by making the generator **schema-aware**.
+- Allow Labs to produce assets that validate against a **declared schema corpus version** (`0.7.x`).
+- Remove ad-hoc scrubbing: branching logic in generator ensures compatibility.
+- Maintain reproducibility by embedding `$schema` in every generated asset.
 
-## Non-Scope (Deferred to v0.2+)
-- RLHF rating loops or scorer agents.
-- Full patch lifecycle orchestration (propose → validate → rate → persist) and JSON Patch application flows.
-- Dataset building, replay pipelines, or broader multimodal training assets.
-- Automation of persistence into backend stores beyond MCP-mediated validation.
-- Backlog items earmarked for v0.2+: RLHF loop integration, JSON Patch lifecycle orchestration, and dataset tooling improvements.
+---
 
-## Component Overview
-| Component | Responsibilities | Interfaces |
-| --- | --- | --- |
-| Generator agent | Produce candidate shaders/tones/haptics or other multimodal assets for review. | Consumes prompts/specs; outputs asset proposals for critic review. |
-| Critic agent | Analyze generator output, surface issues, and prepare artifacts for MCP validation while recognizing MCP as the final schema authority. | Receives generator output; emits critique notes and validation-ready payloads handed to MCP adapters. |
-| Labs CLI (placeholder) | Entry point for running generator → critic experiments locally or in container. | MVP flow runs generator → critic → logging pipeline and exposes structured logging hooks. |
+## Historical Scopes
 
-## Planned Features (v0.1)
-- Configurable generator prompts housed under `meta/prompts/` for reproducible experiments.
-- Critic prepares assets and calls MCP validation hooks before persistence.
-- Structured logging backed by files in `meta/output/` to trace generator prompts, critic feedback, and MCP responses.
-- Pytest-based coverage in `tests/test_agents.py` targeting generator + critic interactions.
+- **≤ v0.3.3**: Baseline generator/critic pipeline, transports, logging, patch lifecycle stubs, external scaffolding.
+- **v0.3.4**: External API calls (Gemini/OpenAI), normalization contract, provenance, error taxonomy, logging, CI matrix.
+
+---
+
+## Scope (v0.3.5 Generator Schema Awareness)
+
+### Objectives
+- Add **schema version targeting** for asset generation.
+- Generator output must include `$schema` pointing to the target corpus URL.
+- Branch behavior:
+  - **0.7.3**: emit legacy fields (root `name` required, no enrichment fields).
+  - **0.7.4+**: emit enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`); root `name` removed in favor of `meta_info.title`.
+- Always run MCP validation against the declared `$schema`.
+
+---
+
+## Interfaces
+
+#### Generator Contract
+```python
+def generate_asset(
+    prompt: str,
+    schema_version: str = "0.7.3",
+    seed: Optional[int] = None,
+    params: Optional[dict[str, Any]] = None,
+    trace_id: Optional[str] = None
+) -> dict:
+    """
+    Returns a normalized SynestheticAsset object
+    that conforms to the target schema_version.
+    """
+```
+
+#### CLI
+
+```
+labs generate --engine=<gemini|openai|deterministic> "prompt"
+    [--seed <int>] [--temperature <float>] [--timeout-s <int>]
+    [--schema-version <ver>]   # new
+    [--strict|--relaxed]
+```
+
+* Precedence: `--schema-version` flag > `LABS_SCHEMA_VERSION` env > default (`0.7.3`).
+
+---
+
+## Environment Variables
+
+| Var                                             | Purpose                             | Default / Notes |
+| ----------------------------------------------- | ----------------------------------- | --------------- |
+| `LABS_SCHEMA_VERSION`                           | Target schema version for generator | `"0.7.3"`       |
+| *(all other vars from v0.3.4 remain unchanged)* |                                     |                 |
+
+---
+
+## Normalization Contract (updates)
+
+* Every asset **must** include `$schema` root key:
+
+  ```json
+  {
+    "$schema": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json"
+  }
+  ```
+
+* Branching rules:
+
+  * **0.7.3**:
+
+    * Require root `name`.
+    * Forbid enrichment fields.
+  * **0.7.4+**:
+
+    * Drop root `name`; use `meta_info.title`.
+    * Include enrichment fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`).
+
+* Provenance injection rules remain unchanged from v0.3.4.
+
+---
+
+## Validation
+
+* Same as v0.3.4:
+
+  * Pre-flight checks (section presence, numeric bounds).
+  * Always invoke MCP with strict JSON validation.
+* Validation occurs **against the declared `$schema` version**.
+
+---
 
 ## Logging
-- Capture generator inputs, produced assets, critic findings, and MCP validation results in structured JSON (JSONL recommended).
-- Store experiment logs under `meta/output/` with timestamps to enable replay.
-- Ensure logs are reproducible across local runs and containerized workflows.
 
-## Tests
-- Unit tests for generator prompt assembly and output shaping in `tests/test_generator.py`.
-- Unit tests for critic review shaping and payload preparation in `tests/test_critic.py`.
-- Integration tests that exercise generator → critic handoffs and mocked MCP validation responses.
-- End-to-end pipeline coverage in `tests/test_pipeline.py` validating generator → critic → MCP hooks.
-- Containerized test harness (`./test.sh`) remains the path-to-green; local `pytest` runs are supported for rapid iteration.
+* Same files as v0.3.4 (`generator.jsonl`, `critic.jsonl`, `patches.jsonl`, `external.jsonl`).
+* `external.jsonl` entries MUST include:
 
-## Constraints
-- ⚠️ Early-stage project: repo structure and interfaces may change as generator + critic mature.
-- MCP adapter must remain the gatekeeper for validation; labs should not bypass schema enforcement.
-- Containerization is the default execution path; ensure parity between local and Docker-based workflows.
-- Labs must log every generator and critic run; silent failures are not permitted.
+  * `schema_version`
+  * `$schema` URL from the generated asset.
 
-## Exit Criteria
-- Generator and critic agents run end-to-end locally and inside Docker with structured logs emitted.
-- Critic output is compatible with MCP validation, blocking assets that fail schema checks.
-- Tests covering generator + critic interactions pass in CI.
-- Labs CLI entrypoint is documented in `README.md` and runs successfully in CI.
-- Backlog items for v0.2+ (see Non-Scope) are confirmed and tracked in `meta/backlog.md` or the GitHub issues backlog.
+Example (truncated):
+
+```json
+{
+  "ts": "2025-10-03T18:32:00Z",
+  "trace_id": "1234-5678",
+  "engine": "deterministic",
+  "mode": "mock",
+  "transport": "tcp",
+  "schema_version": "0.7.3",
+  "normalized_asset": { "$schema": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", ... },
+  "mcp_result": { "ok": true, "errors": [] }
+}
+```
+
+---
+
+## Tests (matrix additions for v0.3.5)
+
+* **Unit**
+
+  * Generator emits valid `0.7.3` asset when configured.
+  * Generator emits valid `0.7.4` asset when configured.
+  * `$schema` tag matches chosen `schema_version`.
+* **Integration**
+
+  * `labs generate --schema-version=0.7.3` passes MCP validation with baseline schemas.
+  * `labs generate --schema-version=0.7.4` passes MCP validation once schema corpus bumped.
+
+---
+
+## Exit Criteria (v0.3.5)
+
+* Generator branching implemented and schema version configurable.
+* All assets tagged with `$schema` and valid against chosen corpus.
+* CI runs both `0.7.3` (baseline) and `0.7.4` (forward-looking).
+* No ad-hoc stripping needed in Labs pipeline.
+
+---
+
+## Non-Goals
+
+* No schema corpus bump bundled in this Labs spec.
+* No new transports, no provider fine-tuning, no streaming APIs.
+* No change to error taxonomy, retry, or security model (from v0.3.4).
+
+---
