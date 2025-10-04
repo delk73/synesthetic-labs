@@ -21,6 +21,7 @@ Run `python -m labs.cli --help` to explore the CLI:
 * `python -m labs.cli generate "describe the asset"`
 * `python -m labs.cli generate --engine deterministic "prompt"`
 * `python -m labs.cli generate --engine gemini "external prompt"`
+* `python -m labs.cli generate --schema-version 0.7.4 "forward-compatible prompt"`
 * `python -m labs.cli critique '{"asset_id": "abc", ...}'`
 * `python -m labs.cli preview '{"asset_id": "asset"}' '{"id": "patch", "updates": {...}}'`
 * `python -m labs.cli apply '{"asset_id": "asset"}' '{"id": "patch", "updates": {...}}'`
@@ -47,11 +48,13 @@ python -m labs.mcp --path "$MCP_SOCKET_PATH"  # launches the bundled adapter onc
 
 If `MCP_ENDPOINT` is unset or set to an unsupported value, Labs automatically falls back to the TCP transport so validation can still run with the host/port defaults.
 
-All assets emitted by the generator and accepted by the MCP validator are
-required to include a top-level `$schema` field that points at the bundled
-`meta/schemas/synesthetic-asset.schema.json`. Validator responses surface a
-`validation_failed` error on `/$schema` when the field is missing or when the
-legacy `$schemaRef` value is provided.
+All assets emitted by the generator and accepted by the MCP validator derive
+their schema target from `--schema-version` or `LABS_SCHEMA_VERSION`
+(defaulting to `0.7.3`). Every payload includes a top-level `$schema` field
+that points at the hosted corpus URL
+(`https://schemas.synesthetic.dev/<version>/synesthetic-asset.schema.json`).
+Validator responses surface a `validation_failed` error on `/$schema` when the
+field is missing or when the legacy `$schemaRef` value is provided.
 
 Optional variables such as the (deprecated, STDIO-only) `SYN_SCHEMAS_DIR`,
 `LABS_EXPERIMENTS_DIR`, and `LABS_FAIL_FAST` tune validation and persistence

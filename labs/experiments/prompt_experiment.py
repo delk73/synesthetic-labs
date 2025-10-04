@@ -87,11 +87,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                 handle.write("\n")
             experiment_path = _relativize(validated_path)
 
-        generator.record_experiment(
-            asset=asset,
-            review=review,
-            experiment_path=experiment_path,
-        )
+        if "asset_id" in asset:
+            generator.record_experiment(
+                asset=asset,
+                review=review,
+                experiment_path=experiment_path,
+            )
 
         log_jsonl(results_log, run_record)
 

@@ -33,7 +33,7 @@ def test_validate_asset_rejects_schema_ref() -> None:
 
 def test_validate_asset_accepts_generated_asset() -> None:
     assembler = AssetAssembler()
-    asset = assembler.generate("validator smoke test")
+    asset = assembler.generate("validator smoke test", schema_version="0.7.4")
 
     result = validate_asset(asset)
 
@@ -42,7 +42,7 @@ def test_validate_asset_accepts_generated_asset() -> None:
 
 def test_validate_many_rolls_up_failures() -> None:
     assembler = AssetAssembler()
-    asset = assembler.generate("batch validation")
+    asset = assembler.generate("batch validation", schema_version="0.7.4")
 
     batch = [asset, {"$schema": "meta/schemas/synesthetic-asset.schema.json", "asset_id": 1}]
 

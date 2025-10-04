@@ -11,8 +11,8 @@ def test_asset_is_deterministic_with_seed() -> None:
     assembler = AssetAssembler()
     prompt = "deterministic baseline"
 
-    first = assembler.generate(prompt, seed=123)
-    second = assembler.generate(prompt, seed=123)
+    first = assembler.generate(prompt, seed=123, schema_version="0.7.4")
+    second = assembler.generate(prompt, seed=123, schema_version="0.7.4")
 
     assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
 
@@ -21,7 +21,7 @@ def test_asset_varies_without_seed() -> None:
     assembler = AssetAssembler()
     prompt = "deterministic baseline"
 
-    first = assembler.generate(prompt)
-    second = assembler.generate(prompt)
+    first = assembler.generate(prompt, schema_version="0.7.4")
+    second = assembler.generate(prompt, schema_version="0.7.4")
 
     assert json.dumps(first, sort_keys=True) != json.dumps(second, sort_keys=True)

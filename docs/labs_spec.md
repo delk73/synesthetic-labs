@@ -26,6 +26,7 @@ owner: labs-core
 
 ### Objectives
 - Add **schema version targeting** for asset generation.
+- Expose `--schema-version` / `LABS_SCHEMA_VERSION` configuration (default `0.7.3`).
 - Generator output must include `$schema` pointing to the target corpus URL.
 - Branch behavior:
   - **0.7.3**: emit legacy fields (root `name` required, no enrichment fields).
@@ -115,6 +116,7 @@ labs generate --engine=<gemini|openai|deterministic> "prompt"
 
   * `schema_version`
   * `$schema` URL from the generated asset.
+  * `failure: null` when MCP validation passes.
 
 Example (truncated):
 

@@ -18,13 +18,31 @@ def _parameter_names(asset: Dict[str, object]) -> Set[str]:
     return names
 
 
-def test_asset_assembler_produces_consistent_payload() -> None:
+def test_asset_assembler_produces_legacy_payload() -> None:
     assembler = AssetAssembler()
-    asset = assembler.generate("assembler smoke test")
+    asset = assembler.generate("assembler smoke test", schema_version="0.7.3")
+
+    assert asset["$schema"] == AssetAssembler.schema_url("0.7.3")
+    assert "asset_id" not in asset
+    assert "timestamp" not in asset
+    assert "prompt" not in asset
+    assert "parameter_index" not in asset
+    assert "provenance" not in asset
+    assert asset["name"] == asset["meta_info"]["title"]
+
+    parameters = _parameter_names(asset)
+    assert parameters
+    for control_parameter in asset["control"]["control_parameters"]:
+        assert control_parameter["parameter"] in parameters
+
+
+def test_asset_assembler_produces_enriched_payload() -> None:
+    assembler = AssetAssembler()
+    asset = assembler.generate("assembler smoke test", schema_version="0.7.4")
 
     assert asset["prompt"] == "assembler smoke test"
     assert isinstance(asset["asset_id"], str)
-    assert asset["$schema"] == AssetAssembler.SCHEMA_URL
+    assert asset["$schema"] == AssetAssembler.schema_url("0.7.4")
     assert asset["provenance"]["agent"] == "AssetAssembler"
 
     parameters = _parameter_names(asset)

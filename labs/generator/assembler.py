@@ -20,7 +20,8 @@ from .tone import ToneGenerator
 class AssetAssembler:
     """Compose component generators into a full Synesthetic asset."""
 
-    SCHEMA_URL = "meta/schemas/synesthetic-asset.schema.json"
+    DEFAULT_SCHEMA_VERSION = "0.7.3"
+    _SCHEMA_URL_TEMPLATE = "https://schemas.synesthetic.dev/{version}/synesthetic-asset.schema.json"
 
     def __init__(
         self,
@@ -43,7 +44,17 @@ class AssetAssembler:
         self._modulation = modulation_generator or ModulationGenerator(version=version)
         self._rule_bundle = rule_bundle_generator or RuleBundleGenerator(version=version)
 
-    def generate(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, object]:
+    @classmethod
+    def schema_url(cls, schema_version: str) -> str:
+        return cls._SCHEMA_URL_TEMPLATE.format(version=schema_version)
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        seed: Optional[int] = None,
+        schema_version: str = DEFAULT_SCHEMA_VERSION,
+    ) -> Dict[str, object]:
         """Return a fully wired Synesthetic asset for *prompt*."""
 
         if not isinstance(prompt, str) or not prompt.strip():
@@ -85,7 +96,7 @@ class AssetAssembler:
         )
 
         asset: Dict[str, object] = {
-            "$schema": self.SCHEMA_URL,
+            "$schema": self.schema_url(schema_version),
             "asset_id": asset_id,
             "prompt": prompt,
             "seed": seed,
@@ -106,6 +117,25 @@ class AssetAssembler:
             seed=seed,
             trace_id=asset_id,
         ))
+
+        if schema_version.startswith("0.7.3"):
+            asset.pop("asset_id", None)
+            asset.pop("timestamp", None)
+            asset.pop("prompt", None)
+            asset.pop("parameter_index", None)
+            asset.pop("provenance", None)
+            asset["name"] = meta_info_block.get("title") or "Synesthetic Asset"
+        else:
+            if "asset_id" not in asset:
+                asset["asset_id"] = asset_id
+            if "timestamp" not in asset:
+                asset["timestamp"] = timestamp
+            if "prompt" not in asset:
+                asset["prompt"] = prompt
+            if "parameter_index" not in asset:
+                asset["parameter_index"] = sorted(parameter_index)
+            if "provenance" not in asset:
+                asset["provenance"] = provenance_block
 
         return asset
 

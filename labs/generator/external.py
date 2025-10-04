@@ -31,7 +31,11 @@ _JITTER_FRACTION = 0.2
 
 SENSITIVE_HEADERS = {"authorization"}
 
-_BASELINE_ASSET = AssetAssembler().generate("external-normalization-baseline", seed=0)
+_BASELINE_ASSET = AssetAssembler().generate(
+    "external-normalization-baseline",
+    seed=0,
+    schema_version="0.7.4",
+)
 _DEFAULT_SECTIONS = {
     key: deepcopy(_BASELINE_ASSET[key])
     for key in ("shader", "tone", "haptic", "control", "meta_info", "rule_bundle")
@@ -142,6 +146,7 @@ class ExternalGenerator:
         seed: Optional[int] = None,
         timeout: Optional[float] = None,
         trace_id: Optional[str] = None,
+        schema_version: str = AssetAssembler.DEFAULT_SCHEMA_VERSION,
     ) -> Tuple[JsonDict, JsonDict]:
         """Return an asset assembled from an external API response."""
 
@@ -225,6 +230,7 @@ class ExternalGenerator:
                     mode="mock" if self.mock_mode else "live",
                     endpoint=endpoint,
                     response_hash=response_hash,
+                    schema_version=schema_version,
                 )
 
                 context: JsonDict = {
@@ -250,6 +256,7 @@ class ExternalGenerator:
                         "redacted": not self.mock_mode,
                     },
                     "asset": asset,
+                    "schema_version": schema_version,
                 }
                 return asset, context
             except ExternalRequestError as exc:
@@ -326,9 +333,13 @@ class ExternalGenerator:
             "generated_at": context.get("generated_at"),
             "experiment_path": experiment_path,
             "status": status,
+            "schema_version": context.get("schema_version"),
+            "$schema": context.get("asset", {}).get("$schema"),
         }
 
-        if not review.get("ok"):
+        if review.get("ok"):
+            record["failure"] = None
+        else:
             record["failure"] = {
                 "reason": review.get("validation_error", {}).get("reason", "validation_failed"),
                 "detail": review.get("validation_error", {}).get("detail")
@@ -425,6 +436,7 @@ class ExternalGenerator:
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:  # pragma: no cover - abstract
         raise NotImplementedError
 
@@ -553,6 +565,7 @@ class ExternalGenerator:
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:
         if not isinstance(asset_payload, dict):
             raise ExternalRequestError("bad_response", "asset_not_object", retryable=False)
@@ -618,7 +631,7 @@ class ExternalGenerator:
         )
 
         asset: JsonDict = {
-            "$schema": AssetAssembler.SCHEMA_URL,
+            "$schema": AssetAssembler.schema_url(schema_version),
             "asset_id": asset_id,
             "prompt": prompt,
             "seed": parameters.get("seed"),
@@ -633,6 +646,20 @@ class ExternalGenerator:
             "parameter_index": sorted(parameter_index),
             "provenance": provenance_block,
         }
+
+        if schema_version.startswith("0.7.3"):
+            asset.pop("asset_id", None)
+            asset.pop("timestamp", None)
+            asset.pop("prompt", None)
+            asset.pop("parameter_index", None)
+            asset.pop("provenance", None)
+            asset["name"] = meta_info.get("title") or "Synesthetic Asset"
+        else:
+            asset.setdefault("asset_id", asset_id)
+            asset.setdefault("timestamp", timestamp)
+            asset.setdefault("prompt", prompt)
+            asset.setdefault("parameter_index", sorted(parameter_index))
+            asset.setdefault("provenance", provenance_block)
 
         return asset
 
@@ -1106,6 +1133,7 @@ class GeminiGenerator(ExternalGenerator):
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:
         asset_payload = response.get("asset")
         if not isinstance(asset_payload, dict):
@@ -1119,6 +1147,7 @@ class GeminiGenerator(ExternalGenerator):
             mode=mode,
             endpoint=endpoint,
             response_hash=response_hash,
+            schema_version=schema_version,
         )
 
 
@@ -1196,6 +1225,7 @@ class OpenAIGenerator(ExternalGenerator):
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:
         asset_payload = response.get("asset")
         if not isinstance(asset_payload, dict):
@@ -1209,6 +1239,7 @@ class OpenAIGenerator(ExternalGenerator):
             mode=mode,
             endpoint=endpoint,
             response_hash=response_hash,
+            schema_version=schema_version,
         )
         provenance = dict(asset.get("provenance") or {})
         provenance["openai_object"] = response.get("object")

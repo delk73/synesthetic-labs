@@ -152,6 +152,7 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
     assert isinstance(logged_asset["strict"], bool)
     assert logged_asset["transport"] == resolve_mcp_endpoint()
     assert "trace_id" in logged_asset
+    assert logged_asset["schema_version"] == "0.7.4"
     log_record = json.loads(log_lines[1])
     assert log_record["experiment_path"] == relative_path
     assert log_record["validation"]["ok"] is True
@@ -159,6 +160,9 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
     assert log_record["mode"] in {"strict", "relaxed"}
     assert isinstance(log_record["strict"], bool)
     assert log_record["transport"] == resolve_mcp_endpoint()
+    assert log_record["schema_version"] == "0.7.4"
+    assert log_record["$schema"].endswith("/0.7.4/synesthetic-asset.schema.json")
+    assert log_record["failure"] is None
 
 
 def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsys) -> None:
@@ -285,11 +289,28 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
         generator = GeminiGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
         original_generate = generator.generate
 
-        def wrapped(self, prompt: str, *, parameters=None, seed=None, timeout=None, trace_id=None):
+        def wrapped(
+            self,
+            prompt: str,
+            *,
+            parameters=None,
+            seed=None,
+            timeout=None,
+            trace_id=None,
+            schema_version=None,
+        ):
             recorded["seed"] = seed
             recorded["parameters"] = parameters
             recorded["timeout"] = timeout
-            return original_generate(prompt, parameters=parameters, seed=seed, timeout=timeout, trace_id=trace_id)
+            recorded["schema_version"] = schema_version
+            return original_generate(
+                prompt,
+                parameters=parameters,
+                seed=seed,
+                timeout=timeout,
+                trace_id=trace_id,
+                schema_version=schema_version,
+            )
 
         generator.generate = types.MethodType(wrapped, generator)
         return generator
@@ -326,6 +347,7 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
     assert recorded["seed"] == 42
     assert recorded["parameters"] == {"temperature": 0.85}
     assert recorded["timeout"] == 12.0
+    assert recorded["schema_version"] == "0.7.4"
 
 def test_cli_preview_command(monkeypatch, capsys) -> None:
     asset = {"asset_id": "asset-10"}
