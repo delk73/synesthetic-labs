@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from labs.generator import AssetAssembler
-from mcp.validate import validate_asset, validate_many
+from labs.mcp.validate import validate_asset, validate_many
 from labs.mcp_stdio import resolve_mcp_endpoint
 
 

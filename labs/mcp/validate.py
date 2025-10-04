@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator, ValidationError
 
 JsonDict = Dict[str, Any]
 
-_ROOT = Path(__file__).resolve().parent.parent
+_ROOT = Path(__file__).resolve().parent.parent.parent
 _VALIDATOR_CACHE: Dict[str, Draft202012Validator] = {}
 
 
