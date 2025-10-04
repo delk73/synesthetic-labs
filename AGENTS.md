@@ -1,35 +1,31 @@
-# Synesthetic Labs Agents (v0.3.4 Audit)
+# Synesthetic Labs Agents (Schema Targeting Audit)
 
-This document captures the audited capabilities of the Labs agents as of the v0.3.4 release cycle.
-
-## Generator Agent — Present
-- **AssetAssembler:** Deterministic IDs/timestamps, parameter index collection, and control pruning keep outputs schema-ready. (`labs/generator/assembler.py:78-145`; `tests/test_generator_assembler.py:12-43`)
-- **GeneratorAgent:** Emits proposal snapshots with trace/mode/transport/strict data and records MCP-reviewed experiments. (`labs/agents/generator.py:30-145`; `tests/test_generator.py:11-81`)
+## Generator Agent — Missing schema targeting
+- CLI lacks the `--schema-version` flag and the env fallback described in the spec, so GeneratorAgent always emits legacy assets.【F:labs/cli.py†L82-L178】
+- AssetAssembler hardcodes `$schema` to `meta/schemas/...` and always returns enriched fields, leaving no branch for 0.7.3 vs ≥0.7.4 payloads.【F:labs/generator/assembler.py†L23-L110】
+- Generator tests cover logging and provenance only; no schema-version unit matrix exists.【F:tests/test_generator.py†L11-L87】
 
 ## Critic Agent — Present
-- Validates required fields, resolves transports, and downgrades MCP outages in relaxed mode while logging review payloads. (`labs/agents/critic.py:61-188`; `tests/test_critic.py:25-185`)
-- Rating stubs persist trace/mode/transport metadata for RLHF flows. (`labs/agents/critic.py:190-217`; `tests/test_ratings.py:7-30`)
+- Enforces required keys, resolves transport defaults, and surfaces strict vs relaxed MCP failures with reason/detail logging.【F:labs/agents/critic.py†L61-L188】【F:tests/test_critic.py†L15-L204】
+- Rating stubs and patch lifecycles reuse critic logging metadata for RLHF bookkeeping.【F:labs/agents/critic.py†L190-L218】【F:tests/test_patches.py†L65-L92】
 
 ## MCP Resolver — Present
-- Defaults to TCP on unset/invalid values and builds stdio/socket/tcp validators with payload caps. (`labs/mcp_stdio.py:162-214`; `tests/test_tcp.py:148-188`)
-- STDIO builder forwards the deprecated `SYN_SCHEMAS_DIR` once with a warning. (`labs/mcp_stdio.py:178-188`; `tests/test_critic.py:204-217`)
+- `resolve_mcp_endpoint` defaults to TCP, while STDIO/Socket builders validate env prerequisites and emit taxonomy-aligned errors.【F:labs/mcp_stdio.py†L162-L232】【F:tests/test_tcp.py†L175-L188】
+- Deprecated `SYN_SCHEMAS_DIR` warning fires once in STDIO mode, guarding legacy adapters.【F:labs/mcp_stdio.py†L178-L196】【F:tests/test_critic.py†L204-L217】
 
 ## Patch Lifecycle — Present
-- Preview/apply/rate flows share critic validation, propagate trace/mode/transport/strict fields, and log failures with reason/detail. (`labs/patches.py:47-161`; `tests/test_patches.py:11-114`)
+- Preview/apply/rate paths log trace/mode/transport data and reuse critic validation, preventing silent failures.【F:labs/patches.py†L47-L156】【F:tests/test_patches.py†L11-L92】
 
 ## External Generators — Present with Divergences
-- **Live Mode:** Gemini/OpenAI integrations gate on env keys, add Authorization headers, redact logs, and record provenance-rich attempts with retries/backoff per taxonomy. (`labs/generator/external.py:118-515`; `tests/test_external_generator.py:117-263`)
-- **CLI Dispatch:** CLI persists only MCP-approved assets and records external runs alongside generator experiments. (`labs/cli.py:115-170`; `tests/test_pipeline.py:229-260`)
-- **Normalization:** Canonicalizes sections, rejects unknown keys, and enforces numeric bounds before MCP validation. (`labs/generator/external.py:545-765`; `tests/test_external_generator.py:266-365`)
-- **Provenance (Divergent):** `asset.meta_info.provenance` lacks the spec-required `api_version` field and uses `endpoint` in place of `api_endpoint`. (`labs/generator/external.py:980-1019`)
-- **external.jsonl schema (Divergent):** Successful entries omit the `failure` key instead of emitting `null` as mandated. (`labs/generator/external.py:309-337`; `docs/labs_spec.md:160-176`)
+- Live mode enforces env-gated Authorization headers, retry/backoff, size caps, and normalization with provenance logging.【F:labs/generator/external.py†L166-L780】【F:tests/test_external_generator.py†L117-L365】
+- `record_run` omits schema_version and `failure: null` on success, diverging from logging rules; provenance still uses `endpoint` instead of the spec’s `api_endpoint` alias.【F:labs/generator/external.py†L230-L339】【F:docs/labs_spec.md†L113-L133】
 
-## Logging — Present
-- Generator, critic, patch, and external flows append structured JSONL entries under `meta/output/labs/` with trace/mode/strict/transport metadata and failure taxonomy where applicable. (`labs/logging.py:11-34`; `labs/agents/generator.py:112-188`; `labs/patches.py:47-161`; `labs/generator/external.py:309-355`)
+## Logging — Present with schema gaps
+- Generator, critic, patch, and external logs append structured JSONL under `meta/output/labs/`, but schema_version metadata is missing from external runs.【F:labs/logging.py†L10-L35】【F:labs/generator/external.py†L230-L339】
 
-## Maintainer Docs — Present
-- Process guide anchors transport provenance expectations to `resolve_mcp_endpoint`. (`docs/process.md:41-45`)
+## Maintainer Docs — Divergent
+- README and `.example.env` still reflect v0.3.4 behavior; the spec file has already advanced to v0.3.5 schema-awareness without corresponding code changes.【F:README.md†L19-L104】【F:docs/labs_spec.md†L1-L96】
 
 ## Outstanding Gaps & Divergences
-- Add `api_version` and rename/alias `api_endpoint` in external provenance to match the spec contract. (`labs/generator/external.py:980-1019`; `docs/labs_spec.md:131-142`)
-- Ensure `external.jsonl` always includes a `failure` field (null on success) per the documented schema. (`labs/generator/external.py:309-337`; `docs/labs_spec.md:160-176`)
+- Implement schema_version inputs/branching and update `$schema` URLs to hosted corpus paths.【F:docs/labs_spec.md†L28-L133】【F:labs/generator/assembler.py†L23-L110】
+- Extend external logging to emit schema_version plus a null `failure` field when validation passes.【F:docs/labs_spec.md†L113-L133】【F:labs/generator/external.py†L230-L339】
