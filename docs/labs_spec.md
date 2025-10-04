@@ -24,12 +24,17 @@ owner: labs-core
 
 ## Scope (v0.3.5 Generator Schema Awareness)
 
+The generator is now **schema-aware**. A `--schema-version` CLI flag (with the
+`LABS_SCHEMA_VERSION` environment fallback) controls which corpus version is
+targeted, defaulting to `0.7.3`. Every asset includes a `$schema` root key that
+references the hosted corpus path (`https://schemas.synesthetic.dev/<version>/SynestheticAsset.schema.json`).
+
 ### Objectives
-- Add **schema version targeting** for asset generation.
+- Add **schema version targeting** for asset generation via CLI/environment configuration.
 - Generator output must include `$schema` pointing to the target corpus URL.
 - Branch behavior:
-  - **0.7.3**: emit legacy fields (root `name` required, no enrichment fields).
-  - **0.7.4+**: emit enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`); root `name` removed in favor of `meta_info.title`.
+  - **0.7.3**: emit legacy fields with a root `name` and provenance embedded under `meta_info.provenance`.
+  - **0.7.4+**: emit enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`) with provenance promoted to the root.
 - Always run MCP validation against the declared `$schema`.
 
 ---

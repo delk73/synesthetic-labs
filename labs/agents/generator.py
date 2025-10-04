@@ -39,13 +39,21 @@ class GeneratorAgent:
         *,
         version: str = "v0.2",
         assembler: Optional[AssetAssembler] = None,
+        schema_version: Optional[str] = None,
     ) -> None:
         self.log_path = log_path
         self._logger = logging.getLogger(self.__class__.__name__)
         self.version = version
-        self._assembler = assembler or AssetAssembler(version=version)
+        self.schema_version = schema_version
+        self._assembler = assembler or AssetAssembler(version=version, schema_version=schema_version)
 
-    def propose(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, Any]:
+    def propose(
+        self,
+        prompt: str,
+        *,
+        seed: Optional[int] = None,
+        schema_version: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Return a fully assembled asset for *prompt*.
 
         The payload mirrors the canonical Synesthetic schema sections produced
@@ -56,10 +64,21 @@ class GeneratorAgent:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
 
-        asset = self._assembler.generate(prompt, seed=seed)
+        effective_version = schema_version or self.schema_version
+        asset = self._assembler.generate(prompt, seed=seed, schema_version=effective_version)
 
         timestamp = asset.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        provenance = asset.setdefault("provenance", {})
+        resolved_schema = asset.get("$schema")
+        schema_version_value = None
+        if isinstance(resolved_schema, str) and "/" in resolved_schema:
+            schema_version_value = resolved_schema.split("/")[-2]
+        target_version = schema_version or self.schema_version or schema_version_value or "0.7.3"
+
+        if target_version == "0.7.3":
+            meta = asset.setdefault("meta_info", {})
+            provenance = meta.setdefault("provenance", {})
+        else:
+            provenance = asset.setdefault("provenance", {})
         provenance.setdefault("agent", "AssetAssembler")
         provenance.setdefault("version", self._assembler.version)
         generator_block = provenance.setdefault("generator", {})
@@ -74,6 +93,9 @@ class GeneratorAgent:
         meta_provenance.setdefault("trace_id", trace_id)
         meta_provenance.setdefault("mode", "local")
         meta_provenance.setdefault("timestamp", timestamp)
+
+        if target_version != "0.7.3":
+            asset.setdefault("provenance", provenance)
 
         self._logger.info("Generated asset %s", asset.get("asset_id"))
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import uuid
+import os
 from copy import deepcopy
 from typing import Dict, Iterable, List, Optional, Sequence, Set
 
@@ -17,10 +18,26 @@ from .shader import ShaderGenerator
 from .tone import ToneGenerator
 
 
+DEFAULT_SCHEMA_VERSION = "0.7.3"
+
+
+def resolve_schema_version(value: Optional[str] = None) -> str:
+    if value:
+        return value
+    env_value = os.getenv("LABS_SCHEMA_VERSION")
+    if env_value:
+        return env_value
+    return DEFAULT_SCHEMA_VERSION
+
+
+def schema_url_for(version: str) -> str:
+    return f"https://schemas.synesthetic.dev/{version}/synesthetic-asset.schema.json"
+
+
 class AssetAssembler:
     """Compose component generators into a full Synesthetic asset."""
 
-    SCHEMA_URL = "meta/schemas/synesthetic-asset.schema.json"
+    SCHEMA_URL = schema_url_for(DEFAULT_SCHEMA_VERSION)
 
     def __init__(
         self,
@@ -33,6 +50,7 @@ class AssetAssembler:
         meta_generator: Optional[MetaGenerator] = None,
         modulation_generator: Optional[ModulationGenerator] = None,
         rule_bundle_generator: Optional[RuleBundleGenerator] = None,
+        schema_version: Optional[str] = None,
     ) -> None:
         self.version = version
         self._shader = shader_generator or ShaderGenerator(version=version)
@@ -42,12 +60,22 @@ class AssetAssembler:
         self._meta = meta_generator or MetaGenerator(version=version)
         self._modulation = modulation_generator or ModulationGenerator(version=version)
         self._rule_bundle = rule_bundle_generator or RuleBundleGenerator(version=version)
+        self.schema_version = resolve_schema_version(schema_version)
 
-    def generate(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, object]:
+    def generate(
+        self,
+        prompt: str,
+        *,
+        seed: Optional[int] = None,
+        schema_version: Optional[str] = None,
+    ) -> Dict[str, object]:
         """Return a fully wired Synesthetic asset for *prompt*."""
 
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
+
+        target_version = resolve_schema_version(schema_version or self.schema_version)
+        schema_url = schema_url_for(target_version)
 
         if seed is not None:
             asset_id, timestamp = self._deterministic_identifiers(prompt, seed)
@@ -84,8 +112,43 @@ class AssetAssembler:
             trace_id=asset_id,
         )
 
-        asset: Dict[str, object] = {
-            "$schema": self.SCHEMA_URL,
+        meta_info_block.setdefault(
+            "provenance",
+            self._build_meta_provenance(
+                timestamp=timestamp,
+                seed=seed,
+                trace_id=asset_id,
+            ),
+        )
+
+        if target_version == "0.7.3":
+            meta_info_block.setdefault("title", prompt)
+            meta_info_block.setdefault("description", f"Legacy asset for {prompt}")
+            meta_provenance = meta_info_block.setdefault("provenance", {})
+            for key, value in provenance_block.items():
+                meta_provenance.setdefault(key, value)
+
+            asset: Dict[str, object] = {
+                "$schema": schema_url,
+                "asset_id": asset_id,
+                "name": prompt,
+                "prompt": prompt,
+                "timestamp": timestamp,
+                "shader": shader_block,
+                "tone": tone_block,
+                "haptic": haptic_block,
+                "control": control_block,
+                "modulations": modulations_block,
+                "rule_bundle": rule_bundle_block,
+                "meta_info": meta_info_block,
+                "parameter_index": sorted(parameter_index),
+            }
+            if seed is not None:
+                asset["seed"] = seed
+            return asset
+
+        asset = {
+            "$schema": schema_url,
             "asset_id": asset_id,
             "prompt": prompt,
             "seed": seed,
@@ -98,14 +161,14 @@ class AssetAssembler:
             "rule_bundle": rule_bundle_block,
             "meta_info": meta_info_block,
             "parameter_index": sorted(parameter_index),
+            "input_parameters": self._build_input_parameter_catalog(
+                shader_block,
+                tone_block,
+                haptic_block,
+            ),
+            "effects": [],
             "provenance": provenance_block,
         }
-
-        meta_info_block.setdefault("provenance", self._build_meta_provenance(
-            timestamp=timestamp,
-            seed=seed,
-            trace_id=asset_id,
-        ))
 
         return asset
 
@@ -128,6 +191,35 @@ class AssetAssembler:
                 if parameter:
                     parameters.add(parameter)
         return parameters
+
+    @staticmethod
+    def _build_input_parameter_catalog(
+        shader: Dict[str, object],
+        tone: Dict[str, object],
+        haptic: Dict[str, object],
+    ) -> List[Dict[str, object]]:
+        catalog: List[Dict[str, object]] = []
+        for section_name, block in (
+            ("shader", shader),
+            ("tone", tone),
+            ("haptic", haptic),
+        ):
+            entries = block.get("input_parameters")
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                parameter_name = entry.get("parameter")
+                if not parameter_name:
+                    continue
+                catalog.append(
+                    {
+                        "parameter": parameter_name,
+                        "section": section_name,
+                    }
+                )
+        return catalog
 
     @staticmethod
     def _prune_controls(

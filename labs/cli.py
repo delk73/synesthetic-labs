@@ -86,6 +86,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         choices=("gemini", "openai", "deterministic"),
         help="Optional external engine to fulfil the prompt",
     )
+    generate_parser.add_argument(
+        "--schema-version",
+        type=str,
+        default=os.getenv("LABS_SCHEMA_VERSION", "0.7.3"),
+        help="Target schema version (default: 0.7.3)",
+    )
     generate_parser.add_argument("--seed", type=int, help="Optional random seed for generation")
     generate_parser.add_argument("--temperature", type=float, help="Temperature override for external engines")
     generate_parser.add_argument("--timeout-s", dest="timeout_s", type=int, help="Override external call timeout (seconds)")
@@ -114,6 +120,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.command == "generate":
         engine = getattr(args, "engine", None)
+        schema_version = getattr(args, "schema_version", None)
+        if schema_version:
+            os.environ["LABS_SCHEMA_VERSION"] = schema_version
         generator: Optional[GeneratorAgent] = None
         external_context: Optional[Dict[str, Any]] = None
 
@@ -127,6 +136,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                 external_parameters["temperature"] = args.temperature
             timeout_value = float(args.timeout_s) if args.timeout_s is not None else None
             try:
+                if schema_version:
+                    external_parameters["schema_version"] = schema_version
                 asset, external_context = external_generator.generate(
                     args.prompt,
                     parameters=external_parameters or None,
@@ -139,7 +150,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 return 1
         else:
             generator = GeneratorAgent()
-            asset = generator.propose(args.prompt, seed=args.seed)
+            asset = generator.propose(args.prompt, seed=args.seed, schema_version=schema_version)
 
         try:
             validator_callback = _build_validator_optional()
