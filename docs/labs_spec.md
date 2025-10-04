@@ -22,7 +22,13 @@ owner: labs-core
 
 ---
 
-## Scope (v0.3.5 Generator Schema Awareness)
+## Scope (v0.3.5 Schema-Aware Generator)
+
+Generator now enforces schema_version branching.
+- 0.7.3 (legacy): root has name + meta_info.provenance only; forbidden fields asset_id/timestamp/prompt/provenance/modulations/rule_bundle/seed removed; controls section uses controls.mappings[].
+- ≥0.7.4 (enriched): root must include asset_id, prompt, timestamp, parameter_index, provenance; all other sections allowed.
+
+All assets always include a top-level $schema URL.
 
 ### Objectives
 - Add **schema version targeting** for asset generation.

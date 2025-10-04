@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, Optional
 from labs.agents.critic import CriticAgent, is_fail_fast_enabled
 from labs.agents.generator import GeneratorAgent
 from labs.generator.external import ExternalGenerationError, build_external_generator
+from labs.generator.assembler import AssetAssembler
 from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
 from labs.patches import apply_patch, preview_patch, rate_patch
 
@@ -36,13 +37,16 @@ def _experiments_dir() -> str:
 
 
 def _persist_asset(asset: Dict[str, Any]) -> str:
-    if "asset_id" not in asset:
-        raise ValueError("asset must include an 'asset_id'")
+    identifier = GeneratorAgent.resolve_identifier(asset)
+    if not identifier:
+        raise ValueError("asset must include an identifier")
+
+    safe_identifier = str(identifier).replace(os.sep, "_")
 
     experiments_dir = _experiments_dir()
     os.makedirs(experiments_dir, exist_ok=True)
 
-    path = os.path.join(experiments_dir, f"{asset['asset_id']}.json")
+    path = os.path.join(experiments_dir, f"{safe_identifier}.json")
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(asset, handle, sort_keys=True, indent=2)
         handle.write("\n")
@@ -86,6 +90,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         choices=("gemini", "openai", "deterministic"),
         help="Optional external engine to fulfil the prompt",
     )
+    generate_parser.add_argument(
+        "--schema-version",
+        type=str,
+        default=os.getenv("LABS_SCHEMA_VERSION", AssetAssembler.DEFAULT_SCHEMA_VERSION),
+        help="Target schema version (default: 0.7.3)",
+    )
     generate_parser.add_argument("--seed", type=int, help="Optional random seed for generation")
     generate_parser.add_argument("--temperature", type=float, help="Temperature override for external engines")
     generate_parser.add_argument("--timeout-s", dest="timeout_s", type=int, help="Override external call timeout (seconds)")
@@ -116,6 +126,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         engine = getattr(args, "engine", None)
         generator: Optional[GeneratorAgent] = None
         external_context: Optional[Dict[str, Any]] = None
+        schema_version = getattr(args, "schema_version", AssetAssembler.DEFAULT_SCHEMA_VERSION)
 
         if args.strict is not None:
             os.environ["LABS_FAIL_FAST"] = "1" if args.strict else "0"
@@ -132,6 +143,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     parameters=external_parameters or None,
                     seed=args.seed,
                     timeout=timeout_value,
+                    schema_version=schema_version,
                 )
             except ExternalGenerationError as exc:
                 external_generator.record_failure(exc)
@@ -139,7 +151,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                 return 1
         else:
             generator = GeneratorAgent()
-            asset = generator.propose(args.prompt, seed=args.seed)
+            asset = generator.propose(
+                args.prompt, seed=args.seed, schema_version=schema_version
+            )
 
         try:
             validator_callback = _build_validator_optional()

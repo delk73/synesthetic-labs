@@ -31,7 +31,9 @@ _JITTER_FRACTION = 0.2
 
 SENSITIVE_HEADERS = {"authorization"}
 
-_BASELINE_ASSET = AssetAssembler().generate("external-normalization-baseline", seed=0)
+_BASELINE_ASSET = AssetAssembler().generate(
+    "external-normalization-baseline", seed=0, schema_version="0.7.4"
+)
 _DEFAULT_SECTIONS = {
     key: deepcopy(_BASELINE_ASSET[key])
     for key in ("shader", "tone", "haptic", "control", "meta_info", "rule_bundle")
@@ -142,6 +144,7 @@ class ExternalGenerator:
         seed: Optional[int] = None,
         timeout: Optional[float] = None,
         trace_id: Optional[str] = None,
+        schema_version: Optional[str] = None,
     ) -> Tuple[JsonDict, JsonDict]:
         """Return an asset assembled from an external API response."""
 
@@ -154,6 +157,8 @@ class ExternalGenerator:
             parameters.setdefault(key, value)
         if seed is not None:
             parameters.setdefault("seed", seed)
+
+        resolved_schema_version = schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION
 
         attempts: List[JsonDict] = []
         strict_mode = _strict_mode_enabled()
@@ -225,6 +230,7 @@ class ExternalGenerator:
                     mode="mock" if self.mock_mode else "live",
                     endpoint=endpoint,
                     response_hash=response_hash,
+                    schema_version=resolved_schema_version,
                 )
 
                 context: JsonDict = {
@@ -250,6 +256,8 @@ class ExternalGenerator:
                         "redacted": not self.mock_mode,
                     },
                     "asset": asset,
+                    "schema_version": resolved_schema_version,
+                    "$schema": asset.get("$schema"),
                 }
                 return asset, context
             except ExternalRequestError as exc:
@@ -326,9 +334,13 @@ class ExternalGenerator:
             "generated_at": context.get("generated_at"),
             "experiment_path": experiment_path,
             "status": status,
+            "schema_version": context.get("schema_version"),
+            "$schema": context.get("asset", {}).get("$schema"),
         }
 
-        if not review.get("ok"):
+        if review.get("ok"):
+            record["failure"] = None
+        else:
             record["failure"] = {
                 "reason": review.get("validation_error", {}).get("reason", "validation_failed"),
                 "detail": review.get("validation_error", {}).get("detail")
@@ -425,6 +437,7 @@ class ExternalGenerator:
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:  # pragma: no cover - abstract
         raise NotImplementedError
 
@@ -553,6 +566,7 @@ class ExternalGenerator:
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:
         if not isinstance(asset_payload, dict):
             raise ExternalRequestError("bad_response", "asset_not_object", retryable=False)
@@ -579,8 +593,9 @@ class ExternalGenerator:
                 "haptic": haptic_section,
             }
         )
+        parameter_index_sorted = sorted(parameter_index)
 
-        control_section = self._build_control_section(
+        control_section, control_mappings = self._build_control_section(
             canonical.get("control"),
             canonical.get("controls"),
             parameter_index,
@@ -618,7 +633,7 @@ class ExternalGenerator:
         )
 
         asset: JsonDict = {
-            "$schema": AssetAssembler.SCHEMA_URL,
+            "$schema": AssetAssembler.schema_url_for(schema_version),
             "asset_id": asset_id,
             "prompt": prompt,
             "seed": parameters.get("seed"),
@@ -630,11 +645,21 @@ class ExternalGenerator:
             "modulations": modulations,
             "rule_bundle": rule_bundle,
             "meta_info": meta_info,
-            "parameter_index": sorted(parameter_index),
+            "parameter_index": parameter_index_sorted,
             "provenance": provenance_block,
         }
 
-        return asset
+        return AssetAssembler.enforce_schema_rules(
+            asset,
+            schema_version=schema_version,
+            prompt=prompt,
+            meta_info_block=meta_info,
+            provenance_block=provenance_block,
+            parameter_index=parameter_index_sorted,
+            control_mappings=control_mappings,
+            asset_id=asset_id,
+            timestamp=timestamp,
+        )
 
     def _canonicalize_asset(self, payload: JsonDict) -> JsonDict:
         if not isinstance(payload, dict):
@@ -807,7 +832,7 @@ class ExternalGenerator:
         control_payload: Any,
         legacy_controls: Any,
         parameter_index: List[str],
-    ) -> Dict[str, Any]:
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         base = deepcopy(_DEFAULT_SECTIONS["control"])
         control_parameters = []
         mappings: List[Dict[str, Any]] = []
@@ -830,7 +855,38 @@ class ExternalGenerator:
             control_parameters = deepcopy(_DEFAULT_CONTROL_PARAMETERS)
 
         base["control_parameters"] = control_parameters
-        return base
+        if not mappings:
+            mappings = self._control_parameters_to_mappings(control_parameters)
+        return base, mappings
+
+    def _control_parameters_to_mappings(
+        self, control_parameters: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        mappings: List[Dict[str, Any]] = []
+        for parameter in control_parameters:
+            param_name = parameter.get("parameter")
+            if not isinstance(param_name, str):
+                continue
+            combos = parameter.get("combo")
+            combo = combos[0] if isinstance(combos, list) and combos else {}
+            if not isinstance(combo, dict):
+                combo = {}
+            mapping: Dict[str, Any] = {
+                "id": parameter.get("id"),
+                "parameter": param_name,
+                "input": {
+                    "device": combo.get("device"),
+                    "control": combo.get("control"),
+                },
+                "mode": parameter.get("mode", "absolute"),
+                "curve": parameter.get("curve", "linear"),
+            }
+            if isinstance(parameter.get("range"), dict):
+                mapping["range"] = deepcopy(parameter["range"])
+            if parameter.get("invert") is not None:
+                mapping["invert"] = parameter.get("invert")
+            mappings.append(mapping)
+        return mappings
 
     def _build_control_parameters(
         self,
@@ -1106,6 +1162,7 @@ class GeminiGenerator(ExternalGenerator):
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:
         asset_payload = response.get("asset")
         if not isinstance(asset_payload, dict):
@@ -1119,6 +1176,7 @@ class GeminiGenerator(ExternalGenerator):
             mode=mode,
             endpoint=endpoint,
             response_hash=response_hash,
+            schema_version=schema_version,
         )
 
 
@@ -1196,6 +1254,7 @@ class OpenAIGenerator(ExternalGenerator):
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:
         asset_payload = response.get("asset")
         if not isinstance(asset_payload, dict):
@@ -1209,6 +1268,7 @@ class OpenAIGenerator(ExternalGenerator):
             mode=mode,
             endpoint=endpoint,
             response_hash=response_hash,
+            schema_version=schema_version,
         )
         provenance = dict(asset.get("provenance") or {})
         provenance["openai_object"] = response.get("object")

@@ -20,7 +20,16 @@ from .tone import ToneGenerator
 class AssetAssembler:
     """Compose component generators into a full Synesthetic asset."""
 
-    SCHEMA_URL = "meta/schemas/synesthetic-asset.schema.json"
+    SCHEMA_BASE_URL = "https://schemas.synesthetic.dev"
+    DEFAULT_SCHEMA_VERSION = "0.7.3"
+    SCHEMA_URL = (
+        f"{SCHEMA_BASE_URL}/{DEFAULT_SCHEMA_VERSION}/synesthetic-asset.schema.json"
+    )
+
+    @classmethod
+    def schema_url_for(cls, schema_version: Optional[str]) -> str:
+        version = (schema_version or cls.DEFAULT_SCHEMA_VERSION).strip()
+        return f"{cls.SCHEMA_BASE_URL}/{version}/synesthetic-asset.schema.json"
 
     def __init__(
         self,
@@ -43,11 +52,15 @@ class AssetAssembler:
         self._modulation = modulation_generator or ModulationGenerator(version=version)
         self._rule_bundle = rule_bundle_generator or RuleBundleGenerator(version=version)
 
-    def generate(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, object]:
+    def generate(
+        self, prompt: str, *, seed: Optional[int] = None, schema_version: Optional[str] = None
+    ) -> Dict[str, object]:
         """Return a fully wired Synesthetic asset for *prompt*."""
 
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
+
+        resolved_schema_version = schema_version or self.DEFAULT_SCHEMA_VERSION
 
         if seed is not None:
             asset_id, timestamp = self._deterministic_identifiers(prompt, seed)
@@ -84,8 +97,10 @@ class AssetAssembler:
             trace_id=asset_id,
         )
 
+        parameter_index_list = sorted(parameter_index)
+
         asset: Dict[str, object] = {
-            "$schema": self.SCHEMA_URL,
+            "$schema": self.schema_url_for(resolved_schema_version),
             "asset_id": asset_id,
             "prompt": prompt,
             "seed": seed,
@@ -97,7 +112,7 @@ class AssetAssembler:
             "modulations": modulations_block,
             "rule_bundle": rule_bundle_block,
             "meta_info": meta_info_block,
-            "parameter_index": sorted(parameter_index),
+            "parameter_index": parameter_index_list,
             "provenance": provenance_block,
         }
 
@@ -107,7 +122,17 @@ class AssetAssembler:
             trace_id=asset_id,
         ))
 
-        return asset
+        return self.enforce_schema_rules(
+            asset,
+            schema_version=resolved_schema_version,
+            prompt=prompt,
+            meta_info_block=meta_info_block,
+            provenance_block=provenance_block,
+            parameter_index=parameter_index_list,
+            control_mappings=pruned_mappings,
+            asset_id=asset_id,
+            timestamp=timestamp,
+        )
 
     def _deterministic_identifiers(self, prompt: str, seed: int) -> tuple[str, str]:
         digest = hashlib.sha1(f"{prompt}|{seed}|{self.version}".encode("utf-8")).hexdigest()
@@ -139,6 +164,58 @@ class AssetAssembler:
             if parameter in parameter_index:
                 sanitized.append(deepcopy(mapping))
         return sanitized
+
+    @classmethod
+    def enforce_schema_rules(
+        cls,
+        asset: Dict[str, object],
+        *,
+        schema_version: str,
+        prompt: str,
+        meta_info_block: Dict[str, object],
+        provenance_block: Dict[str, object],
+        parameter_index: Sequence[str],
+        control_mappings: Sequence[Dict[str, object]],
+        asset_id: str,
+        timestamp: str,
+    ) -> Dict[str, object]:
+        resolved_version = (schema_version or cls.DEFAULT_SCHEMA_VERSION).strip()
+        normalized = deepcopy(asset)
+        normalized["$schema"] = cls.schema_url_for(resolved_version)
+
+        if resolved_version.startswith("0.7.3"):
+            legacy_provenance = deepcopy(meta_info_block.get("provenance") or {})
+            if not legacy_provenance and isinstance(provenance_block, dict):
+                generator_block = provenance_block.get("generator")  # type: ignore[assignment]
+                if isinstance(generator_block, dict):
+                    trace_id = generator_block.get("trace_id")
+                    if trace_id:
+                        legacy_provenance = {"trace_id": trace_id}
+
+            legacy_asset: Dict[str, object] = {
+                "$schema": normalized["$schema"],
+                "name": meta_info_block.get("title") or prompt,
+                "shader": deepcopy(normalized.get("shader", {})),
+                "tone": deepcopy(normalized.get("tone", {})),
+                "haptic": deepcopy(normalized.get("haptic", {})),
+                "controls": {"mappings": deepcopy(list(control_mappings))},
+                "meta_info": {"provenance": legacy_provenance or {}},
+            }
+
+            if not isinstance(legacy_asset["controls"], dict):
+                legacy_asset["controls"] = {"mappings": []}
+            elif not isinstance(legacy_asset["controls"].get("mappings"), list):
+                legacy_asset["controls"]["mappings"] = []
+
+            return legacy_asset
+
+        normalized.setdefault("asset_id", asset_id)
+        normalized.setdefault("timestamp", timestamp)
+        normalized.setdefault("prompt", prompt)
+        normalized["parameter_index"] = list(parameter_index)
+        normalized["provenance"] = deepcopy(provenance_block)
+        normalized["meta_info"] = deepcopy(meta_info_block)
+        return normalized
 
     def _build_shader(self, payload: Dict[str, object]) -> Dict[str, object]:
         shader = deepcopy(payload)

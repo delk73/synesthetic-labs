@@ -20,11 +20,11 @@ def _parameter_names(asset: Dict[str, object]) -> Set[str]:
 
 def test_asset_assembler_produces_consistent_payload() -> None:
     assembler = AssetAssembler()
-    asset = assembler.generate("assembler smoke test")
+    asset = assembler.generate("assembler smoke test", schema_version="0.7.4")
 
     assert asset["prompt"] == "assembler smoke test"
     assert isinstance(asset["asset_id"], str)
-    assert asset["$schema"] == AssetAssembler.SCHEMA_URL
+    assert asset["$schema"] == AssetAssembler.schema_url_for("0.7.4")
     assert asset["provenance"]["agent"] == "AssetAssembler"
 
     parameters = _parameter_names(asset)
@@ -36,3 +36,16 @@ def test_asset_assembler_produces_consistent_payload() -> None:
     assert isinstance(asset["modulations"], list)
     assert asset["modulations"]
     assert asset["rule_bundle"]["rules"]
+
+
+def test_asset_assembler_legacy_branch() -> None:
+    assembler = AssetAssembler()
+    asset = assembler.generate("legacy smoke test", schema_version="0.7.3")
+
+    assert asset["$schema"] == AssetAssembler.schema_url_for("0.7.3")
+    assert "name" in asset
+    assert "controls" in asset
+    assert "control" not in asset
+    assert set(asset["meta_info"].keys()) == {"provenance"}
+    forbidden = {"asset_id", "timestamp", "prompt", "provenance", "rule_bundle", "modulations", "parameter_index", "seed"}
+    assert forbidden.isdisjoint(asset.keys())

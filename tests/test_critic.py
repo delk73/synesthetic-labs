@@ -9,11 +9,13 @@ import pytest
 
 from labs import mcp_stdio
 from labs.agents.critic import CriticAgent, MCPUnavailableError
+from labs.generator.assembler import AssetAssembler
 
 
 @pytest.fixture()
 def base_asset() -> dict:
     return {
+        "$schema": AssetAssembler.schema_url_for("0.7.4"),
         "asset_id": "proposal-1",
         "timestamp": "2024-01-01T00:00:00+00:00",
         "prompt": "aurora sweep",
@@ -37,6 +39,47 @@ def test_missing_fields_flagged(tmp_path, monkeypatch) -> None:
         "reason": "mcp_unavailable",
         "detail": "tcp_unavailable",
     }
+
+
+def test_legacy_schema_validation(tmp_path) -> None:
+
+    def validator(payload: dict) -> dict:
+        return {"status": "ok", "name": payload["name"]}
+
+    legacy_asset = {
+        "$schema": AssetAssembler.schema_url_for("0.7.3"),
+        "name": "Legacy Asset",
+        "shader": {},
+        "tone": {},
+        "haptic": {},
+        "controls": {"mappings": []},
+        "meta_info": {"provenance": {"trace_id": "legacy"}},
+    }
+
+    critic = CriticAgent(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
+    review = critic.review(legacy_asset)
+
+    assert review["ok"] is True
+    assert review["issues"] == []
+    assert review["validation_status"] == "passed"
+
+
+def test_legacy_schema_missing_name_flagged(tmp_path) -> None:
+    critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
+    asset = {
+        "$schema": AssetAssembler.schema_url_for("0.7.3"),
+        "shader": {},
+        "tone": {},
+        "haptic": {},
+        "controls": {"mappings": []},
+        "meta_info": {},
+    }
+
+    review = critic.review(asset)
+
+    assert review["ok"] is False
+    assert "missing required field: name" in review["issues"]
+    assert "missing required field: meta_info.provenance" in review["issues"]
 
 
 def test_successful_validation(tmp_path, base_asset) -> None:

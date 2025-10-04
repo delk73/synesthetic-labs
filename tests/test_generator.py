@@ -12,7 +12,7 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     log_path = tmp_path / "generator.jsonl"
     agent = GeneratorAgent(log_path=str(log_path))
 
-    asset = agent.propose("synthwave pulse")
+    asset = agent.propose("synthwave pulse", schema_version="0.7.4")
 
     for field in ("asset_id", "timestamp", "prompt", "provenance", "meta_info"):
         assert field in asset
@@ -29,6 +29,7 @@ def test_generator_propose_writes_log(tmp_path) -> None:
         assert section in asset
         assert "input_parameters" in asset[section]
 
+    assert asset["$schema"].endswith("/0.7.4/synesthetic-asset.schema.json")
     assert "control_parameters" in asset["control"]
     assert isinstance(asset["modulations"], list)
     assert isinstance(asset["rule_bundle"], dict)
@@ -44,6 +45,25 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     assert logged["mode"] == "local"
     assert isinstance(logged["strict"], bool)
     assert logged["transport"] == resolve_mcp_endpoint()
+    assert logged["schema_version"] == "0.7.4"
+
+
+def test_generator_propose_legacy_schema(tmp_path) -> None:
+    log_path = tmp_path / "generator.jsonl"
+    agent = GeneratorAgent(log_path=str(log_path))
+
+    asset = agent.propose("legacy baseline", schema_version="0.7.3")
+
+    assert asset["$schema"].endswith("/0.7.3/synesthetic-asset.schema.json")
+    assert "name" in asset
+    assert asset["name"]
+    assert "controls" in asset and isinstance(asset["controls"], dict)
+    assert isinstance(asset["controls"].get("mappings"), list)
+    assert "meta_info" in asset and set(asset["meta_info"].keys()) == {"provenance"}
+    assert asset["meta_info"]["provenance"]
+
+    forbidden = {"asset_id", "timestamp", "prompt", "provenance", "modulations", "rule_bundle", "seed", "parameter_index", "control"}
+    assert forbidden.isdisjoint(asset.keys())
 
 
 def test_record_experiment_logs_experiment_path(tmp_path) -> None:

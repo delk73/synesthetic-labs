@@ -11,7 +11,7 @@ from labs.logging import log_jsonl
 
 def test_asset_assembler_end_to_end(tmp_path) -> None:
     assembler = AssetAssembler()
-    asset = assembler.generate("e2e wiring test", seed=1234)
+    asset = assembler.generate("e2e wiring test", seed=1234, schema_version="0.7.4")
 
     output_dir = tmp_path / "meta" / "output" / "test_generator"
     output_dir.mkdir(parents=True, exist_ok=True)

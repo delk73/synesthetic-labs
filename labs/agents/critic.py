@@ -32,8 +32,6 @@ def is_fail_fast_enabled() -> bool:
 class CriticAgent:
     """Review assets and surface issues before handing off to MCP validation."""
 
-    REQUIRED_KEYS = ("asset_id", "timestamp", "prompt", "provenance")
-
     def __init__(
         self,
         validator: Optional[ValidatorType] = None,
@@ -70,10 +68,21 @@ class CriticAgent:
         if not isinstance(asset, dict):
             raise ValueError("asset must be a dictionary")
 
+        schema_url = str(asset.get("$schema", ""))
+        is_legacy = "0.7.3" in schema_url
+
         issues: List[str] = []
-        for key in self.REQUIRED_KEYS:
-            if key not in asset:
-                issues.append(f"missing required field: {key}")
+        if is_legacy:
+            if "name" not in asset:
+                issues.append("missing required field: name")
+            meta_info = asset.get("meta_info") if isinstance(asset, dict) else {}
+            provenance = meta_info.get("provenance") if isinstance(meta_info, dict) else None
+            if not provenance:
+                issues.append("missing required field: meta_info.provenance")
+        else:
+            for key in ("asset_id", "timestamp", "prompt", "provenance"):
+                if key not in asset:
+                    issues.append(f"missing required field: {key}")
 
         fail_fast = is_fail_fast_enabled()
         validation_status = "pending"
