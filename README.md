@@ -21,6 +21,7 @@ Run `python -m labs.cli --help` to explore the CLI:
 * `python -m labs.cli generate "describe the asset"`
 * `python -m labs.cli generate --engine deterministic "prompt"`
 * `python -m labs.cli generate --engine gemini "external prompt"`
+* `python -m labs.cli generate --schema-version 0.7.4 "forward-compatible"`
 * `python -m labs.cli critique '{"asset_id": "abc", ...}'`
 * `python -m labs.cli preview '{"asset_id": "asset"}' '{"id": "patch", "updates": {...}}'`
 * `python -m labs.cli apply '{"asset_id": "asset"}' '{"id": "patch", "updates": {...}}'`
@@ -47,9 +48,11 @@ python -m labs.mcp --path "$MCP_SOCKET_PATH"  # launches the bundled adapter onc
 
 If `MCP_ENDPOINT` is unset or set to an unsupported value, Labs automatically falls back to the TCP transport so validation can still run with the host/port defaults.
 
-All assets emitted by the generator and accepted by the MCP validator are
-required to include a top-level `$schema` field that points at the bundled
-`meta/schemas/synesthetic-asset.schema.json`. Validator responses surface a
+All assets emitted by the generator and accepted by the MCP validator include a
+top-level `$schema` field that points to the hosted schema corpus
+(`https://schemas.synesthetic.dev/<version>/synesthetic-asset.schema.json`).
+Set `--schema-version` on the CLI or export `LABS_SCHEMA_VERSION` to target a
+specific corpus version (defaults to `0.7.3`). Validator responses surface a
 `validation_failed` error on `/$schema` when the field is missing or when the
 legacy `$schemaRef` value is provided.
 
@@ -96,7 +99,7 @@ Highlights:
 
 - `labs/generator/external.py` loads provider credentials from env, injects `Authorization` headers in live mode, enforces 256 KiB/1 MiB size caps, and retries with exponential backoff based on the spec taxonomy.
 - Every run appends a JSONL entry under `meta/output/labs/external.jsonl` capturing the trace ID, transport, strict flag, redacted request headers, raw response hash/size, normalized asset, and MCP validation result.
-- Live runs require `LABS_EXTERNAL_LIVE=1` plus provider keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`); keys are redacted in logs and provenance metadata is written under `asset.meta_info.provenance`.
+- Live runs require `LABS_EXTERNAL_LIVE=1` plus provider keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`); keys are redacted in logs and provenance metadata is written under `asset.provenance` for schema versions ≥0.7.4 (fallbacks use `asset.meta_info.provenance` for 0.7.3 legacy payloads).
 - The CLI exposes `--seed`, `--temperature`, `--timeout-s`, and `--strict/--relaxed` flags so operators can control determinism, request budgets, and fail-fast behaviour.
 - See `docs/troubleshooting_external.md` for error taxonomy hints (`auth_error`, `rate_limited`, `timeout`, `bad_response`, `server_error`, `network_error`).
 

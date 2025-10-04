@@ -20,7 +20,7 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     log_path = tmp_path / "external.jsonl"
     generator = GeminiGenerator(log_path=str(log_path), mock_mode=True, sleeper=lambda _: None)
 
-    asset, context = generator.generate("ambient waves")
+    asset, context = generator.generate("ambient waves", schema_version="0.7.4")
 
     assert asset["prompt"] == "ambient waves"
     provenance = asset["provenance"]["generator"]
@@ -28,7 +28,8 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     assert provenance["mode"] == "mock"
     assert provenance["api_version"] == generator.api_version
     assert asset["control"]["control_parameters"]
-    assert asset["meta_info"]["provenance"]["engine"] == "gemini"
+    assert asset["meta_info"]["provenance"]["trace_id"] == provenance["trace_id"]
+    assert context["schema_version"] == "0.7.4"
 
     review = {
         "ok": True,
@@ -52,7 +53,7 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     assert record["engine"] == "gemini"
     assert record["status"] == "validation_passed"
     assert (
-        record["normalized_asset"]["meta_info"]["provenance"]["trace_id"]
+        record["normalized_asset"]["provenance"]["generator"]["trace_id"]
         == context["trace_id"]
     )
     assert record["raw_response"]["hash"] == context["raw_response"]["hash"]
@@ -61,6 +62,9 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     assert record["strict"] is True
     assert record["mode"] == "mock"
     assert record["experiment_path"] == "experiments/mock.json"
+    assert record["schema_version"] == "0.7.4"
+    assert record["$schema"] == asset["$schema"]
+    assert record["failure"] is None
 
 
 def test_external_generator_logs_failure_when_transport_errors(monkeypatch, tmp_path) -> None:
@@ -82,7 +86,7 @@ def test_external_generator_logs_failure_when_transport_errors(monkeypatch, tmp_
     )
 
     with pytest.raises(ExternalGenerationError) as excinfo:
-        generator.generate("aurora error")
+        generator.generate("aurora error", schema_version="0.7.4")
 
     generator.record_failure(excinfo.value)
 
@@ -137,8 +141,8 @@ def test_live_header_injection(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(OpenAIGenerator, "_post_json", fake_post_json, raising=False)
 
-    asset, context = generator.generate("live prompt", seed=7, timeout=5)
-    assert asset["meta_info"]["provenance"]["mode"] == "live"
+    asset, context = generator.generate("live prompt", seed=7, timeout=5, schema_version="0.7.4")
+    assert asset["provenance"]["generator"]["mode"] == "live"
     assert captured["headers"]["Authorization"] == "Bearer live-123"
     assert context["request_headers"]["Authorization"] == "***redacted***"
     assert context["mode"] == "live"
@@ -153,7 +157,7 @@ def test_mock_mode_headers_are_empty(tmp_path) -> None:
         sleeper=lambda _: None,
     )
 
-    _asset, context = generator.generate("mock prompt")
+    _asset, context = generator.generate("mock prompt", schema_version="0.7.4")
     assert context["mode"] == "mock"
     assert context["request_headers"] == {}
     assert context["endpoint"].startswith("mock://openai")
@@ -175,6 +179,8 @@ def test_mock_mode_headers_are_empty(tmp_path) -> None:
     entry = json.loads(lines[0])
     assert entry["engine"] == "openai"
     assert entry["request_headers"] == {}
+    assert entry["schema_version"] == context.get("schema_version", "0.7.3")
+    assert entry["failure"] is None
 
 
 def test_request_body_size_cap(monkeypatch) -> None:
@@ -190,7 +196,7 @@ def test_request_body_size_cap(monkeypatch) -> None:
     monkeypatch.setattr(GeminiGenerator, "_build_request", oversized_request, raising=False)
 
     with pytest.raises(ExternalGenerationError) as excinfo:
-        generator.generate("oversized")
+        generator.generate("oversized", schema_version="0.7.4")
 
     assert excinfo.value.reason == "bad_response"
     assert excinfo.value.detail == "request_body_exceeds_256KiB"
@@ -212,7 +218,7 @@ def test_response_body_size_cap(monkeypatch) -> None:
     monkeypatch.setattr(OpenAIGenerator, "_post_json", huge_response, raising=False)
 
     with pytest.raises(ExternalGenerationError) as excinfo:
-        generator.generate("oversized-response")
+        generator.generate("oversized-response", schema_version="0.7.4")
 
     assert excinfo.value.reason == "bad_response"
     assert excinfo.value.detail == "response_body_exceeds_1MiB"
@@ -226,7 +232,7 @@ def test_no_retry_on_auth_error(monkeypatch) -> None:
     generator = GeminiGenerator(mock_mode=False, sleeper=lambda _: None, max_retries=3)
 
     with pytest.raises(ExternalGenerationError) as excinfo:
-        generator.generate("auth fail")
+        generator.generate("auth fail", schema_version="0.7.4")
 
     trace = excinfo.value.trace
     assert excinfo.value.reason == "auth_error"
@@ -254,7 +260,7 @@ def test_rate_limited_retries(monkeypatch) -> None:
 
     monkeypatch.setattr(OpenAIGenerator, "_post_json", flaky_post_json, raising=False)
 
-    asset, context = generator.generate("rate limited")
+    asset, context = generator.generate("rate limited", schema_version="0.7.4")
 
     assert call_count["n"] == 3
     assert asset["asset_id"]
@@ -287,8 +293,9 @@ def test_normalization_populates_defaults() -> None:
         mode="mock",
         endpoint="https://example.com",
         response_hash="abc123def4567890",
+        schema_version="0.7.4",
     )
-    assert asset["meta_info"]["provenance"]["engine"] == "gemini"
+    assert asset["provenance"]["generator"]["engine"] == "gemini"
     control_pairs = {
         tuple((combo.get("device"), combo.get("control")))
         for parameter in asset["control"]["control_parameters"]
@@ -322,6 +329,7 @@ def test_normalization_rejects_unknown_keys() -> None:
             mode="mock",
             endpoint="mock://gemini",
             response_hash="abc1230000000000",
+            schema_version="0.7.4",
         )
     assert excinfo.value.reason == "bad_response"
     assert excinfo.value.detail.startswith("unknown_key")
@@ -360,6 +368,7 @@ def test_normalization_rejects_out_of_range_values() -> None:
             mode="mock",
             endpoint="mock://gemini",
             response_hash="abc1230000000000",
+            schema_version="0.7.4",
         )
     assert excinfo.value.reason == "bad_response"
     assert "out_of_range" in excinfo.value.detail or "invalid_bounds" in excinfo.value.detail

@@ -29,6 +29,7 @@ def test_prompt_experiment_writes_asset_files(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(prompt_experiment, "GeneratorAgent", build_generator)
     monkeypatch.setattr(prompt_experiment, "CriticAgent", LoggedCriticAgent)
     monkeypatch.setattr(prompt_experiment, "_ensure_validator", lambda: validator)
+    monkeypatch.setenv("LABS_SCHEMA_VERSION", "0.7.4")
 
     exit_code = prompt_experiment.main([str(prompt_file), str(output_dir)])
 

@@ -19,7 +19,7 @@ def _load_schema() -> dict:
 
 def test_internal_asset_matches_schema() -> None:
     assembler = AssetAssembler()
-    asset = assembler.generate("schema validation internal", seed=99)
+    asset = assembler.generate("schema validation internal", seed=99, schema_version="0.7.4")
 
     schema = _load_schema()
     jsonschema.Draft202012Validator(schema).validate(asset)
@@ -27,7 +27,7 @@ def test_internal_asset_matches_schema() -> None:
 
 def test_external_asset_matches_schema() -> None:
     generator = GeminiGenerator(mock_mode=True, sleeper=lambda _: None)
-    asset, _context = generator.generate("schema validation external")
+    asset, _context = generator.generate("schema validation external", schema_version="0.7.4")
 
     schema = _load_schema()
     jsonschema.Draft202012Validator(schema).validate(asset)

@@ -45,7 +45,13 @@ class GeneratorAgent:
         self.version = version
         self._assembler = assembler or AssetAssembler(version=version)
 
-    def propose(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, Any]:
+    def propose(
+        self,
+        prompt: str,
+        *,
+        seed: Optional[int] = None,
+        schema_version: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Return a fully assembled asset for *prompt*.
 
         The payload mirrors the canonical Synesthetic schema sections produced
@@ -56,10 +62,22 @@ class GeneratorAgent:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
 
-        asset = self._assembler.generate(prompt, seed=seed)
+        resolved_schema_version = (schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION).strip()
+        asset = self._assembler.generate(
+            prompt,
+            seed=seed,
+            schema_version=resolved_schema_version,
+        )
 
         timestamp = asset.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        provenance = asset.setdefault("provenance", {})
+        legacy_payload = resolved_schema_version.startswith("0.7.3")
+
+        if legacy_payload:
+            meta = asset.setdefault("meta_info", {})
+            provenance = meta.setdefault("provenance", {})
+        else:
+            provenance = asset.setdefault("provenance", {})
+
         provenance.setdefault("agent", "AssetAssembler")
         provenance.setdefault("version", self._assembler.version)
         generator_block = provenance.setdefault("generator", {})
@@ -70,10 +88,18 @@ class GeneratorAgent:
         generator_block["trace_id"] = trace_id
 
         meta = asset.setdefault("meta_info", {})
-        meta_provenance = meta.setdefault("provenance", {})
-        meta_provenance.setdefault("trace_id", trace_id)
-        meta_provenance.setdefault("mode", "local")
-        meta_provenance.setdefault("timestamp", timestamp)
+        if legacy_payload:
+            meta_provenance = meta.setdefault("provenance", {})
+            meta_provenance.setdefault("trace_id", trace_id)
+            meta_provenance.setdefault("mode", meta_provenance.get("mode", "local"))
+            meta_provenance.setdefault("timestamp", timestamp)
+        else:
+            meta.setdefault("title", meta.get("title") or prompt)
+            meta_provenance = meta.get("provenance")
+            if isinstance(meta_provenance, dict):
+                meta_provenance["trace_id"] = trace_id
+                meta_provenance.setdefault("mode", meta_provenance.get("mode", "local"))
+                meta_provenance.setdefault("timestamp", timestamp)
 
         self._logger.info("Generated asset %s", asset.get("asset_id"))
 
@@ -82,6 +108,7 @@ class GeneratorAgent:
         log_entry["mode"] = "local"
         log_entry["strict"] = _strict_mode_enabled()
         log_entry["transport"] = resolve_mcp_endpoint()
+        log_entry["schema_version"] = resolved_schema_version
 
         log_jsonl(self.log_path, log_entry)
         return asset

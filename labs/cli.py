@@ -86,6 +86,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         choices=("gemini", "openai", "deterministic"),
         help="Optional external engine to fulfil the prompt",
     )
+    generate_parser.add_argument(
+        "--schema-version",
+        type=str,
+        default=os.getenv("LABS_SCHEMA_VERSION", "0.7.3"),
+        help="Target schema version (default: 0.7.3)",
+    )
     generate_parser.add_argument("--seed", type=int, help="Optional random seed for generation")
     generate_parser.add_argument("--temperature", type=float, help="Temperature override for external engines")
     generate_parser.add_argument("--timeout-s", dest="timeout_s", type=int, help="Override external call timeout (seconds)")
@@ -132,6 +138,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                     parameters=external_parameters or None,
                     seed=args.seed,
                     timeout=timeout_value,
+                    schema_version=args.schema_version,
                 )
             except ExternalGenerationError as exc:
                 external_generator.record_failure(exc)
@@ -139,7 +146,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                 return 1
         else:
             generator = GeneratorAgent()
-            asset = generator.propose(args.prompt, seed=args.seed)
+            asset = generator.propose(
+                args.prompt,
+                seed=args.seed,
+                schema_version=args.schema_version,
+            )
 
         try:
             validator_callback = _build_validator_optional()
@@ -152,8 +163,15 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         experiment_path: Optional[str] = None
         if review.get("ok"):
-            persisted_path = _persist_asset(asset)
-            experiment_path = _relativize(persisted_path)
+            try:
+                persisted_path = _persist_asset(asset)
+            except ValueError:
+                _LOGGER.warning(
+                    "Asset missing asset_id; skipping persistence for schema_version %s",
+                    args.schema_version,
+                )
+            else:
+                experiment_path = _relativize(persisted_path)
         else:
             _LOGGER.error("Generation failed validation; asset not persisted")
 
@@ -162,13 +180,20 @@ def main(argv: Optional[list[str]] = None) -> int:
                 context=external_context,
                 review=review,
                 experiment_path=experiment_path,
+                schema_version=args.schema_version,
             )
         elif generator is not None:
-            generator.record_experiment(
-                asset=asset,
-                review=review,
-                experiment_path=experiment_path,
-            )
+            try:
+                generator.record_experiment(
+                    asset=asset,
+                    review=review,
+                    experiment_path=experiment_path,
+                )
+            except ValueError:
+                _LOGGER.warning(
+                    "Asset missing asset_id; skipping experiment log for schema_version %s",
+                    args.schema_version,
+                )
 
         output_payload = {
             "asset": asset,

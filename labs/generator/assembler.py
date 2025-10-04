@@ -20,7 +20,16 @@ from .tone import ToneGenerator
 class AssetAssembler:
     """Compose component generators into a full Synesthetic asset."""
 
-    SCHEMA_URL = "meta/schemas/synesthetic-asset.schema.json"
+    DEFAULT_SCHEMA_VERSION = "0.7.3"
+    SCHEMA_URL_TEMPLATE = "https://schemas.synesthetic.dev/{version}/synesthetic-asset.schema.json"
+
+    @classmethod
+    def schema_url(cls, schema_version: str) -> str:
+        """Return the hosted schema URL for *schema_version*."""
+
+        version = (schema_version or cls.DEFAULT_SCHEMA_VERSION).strip()
+        return cls.SCHEMA_URL_TEMPLATE.format(version=version)
+
 
     def __init__(
         self,
@@ -43,7 +52,13 @@ class AssetAssembler:
         self._modulation = modulation_generator or ModulationGenerator(version=version)
         self._rule_bundle = rule_bundle_generator or RuleBundleGenerator(version=version)
 
-    def generate(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, object]:
+    def generate(
+        self,
+        prompt: str,
+        *,
+        seed: Optional[int] = None,
+        schema_version: str = DEFAULT_SCHEMA_VERSION,
+    ) -> Dict[str, object]:
         """Return a fully wired Synesthetic asset for *prompt*."""
 
         if not isinstance(prompt, str) or not prompt.strip():
@@ -54,6 +69,10 @@ class AssetAssembler:
         else:
             timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
             asset_id = str(uuid.uuid4())
+
+        resolved_version = (schema_version or self.DEFAULT_SCHEMA_VERSION).strip()
+        legacy_payload = resolved_version.startswith("0.7.3")
+        schema_url = self.schema_url(resolved_version)
 
         shader = deepcopy(self._shader.generate(seed=seed))
         tone = deepcopy(self._tone.generate(seed=seed))
@@ -75,21 +94,25 @@ class AssetAssembler:
         control_block = self._build_control(control_component, pruned_mappings)
         modulations_block = self._build_modulations(modulation)
         rule_bundle_block = self._build_rule_bundle(rule_bundle)
-        meta_info_block = self._build_meta_info(meta, timestamp, seed, asset_id)
+        meta_info_block = self._build_meta_info(
+            meta,
+            timestamp,
+            seed,
+            asset_id,
+            include_provenance=legacy_payload,
+        )
 
         provenance_block = self._build_asset_provenance(
             timestamp=timestamp,
             seed=seed,
             asset_id=asset_id,
             trace_id=asset_id,
+            schema_version=resolved_version,
         )
 
         asset: Dict[str, object] = {
-            "$schema": self.SCHEMA_URL,
-            "asset_id": asset_id,
-            "prompt": prompt,
+            "$schema": schema_url,
             "seed": seed,
-            "timestamp": timestamp,
             "shader": shader_block,
             "tone": tone_block,
             "haptic": haptic_block,
@@ -97,17 +120,33 @@ class AssetAssembler:
             "modulations": modulations_block,
             "rule_bundle": rule_bundle_block,
             "meta_info": meta_info_block,
-            "parameter_index": sorted(parameter_index),
-            "provenance": provenance_block,
         }
 
-        meta_info_block.setdefault("provenance", self._build_meta_provenance(
-            timestamp=timestamp,
-            seed=seed,
-            trace_id=asset_id,
-        ))
+        if legacy_payload:
+            asset["name"] = prompt
+            meta_info_block.setdefault("title", prompt)
+            meta_info_block.setdefault(
+                "provenance",
+                self._build_meta_provenance(
+                    timestamp=timestamp,
+                    seed=seed,
+                    trace_id=asset_id,
+                ),
+            )
+        else:
+            asset.update(
+                {
+                    "asset_id": asset_id,
+                    "prompt": prompt,
+                    "timestamp": timestamp,
+                    "parameter_index": sorted(parameter_index),
+                    "provenance": provenance_block,
+                }
+            )
+            meta_info_block.setdefault("title", prompt)
 
         return asset
+
 
     def _deterministic_identifiers(self, prompt: str, seed: int) -> tuple[str, str]:
         digest = hashlib.sha1(f"{prompt}|{seed}|{self.version}".encode("utf-8")).hexdigest()
@@ -264,6 +303,8 @@ class AssetAssembler:
         timestamp: str,
         seed: Optional[int],
         asset_id: str,
+        *,
+        include_provenance: bool,
     ) -> Dict[str, object]:
         meta = deepcopy(payload)
         meta.pop("component", None)
@@ -313,6 +354,7 @@ class AssetAssembler:
         seed: Optional[int],
         asset_id: str,
         trace_id: str,
+        schema_version: str,
     ) -> Dict[str, object]:
         return {
             "agent": "AssetAssembler",
@@ -325,4 +367,9 @@ class AssetAssembler:
                 "engine": "deterministic",
             },
             "asset_id": asset_id,
+            "schema_version": schema_version,
         }
+
+
+# Backwards compatibility: retain default schema URL attribute used by older callers.
+AssetAssembler.SCHEMA_URL = AssetAssembler.schema_url(AssetAssembler.DEFAULT_SCHEMA_VERSION)

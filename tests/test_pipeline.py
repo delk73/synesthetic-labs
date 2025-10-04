@@ -18,7 +18,7 @@ def test_generator_to_critic_pipeline(tmp_path) -> None:
     critic_log = tmp_path / "critic.jsonl"
 
     generator = GeneratorAgent(log_path=str(generator_log))
-    asset = generator.propose("integration prompt")
+    asset = generator.propose("integration prompt", schema_version="0.7.4")
 
     def validator(payload: dict) -> dict:
         return {"validated": True, "asset_id": payload["asset_id"]}
@@ -44,6 +44,7 @@ def test_cli_critique_fails_when_mcp_unreachable(monkeypatch, tmp_path, capsys) 
 
     monkeypatch.setattr(cli, "build_validator_from_env", raise_unavailable)
 
+    monkeypatch.setenv("LABS_SCHEMA_VERSION", "0.7.4")
     generator = GeneratorAgent(log_path=str(tmp_path / "generator.jsonl"))
 
     class LoggedCriticAgent(CriticAgent):
@@ -51,7 +52,7 @@ def test_cli_critique_fails_when_mcp_unreachable(monkeypatch, tmp_path, capsys) 
             super().__init__(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
 
     monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
-    asset = generator.propose("cli validation test")
+    asset = generator.propose("cli validation test", schema_version="0.7.4")
     asset_path = tmp_path / "asset.json"
     asset_path.write_text(json.dumps(asset), encoding="utf-8")
 
@@ -78,7 +79,7 @@ def test_cli_critique_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
             super().__init__(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
 
     monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
-    asset = generator.propose("cli validation relaxed test")
+    asset = generator.propose("cli validation relaxed test", schema_version="0.7.4")
     asset_path = tmp_path / "asset.json"
     asset_path.write_text(json.dumps(asset), encoding="utf-8")
 
@@ -116,6 +117,7 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
 
     monkeypatch.setattr(cli, "build_validator_from_env", lambda: validator)
 
+    monkeypatch.setenv("LABS_SCHEMA_VERSION", "0.7.4")
     exit_code = cli.main(["generate", "aurora bloom"])
     captured = capsys.readouterr()
 
@@ -175,6 +177,7 @@ def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
             super().__init__(log_path=str(generator_log))
 
     monkeypatch.setattr(cli, "GeneratorAgent", LoggedGeneratorAgent)
+    monkeypatch.setenv("LABS_SCHEMA_VERSION", "0.7.4")
 
     class LoggedCriticAgent(CriticAgent):
         def __init__(self, validator=None) -> None:  # pragma: no cover - trivial init
@@ -187,6 +190,7 @@ def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
 
     monkeypatch.setattr(cli, "build_validator_from_env", raise_unavailable)
 
+    monkeypatch.setenv("LABS_SCHEMA_VERSION", "0.7.4")
     exit_code = cli.main(["generate", "relaxed mode prompt"])
     captured = capsys.readouterr()
 
@@ -216,6 +220,7 @@ def test_cli_generate_deterministic_alias(monkeypatch, tmp_path, capsys) -> None
         "build_validator_from_env",
         lambda: (lambda payload: {"status": "ok", "asset_id": payload["asset_id"]}),
     )
+    monkeypatch.setenv("LABS_SCHEMA_VERSION", "0.7.4")
 
     exit_code = cli.main(["generate", "--engine", "deterministic", "alias prompt"])
     captured = capsys.readouterr()
@@ -234,6 +239,7 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
     gemini = GeminiGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
 
     monkeypatch.setattr(cli, "build_external_generator", lambda engine: gemini)
+    monkeypatch.setenv("LABS_SCHEMA_VERSION", "0.7.4")
 
     class LoggedCriticAgent(CriticAgent):
         def __init__(self, validator=None) -> None:  # pragma: no cover - trivial init
@@ -261,13 +267,16 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
     log_record = lines[0]
     assert log_record["engine"] == "gemini"
     assert log_record["status"] == "validation_passed"
-    assert log_record["normalized_asset"]["meta_info"]["provenance"]["trace_id"]
+    assert log_record["normalized_asset"]["provenance"]["generator"]["trace_id"]
     assert log_record["raw_response"]["hash"]
     assert log_record["raw_response"]["size"] > 0
     assert log_record["transport"] == output["review"]["transport"]
     assert log_record["strict"] == output["review"]["strict"]
     assert log_record["mode"] == "mock"
     assert log_record["mcp_result"] == {"status": "ok", "asset_id": asset["asset_id"]}
+    assert log_record["schema_version"] == "0.7.4"
+    assert log_record["$schema"] == asset["$schema"]
+    assert log_record["failure"] is None
 
     persisted_files = list(experiments_dir.glob("*.json"))
     assert len(persisted_files) == 1
@@ -285,16 +294,33 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
         generator = GeminiGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
         original_generate = generator.generate
 
-        def wrapped(self, prompt: str, *, parameters=None, seed=None, timeout=None, trace_id=None):
+        def wrapped(
+            self,
+            prompt: str,
+            *,
+            parameters=None,
+            seed=None,
+            timeout=None,
+            trace_id=None,
+            schema_version: str = "0.7.3",
+        ):
             recorded["seed"] = seed
             recorded["parameters"] = parameters
             recorded["timeout"] = timeout
-            return original_generate(prompt, parameters=parameters, seed=seed, timeout=timeout, trace_id=trace_id)
+            return original_generate(
+                prompt,
+                parameters=parameters,
+                seed=seed,
+                timeout=timeout,
+                trace_id=trace_id,
+                schema_version=schema_version,
+            )
 
         generator.generate = types.MethodType(wrapped, generator)
         return generator
 
     monkeypatch.setattr(cli, "build_external_generator", build_external)
+    monkeypatch.setenv("LABS_SCHEMA_VERSION", "0.7.4")
 
     class LoggedCriticAgent(CriticAgent):
         def __init__(self, validator=None) -> None:  # pragma: no cover - trivial init

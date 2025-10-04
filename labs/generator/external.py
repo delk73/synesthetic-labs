@@ -31,7 +31,11 @@ _JITTER_FRACTION = 0.2
 
 SENSITIVE_HEADERS = {"authorization"}
 
-_BASELINE_ASSET = AssetAssembler().generate("external-normalization-baseline", seed=0)
+_BASELINE_ASSET = AssetAssembler().generate(
+    "external-normalization-baseline",
+    seed=0,
+    schema_version="0.7.4",
+)
 _DEFAULT_SECTIONS = {
     key: deepcopy(_BASELINE_ASSET[key])
     for key in ("shader", "tone", "haptic", "control", "meta_info", "rule_bundle")
@@ -142,6 +146,7 @@ class ExternalGenerator:
         seed: Optional[int] = None,
         timeout: Optional[float] = None,
         trace_id: Optional[str] = None,
+        schema_version: str = AssetAssembler.DEFAULT_SCHEMA_VERSION,
     ) -> Tuple[JsonDict, JsonDict]:
         """Return an asset assembled from an external API response."""
 
@@ -154,6 +159,7 @@ class ExternalGenerator:
             parameters.setdefault(key, value)
         if seed is not None:
             parameters.setdefault("seed", seed)
+        resolved_schema_version = (schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION).strip()
 
         attempts: List[JsonDict] = []
         strict_mode = _strict_mode_enabled()
@@ -225,6 +231,7 @@ class ExternalGenerator:
                     mode="mock" if self.mock_mode else "live",
                     endpoint=endpoint,
                     response_hash=response_hash,
+                    schema_version=resolved_schema_version,
                 )
 
                 context: JsonDict = {
@@ -244,6 +251,7 @@ class ExternalGenerator:
                     or _dt.datetime.now(tz=_dt.timezone.utc).isoformat(),
                     "strict": strict_mode,
                     "endpoint": endpoint,
+                    "schema_version": resolved_schema_version,
                     "raw_response": {
                         "hash": response_hash,
                         "size": len(raw_bytes),
@@ -283,6 +291,7 @@ class ExternalGenerator:
             "parameters": parameters,
             "mode": "mock" if self.mock_mode else "live",
             "attempts": attempts,
+            "schema_version": resolved_schema_version,
             "failure": {
                 "reason": final_error.reason,
                 "detail": final_error.detail,
@@ -303,10 +312,15 @@ class ExternalGenerator:
         context: JsonDict,
         review: JsonDict,
         experiment_path: Optional[str],
+        schema_version: Optional[str] = None,
     ) -> None:
         """Persist a structured log entry for a successful API invocation."""
 
         status = "validation_passed" if review.get("ok") else "validation_failed"
+        resolved_schema_version = (schema_version or context.get("schema_version")
+            or AssetAssembler.DEFAULT_SCHEMA_VERSION).strip()
+
+        normalized_asset = context.get("asset", {})
         record: JsonDict = {
             "ts": _dt.datetime.now(tz=_dt.timezone.utc).isoformat(),
             "trace_id": context.get("trace_id"),
@@ -319,13 +333,19 @@ class ExternalGenerator:
             "request": context.get("request"),
             "request_headers": context.get("request_headers"),
             "raw_response": context.get("raw_response"),
-            "normalized_asset": context.get("asset"),
+            "normalized_asset": normalized_asset,
             "mcp_result": review.get("mcp_response"),
-            "provenance": context.get("asset", {}).get("meta_info", {}).get("provenance"),
+            "provenance": (
+                normalized_asset.get("provenance")
+                or normalized_asset.get("meta_info", {}).get("provenance")
+            ),
             "asset_id": context.get("asset_id"),
             "generated_at": context.get("generated_at"),
             "experiment_path": experiment_path,
             "status": status,
+            "schema_version": resolved_schema_version,
+            "$schema": normalized_asset.get("$schema"),
+            "failure": None,
         }
 
         if not review.get("ok"):
@@ -425,6 +445,7 @@ class ExternalGenerator:
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:  # pragma: no cover - abstract
         raise NotImplementedError
 
@@ -553,6 +574,7 @@ class ExternalGenerator:
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:
         if not isinstance(asset_payload, dict):
             raise ExternalRequestError("bad_response", "asset_not_object", retryable=False)
@@ -567,6 +589,10 @@ class ExternalGenerator:
             or canonical.get("meta", {}).get("asset_id")
             or str(uuid.uuid4())
         )
+
+        resolved_version = (schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION).strip()
+        legacy_payload = resolved_version.startswith("0.7.3")
+        schema_url = AssetAssembler.schema_url(resolved_version)
 
         shader_section = self._merge_structured_section("shader", canonical.get("shader"))
         tone_section = self._merge_structured_section("tone", canonical.get("tone"))
@@ -605,6 +631,7 @@ class ExternalGenerator:
             parameters=parameters,
             mode=mode,
             response_hash=response_hash,
+            embed_provenance=legacy_payload,
         )
 
         provenance_block = self._build_external_provenance(
@@ -615,14 +642,12 @@ class ExternalGenerator:
             endpoint=endpoint,
             response=response,
             timestamp=timestamp,
+            schema_version=resolved_version,
         )
 
         asset: JsonDict = {
-            "$schema": AssetAssembler.SCHEMA_URL,
-            "asset_id": asset_id,
-            "prompt": prompt,
+            "$schema": schema_url,
             "seed": parameters.get("seed"),
-            "timestamp": timestamp,
             "shader": shader_section,
             "tone": tone_section,
             "haptic": haptic_section,
@@ -630,9 +655,22 @@ class ExternalGenerator:
             "modulations": modulations,
             "rule_bundle": rule_bundle,
             "meta_info": meta_info,
-            "parameter_index": sorted(parameter_index),
-            "provenance": provenance_block,
         }
+
+        if legacy_payload:
+            asset["name"] = prompt
+            meta_info.setdefault("title", prompt)
+        else:
+            asset.update(
+                {
+                    "asset_id": asset_id,
+                    "prompt": prompt,
+                    "timestamp": timestamp,
+                    "parameter_index": sorted(parameter_index),
+                    "provenance": provenance_block,
+                }
+            )
+            meta_info.setdefault("title", prompt)
 
         return asset
 
@@ -960,6 +998,7 @@ class ExternalGenerator:
         parameters: JsonDict,
         mode: str,
         response_hash: str,
+        embed_provenance: bool,
     ) -> Dict[str, Any]:
         base = deepcopy(_DEFAULT_SECTIONS["meta_info"])
         for source in (meta_payload, meta_info_payload):
@@ -977,19 +1016,21 @@ class ExternalGenerator:
         base.setdefault("category", "multimodal")
         base.setdefault("complexity", "baseline")
 
-        base["provenance"] = {
-            "engine": self.engine,
-            "endpoint": endpoint,
-            "model": parameters.get("model"),
-            "parameters": {
-                "temperature": parameters.get("temperature"),
-                "seed": seed,
-            },
-            "trace_id": trace_id,
-            "mode": mode,
-            "timestamp": timestamp,
-            "response_hash": response_hash,
-        }
+        provenance = base.get("provenance")
+        if not isinstance(provenance, dict):
+            provenance = {}
+        provenance.setdefault("engine", self.engine)
+        provenance.setdefault("endpoint", endpoint)
+        provenance.setdefault("model", parameters.get("model"))
+        parameters_block = provenance.setdefault("parameters", {})
+        if isinstance(parameters_block, dict):
+            parameters_block.setdefault("temperature", parameters.get("temperature"))
+            parameters_block.setdefault("seed", seed)
+        provenance["trace_id"] = trace_id
+        provenance["mode"] = mode
+        provenance["timestamp"] = timestamp
+        provenance["response_hash"] = response_hash
+        base["provenance"] = provenance
         return base
 
     def _build_external_provenance(
@@ -1002,6 +1043,7 @@ class ExternalGenerator:
         endpoint: str,
         response: JsonDict,
         timestamp: str,
+        schema_version: str,
     ) -> Dict[str, Any]:
         return {
             "agent": "ExternalGenerator",
@@ -1009,6 +1051,7 @@ class ExternalGenerator:
             "seed": parameters.get("seed"),
             "assembled_at": timestamp,
             "asset_id": asset_id,
+            "schema_version": schema_version,
             "generator": {
                 "class": self.__class__.__name__,
                 "engine": self.engine,
@@ -1106,6 +1149,7 @@ class GeminiGenerator(ExternalGenerator):
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:
         asset_payload = response.get("asset")
         if not isinstance(asset_payload, dict):
@@ -1119,6 +1163,7 @@ class GeminiGenerator(ExternalGenerator):
             mode=mode,
             endpoint=endpoint,
             response_hash=response_hash,
+            schema_version=schema_version,
         )
 
 
@@ -1196,6 +1241,7 @@ class OpenAIGenerator(ExternalGenerator):
         mode: str,
         endpoint: str,
         response_hash: str,
+        schema_version: str,
     ) -> JsonDict:
         asset_payload = response.get("asset")
         if not isinstance(asset_payload, dict):
@@ -1209,6 +1255,7 @@ class OpenAIGenerator(ExternalGenerator):
             mode=mode,
             endpoint=endpoint,
             response_hash=response_hash,
+            schema_version=schema_version,
         )
         provenance = dict(asset.get("provenance") or {})
         provenance["openai_object"] = response.get("object")

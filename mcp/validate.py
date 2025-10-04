@@ -21,7 +21,11 @@ def _resolve_schema_path(schema_identifier: str) -> Path:
 
     identifier = schema_identifier.strip()
     if identifier.startswith("http://") or identifier.startswith("https://"):
-        raise ValueError(f"remote schemas are not supported: {identifier}")
+        if identifier.startswith("https://schemas.synesthetic.dev/"):
+            basename = Path(identifier).name
+            identifier = str(Path("meta/schemas") / basename)
+        else:
+            raise ValueError(f"remote schemas are not supported: {identifier}")
 
     path = Path(identifier)
     if not path.is_absolute():

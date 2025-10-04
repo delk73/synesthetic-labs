@@ -45,6 +45,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     validator = _ensure_validator()
     critic = CriticAgent(validator=validator)
 
+    schema_version = os.getenv("LABS_SCHEMA_VERSION", "0.7.3")
+
     total = len(prompts)
     ok_count = 0
     fail_count = 0
@@ -55,7 +57,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     validated_dir: Optional[str] = None
 
     for index, prompt in enumerate(prompts, start=1):
-        asset = generator.propose(prompt)
+        asset = generator.propose(prompt, schema_version=schema_version)
         review = critic.review(asset)
 
         run_record = {
@@ -87,11 +89,14 @@ def main(argv: Optional[list[str]] = None) -> int:
                 handle.write("\n")
             experiment_path = _relativize(validated_path)
 
-        generator.record_experiment(
-            asset=asset,
-            review=review,
-            experiment_path=experiment_path,
-        )
+        try:
+            generator.record_experiment(
+                asset=asset,
+                review=review,
+                experiment_path=experiment_path,
+            )
+        except ValueError:
+            pass
 
         log_jsonl(results_log, run_record)
 

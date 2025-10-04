@@ -12,7 +12,7 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     log_path = tmp_path / "generator.jsonl"
     agent = GeneratorAgent(log_path=str(log_path))
 
-    asset = agent.propose("synthwave pulse")
+    asset = agent.propose("synthwave pulse", schema_version="0.7.4")
 
     for field in ("asset_id", "timestamp", "prompt", "provenance", "meta_info"):
         assert field in asset
@@ -40,10 +40,31 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     assert logged["asset_id"] == asset["asset_id"]
     assert "input_parameters" in logged["shader"]
     assert logged["provenance"]["generator"]["agent"] == "GeneratorAgent"
-    assert logged["trace_id"] == asset["meta_info"]["provenance"]["trace_id"]
+    assert logged["trace_id"] == asset["provenance"]["generator"]["trace_id"]
     assert logged["mode"] == "local"
     assert isinstance(logged["strict"], bool)
     assert logged["transport"] == resolve_mcp_endpoint()
+    assert logged["schema_version"] == "0.7.4"
+
+
+def test_generator_propose_legacy_schema(tmp_path) -> None:
+    log_path = tmp_path / "generator.jsonl"
+    agent = GeneratorAgent(log_path=str(log_path))
+
+    asset = agent.propose("legacy pulse", schema_version="0.7.3")
+
+    assert asset["name"] == "legacy pulse"
+    assert "asset_id" not in asset
+    assert "$schema" in asset
+    assert asset["$schema"].endswith("/synesthetic-asset.schema.json")
+    assert "provenance" not in asset
+    meta_info = asset["meta_info"]
+    assert meta_info["provenance"]["trace_id"]
+
+    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    logged = json.loads(lines[0])
+    assert logged["schema_version"] == "0.7.3"
 
 
 def test_record_experiment_logs_experiment_path(tmp_path) -> None:
