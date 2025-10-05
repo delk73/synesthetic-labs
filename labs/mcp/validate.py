@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, MutableMapping
+from typing import Any, Dict, Iterable, List, MutableMapping, Optional
 
 import jsonschema
 from jsonschema import Draft202012Validator, ValidationError
@@ -13,6 +13,48 @@ JsonDict = Dict[str, Any]
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
 _VALIDATOR_CACHE: Dict[str, Draft202012Validator] = {}
+
+_LEGACY_REMOTE_PREFIX = "https://schemas.synesthetic.dev/"
+_LEGACY_SCHEMA_VERSION = "0.7.3"
+_LEGACY_SCHEMA_PAYLOAD: Dict[str, Any] = {
+    "type": "object",
+    "required": [
+        "$schema",
+        "name",
+        "shader",
+        "tone",
+        "haptic",
+        "control",
+        "modulations",
+        "rule_bundle",
+        "meta_info",
+    ],
+    "properties": {
+        "$schema": {"type": "string"},
+        "name": {"type": "string"},
+        "shader": {"type": "object"},
+        "tone": {"type": "object"},
+        "haptic": {"type": "object"},
+        "control": {"type": "object"},
+        "modulations": {"type": "array"},
+        "rule_bundle": {"type": "object"},
+        "meta_info": {
+            "type": "object",
+            "required": ["provenance"],
+            "properties": {
+                "provenance": {
+                    "type": "object",
+                    "required": ["asset_id"],
+                    "properties": {
+                        "asset_id": {"type": "string"},
+                        "schema_version": {"type": "string"},
+                    },
+                }
+            },
+        },
+    },
+    "additionalProperties": True,
+}
 
 
 def _resolve_schema_path(schema_identifier: str) -> Path:
@@ -29,8 +71,31 @@ def _resolve_schema_path(schema_identifier: str) -> Path:
     return path
 
 
+def _extract_remote_version(identifier: str) -> Optional[str]:
+    if not identifier.startswith(_LEGACY_REMOTE_PREFIX):
+        return None
+    parts = [part for part in identifier.rstrip("/").split("/") if part]
+    if len(parts) < 2:
+        return None
+    candidate = parts[-2]
+    if candidate.startswith("synesthetic-asset") and len(parts) >= 3:
+        return parts[-3]
+    return candidate
+
+
 def _load_validator(schema_identifier: str) -> Draft202012Validator:
     if schema_identifier not in _VALIDATOR_CACHE:
+        remote_version = _extract_remote_version(schema_identifier)
+        if remote_version is not None:
+            if remote_version.startswith(_LEGACY_SCHEMA_VERSION):
+                _VALIDATOR_CACHE[schema_identifier] = Draft202012Validator(_LEGACY_SCHEMA_PAYLOAD)
+                return _VALIDATOR_CACHE[schema_identifier]
+            schema_path = _resolve_schema_path("meta/schemas/synesthetic-asset.schema.json")
+            with schema_path.open("r", encoding="utf-8") as handle:
+                schema_payload = json.load(handle)
+            _VALIDATOR_CACHE[schema_identifier] = Draft202012Validator(schema_payload)
+            return _VALIDATOR_CACHE[schema_identifier]
+
         schema_path = _resolve_schema_path(schema_identifier)
         with schema_path.open("r", encoding="utf-8") as handle:
             schema_payload = json.load(handle)

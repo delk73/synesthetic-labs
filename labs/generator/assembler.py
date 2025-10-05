@@ -6,7 +6,7 @@ import datetime as _dt
 import hashlib
 import uuid
 from copy import deepcopy
-from typing import Dict, Iterable, List, Optional, Sequence, Set
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 from labs.experimental import ModulationGenerator, RuleBundleGenerator
 
@@ -20,7 +20,9 @@ from .tone import ToneGenerator
 class AssetAssembler:
     """Compose component generators into a full Synesthetic asset."""
 
-    SCHEMA_URL = "meta/schemas/synesthetic-asset.schema.json"
+    DEFAULT_SCHEMA_VERSION = "0.7.3"
+    SCHEMA_URL_TEMPLATE = "https://schemas.synesthetic.dev/{version}/synesthetic-asset.schema.json"
+    SCHEMA_URL = SCHEMA_URL_TEMPLATE.format(version=DEFAULT_SCHEMA_VERSION)
 
     def __init__(
         self,
@@ -43,11 +45,27 @@ class AssetAssembler:
         self._modulation = modulation_generator or ModulationGenerator(version=version)
         self._rule_bundle = rule_bundle_generator or RuleBundleGenerator(version=version)
 
-    def generate(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, object]:
+    @classmethod
+    def schema_url_for_version(cls, version: str) -> str:
+        return cls.SCHEMA_URL_TEMPLATE.format(version=version)
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        seed: Optional[int] = None,
+        schema_version: Optional[str] = None,
+    ) -> Dict[str, object]:
         """Return a fully wired Synesthetic asset for *prompt*."""
 
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
+
+        schema_version = (schema_version or self.DEFAULT_SCHEMA_VERSION).strip()
+        if not schema_version:
+            schema_version = self.DEFAULT_SCHEMA_VERSION
+        schema_url = self.schema_url_for_version(schema_version)
+        is_legacy = schema_version.startswith("0.7.3")
 
         if seed is not None:
             asset_id, timestamp = self._deterministic_identifiers(prompt, seed)
@@ -75,21 +93,35 @@ class AssetAssembler:
         control_block = self._build_control(control_component, pruned_mappings)
         modulations_block = self._build_modulations(modulation)
         rule_bundle_block = self._build_rule_bundle(rule_bundle)
-        meta_info_block = self._build_meta_info(meta, timestamp, seed, asset_id)
+        meta_info_block = self._build_meta_info(
+            meta,
+            timestamp,
+            seed,
+            asset_id,
+            schema_version,
+        )
 
         provenance_block = self._build_asset_provenance(
             timestamp=timestamp,
             seed=seed,
             asset_id=asset_id,
             trace_id=asset_id,
+            schema_version=schema_version,
         )
 
-        asset: Dict[str, object] = {
-            "$schema": self.SCHEMA_URL,
-            "asset_id": asset_id,
-            "prompt": prompt,
-            "seed": seed,
-            "timestamp": timestamp,
+        meta_info_block.setdefault(
+            "provenance",
+            self._build_meta_provenance(
+                timestamp=timestamp,
+                seed=seed,
+                trace_id=asset_id,
+                asset_id=asset_id,
+                schema_version=schema_version,
+            ),
+        )
+
+        base_sections: Dict[str, object] = {
+            "$schema": schema_url,
             "shader": shader_block,
             "tone": tone_block,
             "haptic": haptic_block,
@@ -97,16 +129,28 @@ class AssetAssembler:
             "modulations": modulations_block,
             "rule_bundle": rule_bundle_block,
             "meta_info": meta_info_block,
-            "parameter_index": sorted(parameter_index),
-            "provenance": provenance_block,
         }
 
-        meta_info_block.setdefault("provenance", self._build_meta_provenance(
-            timestamp=timestamp,
-            seed=seed,
-            trace_id=asset_id,
-        ))
+        asset = dict(base_sections)
 
+        if is_legacy:
+            legacy_name = meta_info_block.get("title")
+            if not isinstance(legacy_name, str) or not legacy_name.strip():
+                legacy_name = prompt
+            asset["name"] = legacy_name
+            return asset
+
+        asset.update(
+            {
+                "asset_id": asset_id,
+                "prompt": prompt,
+                "timestamp": timestamp,
+                "parameter_index": sorted(parameter_index),
+                "provenance": provenance_block,
+                "control": control_block,
+            }
+        )
+        asset.pop("name", None)
         return asset
 
     def _deterministic_identifiers(self, prompt: str, seed: int) -> tuple[str, str]:
@@ -264,6 +308,7 @@ class AssetAssembler:
         timestamp: str,
         seed: Optional[int],
         asset_id: str,
+        schema_version: str,
     ) -> Dict[str, object]:
         meta = deepcopy(payload)
         meta.pop("component", None)
@@ -280,9 +325,17 @@ class AssetAssembler:
             meta["tags"] = ["baseline", "assembler"]
         provenance = meta.get("provenance")
         if not isinstance(provenance, dict):
-            meta["provenance"] = self._build_meta_provenance(
-                timestamp=timestamp, seed=seed, trace_id=asset_id
+            provenance = self._build_meta_provenance(
+                timestamp=timestamp,
+                seed=seed,
+                trace_id=asset_id,
+                asset_id=asset_id,
+                schema_version=schema_version,
             )
+            meta["provenance"] = provenance
+        else:
+            provenance.setdefault("asset_id", asset_id)
+            provenance.setdefault("schema_version", schema_version)
         return meta
 
     def _build_meta_provenance(
@@ -291,6 +344,8 @@ class AssetAssembler:
         timestamp: str,
         seed: Optional[int],
         trace_id: str,
+        asset_id: str,
+        schema_version: str,
     ) -> Dict[str, object]:
         return {
             "engine": "deterministic",
@@ -299,11 +354,14 @@ class AssetAssembler:
             "parameters": {
                 "seed": seed,
                 "version": self.version,
+                "schema_version": schema_version,
             },
             "trace_id": trace_id,
             "mode": "local",
             "timestamp": timestamp,
             "response_hash": None,
+            "asset_id": asset_id,
+            "schema_version": schema_version,
         }
 
     def _build_asset_provenance(
@@ -313,6 +371,7 @@ class AssetAssembler:
         seed: Optional[int],
         asset_id: str,
         trace_id: str,
+        schema_version: str,
     ) -> Dict[str, object]:
         return {
             "agent": "AssetAssembler",
@@ -325,4 +384,27 @@ class AssetAssembler:
                 "engine": "deterministic",
             },
             "asset_id": asset_id,
+            "schema_version": schema_version,
         }
+
+    @staticmethod
+    def resolve_asset_id(asset: Mapping[str, Any]) -> Optional[str]:
+        asset_id = asset.get("asset_id")
+        if isinstance(asset_id, str) and asset_id:
+            return asset_id
+        meta_info = asset.get("meta_info")
+        if isinstance(meta_info, Mapping):
+            provenance = meta_info.get("provenance")
+            if isinstance(provenance, Mapping):
+                candidate = provenance.get("asset_id")
+                if isinstance(candidate, str) and candidate:
+                    return candidate
+                candidate = provenance.get("trace_id")
+                if isinstance(candidate, str) and candidate:
+                    return candidate
+        provenance_block = asset.get("provenance")
+        if isinstance(provenance_block, Mapping):
+            candidate = provenance_block.get("asset_id")
+            if isinstance(candidate, str) and candidate:
+                return candidate
+        return None

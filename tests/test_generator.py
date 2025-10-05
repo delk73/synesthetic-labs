@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from labs.agents.generator import GeneratorAgent
+from labs.generator.assembler import AssetAssembler
 from labs.mcp_stdio import resolve_mcp_endpoint
 
 
@@ -12,7 +13,7 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     log_path = tmp_path / "generator.jsonl"
     agent = GeneratorAgent(log_path=str(log_path))
 
-    asset = agent.propose("synthwave pulse")
+    asset = agent.propose("synthwave pulse", schema_version="0.7.4")
 
     for field in ("asset_id", "timestamp", "prompt", "provenance", "meta_info"):
         assert field in asset
@@ -44,6 +45,29 @@ def test_generator_propose_writes_log(tmp_path) -> None:
     assert logged["mode"] == "local"
     assert isinstance(logged["strict"], bool)
     assert logged["transport"] == resolve_mcp_endpoint()
+    assert logged["schema_version"] == "0.7.4"
+
+
+def test_generator_propose_legacy_schema(tmp_path) -> None:
+    log_path = tmp_path / "legacy.jsonl"
+    agent = GeneratorAgent(log_path=str(log_path))
+
+    asset = agent.propose("legacy pulse")
+
+    assert asset["$schema"] == AssetAssembler.schema_url_for_version("0.7.3")
+    assert "asset_id" not in asset
+    assert "prompt" not in asset
+    assert "provenance" not in asset
+    meta_provenance = asset["meta_info"]["provenance"]
+    asset_id = AssetAssembler.resolve_asset_id(asset)
+    assert asset_id == meta_provenance["asset_id"]
+
+    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    logged = json.loads(lines[0])
+    assert logged["asset_id"] == asset_id
+    assert logged["schema_version"] == "0.7.3"
+    assert logged["mode"] == "local"
 
 
 def test_record_experiment_logs_experiment_path(tmp_path) -> None:

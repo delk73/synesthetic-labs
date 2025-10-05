@@ -7,6 +7,7 @@ import os
 
 import pytest
 
+from labs.generator.assembler import AssetAssembler
 from labs.generator.external import (
     ExternalGenerationError,
     ExternalRequestError,
@@ -20,8 +21,9 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     log_path = tmp_path / "external.jsonl"
     generator = GeminiGenerator(log_path=str(log_path), mock_mode=True, sleeper=lambda _: None)
 
-    asset, context = generator.generate("ambient waves")
+    asset, context = generator.generate("ambient waves", schema_version="0.7.4")
 
+    assert asset["$schema"] == AssetAssembler.schema_url_for_version("0.7.4")
     assert asset["prompt"] == "ambient waves"
     provenance = asset["provenance"]["generator"]
     assert provenance["engine"] == "gemini"
@@ -61,6 +63,11 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     assert record["strict"] is True
     assert record["mode"] == "mock"
     assert record["experiment_path"] == "experiments/mock.json"
+    assert record["schema_version"] == "0.7.4"
+    assert record["$schema"] == asset["$schema"]
+    assert record["failure"] is None
+    assert context["schema_version"] == "0.7.4"
+    assert context["$schema"] == asset["$schema"]
 
 
 def test_external_generator_logs_failure_when_transport_errors(monkeypatch, tmp_path) -> None:
@@ -137,7 +144,8 @@ def test_live_header_injection(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(OpenAIGenerator, "_post_json", fake_post_json, raising=False)
 
-    asset, context = generator.generate("live prompt", seed=7, timeout=5)
+    asset, context = generator.generate("live prompt", seed=7, timeout=5, schema_version="0.7.4")
+    assert asset["$schema"] == AssetAssembler.schema_url_for_version("0.7.4")
     assert asset["meta_info"]["provenance"]["mode"] == "live"
     assert captured["headers"]["Authorization"] == "Bearer live-123"
     assert context["request_headers"]["Authorization"] == "***redacted***"
@@ -175,6 +183,19 @@ def test_mock_mode_headers_are_empty(tmp_path) -> None:
     entry = json.loads(lines[0])
     assert entry["engine"] == "openai"
     assert entry["request_headers"] == {}
+
+
+def test_external_generator_legacy_schema(tmp_path) -> None:
+    generator = GeminiGenerator(log_path=str(tmp_path / "legacy.jsonl"), mock_mode=True, sleeper=lambda _: None)
+
+    asset, context = generator.generate("legacy waves", schema_version="0.7.3")
+
+    assert asset["$schema"] == AssetAssembler.schema_url_for_version("0.7.3")
+    assert "asset_id" not in asset
+    assert "prompt" not in asset
+    assert asset["name"]
+    assert context["schema_version"] == "0.7.3"
+    assert context["$schema"] == asset["$schema"]
 
 
 def test_request_body_size_cap(monkeypatch) -> None:
@@ -254,7 +275,7 @@ def test_rate_limited_retries(monkeypatch) -> None:
 
     monkeypatch.setattr(OpenAIGenerator, "_post_json", flaky_post_json, raising=False)
 
-    asset, context = generator.generate("rate limited")
+    asset, context = generator.generate("rate limited", schema_version="0.7.4")
 
     assert call_count["n"] == 3
     assert asset["asset_id"]
@@ -287,6 +308,7 @@ def test_normalization_populates_defaults() -> None:
         mode="mock",
         endpoint="https://example.com",
         response_hash="abc123def4567890",
+        schema_version="0.7.4",
     )
     assert asset["meta_info"]["provenance"]["engine"] == "gemini"
     control_pairs = {
@@ -322,6 +344,7 @@ def test_normalization_rejects_unknown_keys() -> None:
             mode="mock",
             endpoint="mock://gemini",
             response_hash="abc1230000000000",
+            schema_version="0.7.4",
         )
     assert excinfo.value.reason == "bad_response"
     assert excinfo.value.detail.startswith("unknown_key")
@@ -360,6 +383,7 @@ def test_normalization_rejects_out_of_range_values() -> None:
             mode="mock",
             endpoint="mock://gemini",
             response_hash="abc1230000000000",
+            schema_version="0.7.4",
         )
     assert excinfo.value.reason == "bad_response"
     assert "out_of_range" in excinfo.value.detail or "invalid_bounds" in excinfo.value.detail

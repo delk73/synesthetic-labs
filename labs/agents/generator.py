@@ -45,7 +45,13 @@ class GeneratorAgent:
         self.version = version
         self._assembler = assembler or AssetAssembler(version=version)
 
-    def propose(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, Any]:
+    def propose(
+        self,
+        prompt: str,
+        *,
+        seed: Optional[int] = None,
+        schema_version: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Return a fully assembled asset for *prompt*.
 
         The payload mirrors the canonical Synesthetic schema sections produced
@@ -56,32 +62,64 @@ class GeneratorAgent:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
 
-        asset = self._assembler.generate(prompt, seed=seed)
+        asset = self._assembler.generate(
+            prompt,
+            seed=seed,
+            schema_version=schema_version,
+        )
 
         timestamp = asset.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        provenance = asset.setdefault("provenance", {})
-        provenance.setdefault("agent", "AssetAssembler")
-        provenance.setdefault("version", self._assembler.version)
-        generator_block = provenance.setdefault("generator", {})
-        generator_block.setdefault("agent", self.__class__.__name__)
-        generator_block.setdefault("version", self.version)
-        generator_block.setdefault("generated_at", timestamp)
-        trace_id = generator_block.get("trace_id") or str(uuid.uuid4())
-        generator_block["trace_id"] = trace_id
+        schema_url = asset.get("$schema")
+        schema_version = None
+        if isinstance(schema_url, str):
+            schema_version = schema_url.rstrip("/").split("/")[-2] if "/" in schema_url else None
+            if schema_url.endswith("synesthetic-asset.schema.json") and schema_version is None:
+                parts = schema_url.split("/")
+                if len(parts) >= 2:
+                    schema_version = parts[-2]
+        is_legacy = isinstance(schema_version, str) and schema_version.startswith("0.7.3")
+
+        asset_id = AssetAssembler.resolve_asset_id(asset)
+        if not asset_id:
+            raise ValueError("assembled asset missing asset_id metadata")
 
         meta = asset.setdefault("meta_info", {})
         meta_provenance = meta.setdefault("provenance", {})
-        meta_provenance.setdefault("trace_id", trace_id)
+        meta_provenance.setdefault("trace_id", asset_id)
         meta_provenance.setdefault("mode", "local")
         meta_provenance.setdefault("timestamp", timestamp)
+        meta_provenance.setdefault("asset_id", asset_id)
+        if schema_version:
+            meta_provenance.setdefault("schema_version", schema_version)
 
-        self._logger.info("Generated asset %s", asset.get("asset_id"))
+        trace_id = meta_provenance.get("trace_id") or asset_id
+
+        if not is_legacy:
+            provenance = asset.setdefault("provenance", {})
+            provenance.setdefault("agent", "AssetAssembler")
+            provenance.setdefault("version", self._assembler.version)
+            generator_block = provenance.setdefault("generator", {})
+            generator_block.setdefault("agent", self.__class__.__name__)
+            generator_block.setdefault("version", self.version)
+            generator_block.setdefault("generated_at", timestamp)
+            generator_block.setdefault("trace_id", trace_id)
+        else:
+            generator_block = meta_provenance.setdefault("generator", {})
+            generator_block.setdefault("agent", self.__class__.__name__)
+            generator_block.setdefault("version", self.version)
+            generator_block.setdefault("generated_at", timestamp)
+            generator_block.setdefault("trace_id", trace_id)
+
+        self._logger.info("Generated asset %s", asset_id)
 
         log_entry = dict(asset)
+        log_entry["asset_id"] = asset_id
         log_entry["trace_id"] = trace_id
         log_entry["mode"] = "local"
         log_entry["strict"] = _strict_mode_enabled()
         log_entry["transport"] = resolve_mcp_endpoint()
+        if schema_version:
+            log_entry["schema_version"] = schema_version
 
         log_jsonl(self.log_path, log_entry)
         return asset
@@ -95,7 +133,8 @@ class GeneratorAgent:
     ) -> Dict[str, Any]:
         """Log a validated experiment linking the asset to persisted output."""
 
-        if "asset_id" not in asset:
+        asset_id = AssetAssembler.resolve_asset_id(asset)
+        if not asset_id:
             raise ValueError("asset must include an 'asset_id'")
 
         timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
@@ -112,7 +151,7 @@ class GeneratorAgent:
         transport = review.get("transport") or resolve_mcp_endpoint()
 
         record = {
-            "asset_id": asset["asset_id"],
+            "asset_id": asset_id,
             "prompt": asset.get("prompt"),
             "experiment_path": experiment_path,
             "trace_id": trace_id,
@@ -144,7 +183,7 @@ class GeneratorAgent:
         log_jsonl(self.log_path, record)
         self._logger.info(
             "Recorded experiment for asset %s (persisted=%s)",
-            asset["asset_id"],
+            asset_id,
             bool(experiment_path),
         )
         return record

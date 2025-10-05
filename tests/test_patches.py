@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from labs.agents.critic import CriticAgent
+from labs.generator.assembler import AssetAssembler
 from labs.patches import apply_patch, preview_patch, rate_patch
 
 
@@ -33,7 +34,8 @@ def test_apply_patch_runs_critic(tmp_path) -> None:
     critic_log = tmp_path / "critic.jsonl"
 
     def validator(payload: dict) -> dict:
-        return {"status": "ok", "asset_id": payload["asset_id"]}
+        asset_id = AssetAssembler.resolve_asset_id(payload)
+        return {"status": "ok", "asset_id": asset_id}
 
     critic = CriticAgent(validator=validator, log_path=str(critic_log))
 

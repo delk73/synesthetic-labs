@@ -6,6 +6,7 @@ import json
 
 from labs.agents.critic import CriticAgent
 from labs.agents.generator import GeneratorAgent
+from labs.generator.assembler import AssetAssembler
 from labs.experiments import prompt_experiment
 
 
@@ -24,7 +25,8 @@ def test_prompt_experiment_writes_asset_files(tmp_path, monkeypatch) -> None:
     def validator(payload: dict) -> dict:
         for section in ("shader", "tone", "haptic", "control", "meta_info", "modulations", "rule_bundle"):
             assert section in payload
-        return {"status": "ok", "asset_id": payload["asset_id"]}
+        asset_id = AssetAssembler.resolve_asset_id(payload)
+        return {"status": "ok", "asset_id": asset_id}
 
     monkeypatch.setattr(prompt_experiment, "GeneratorAgent", build_generator)
     monkeypatch.setattr(prompt_experiment, "CriticAgent", LoggedCriticAgent)
@@ -43,7 +45,11 @@ def test_prompt_experiment_writes_asset_files(tmp_path, monkeypatch) -> None:
     assert all_results_path.exists()
 
     asset_data = json.loads(generated_path.read_text(encoding="utf-8"))
-    assert asset_data["prompt"] == "shimmer"
+    assert asset_data["$schema"].endswith("0.7.3/synesthetic-asset.schema.json")
+    assert asset_data["name"]
+    assert "prompt" not in asset_data
+    provenance = asset_data["meta_info"]["provenance"]
+    assert provenance["asset_id"] == AssetAssembler.resolve_asset_id(asset_data)
     for section in ("shader", "tone", "haptic", "control", "meta_info", "modulations", "rule_bundle"):
         assert section in asset_data
 

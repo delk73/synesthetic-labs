@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 from labs.logging import log_jsonl
 from labs.mcp.exceptions import MCPUnavailableError
 from labs.mcp_stdio import build_validator_from_env, resolve_mcp_endpoint
+from labs.generator.assembler import AssetAssembler
 
 _DEFAULT_LOG_PATH = "meta/output/labs/critic.jsonl"
 _LABS_FAIL_FAST_ENV = "LABS_FAIL_FAST"
@@ -45,6 +46,21 @@ class CriticAgent:
         self._logger = logging.getLogger(self.__class__.__name__)
 
     @staticmethod
+    def _extract_schema_version(asset: Mapping[str, Any]) -> Optional[str]:
+        schema_url = asset.get("$schema") if isinstance(asset, Mapping) else None
+        if not isinstance(schema_url, str):
+            return None
+        if "/" not in schema_url:
+            return schema_url
+        parts = [part for part in schema_url.rstrip("/").split("/") if part]
+        if len(parts) < 2:
+            return None
+        candidate = parts[-2]
+        if candidate.startswith("synesthetic-asset") and len(parts) >= 3:
+            return parts[-3]
+        return candidate
+
+    @staticmethod
     def _resolve_trace_id(asset: Dict[str, Any]) -> str:
         meta_prov = asset.get("meta_info", {}).get("provenance", {}) if isinstance(asset, dict) else {}
         trace_id = meta_prov.get("trace_id") if isinstance(meta_prov, dict) else None
@@ -70,10 +86,23 @@ class CriticAgent:
         if not isinstance(asset, dict):
             raise ValueError("asset must be a dictionary")
 
+        schema_version = self._extract_schema_version(asset)
+        is_legacy = isinstance(schema_version, str) and schema_version.startswith("0.7.3")
+
+        required_keys: tuple[str, ...]
+        if is_legacy:
+            required_keys = ("name", "shader", "tone", "haptic", "control", "meta_info", "modulations", "rule_bundle")
+        else:
+            required_keys = self.REQUIRED_KEYS
+
         issues: List[str] = []
-        for key in self.REQUIRED_KEYS:
+        for key in required_keys:
             if key not in asset:
                 issues.append(f"missing required field: {key}")
+
+        asset_id = AssetAssembler.resolve_asset_id(asset)
+        if not asset_id:
+            issues.append("missing asset identifier")
 
         fail_fast = is_fail_fast_enabled()
         validation_status = "pending"
@@ -174,6 +203,11 @@ class CriticAgent:
             "trace_id": trace_id,
         }
 
+        if asset_id:
+            review["asset_id"] = asset_id
+        if schema_version:
+            review["schema_version"] = schema_version
+
         if validation_reason is not None:
             review["validation_reason"] = validation_reason
 
@@ -183,7 +217,7 @@ class CriticAgent:
         if patch_id is not None:
             review["patch_id"] = patch_id
 
-        self._logger.info("Completed review for asset %s", asset.get("asset_id"))
+        self._logger.info("Completed review for asset %s", asset_id)
         log_jsonl(self.log_path, review)
         return review
 

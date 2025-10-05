@@ -11,7 +11,7 @@ from labs.logging import log_jsonl
 
 def test_asset_assembler_end_to_end(tmp_path) -> None:
     assembler = AssetAssembler()
-    asset = assembler.generate("e2e wiring test", seed=1234)
+    asset = assembler.generate("e2e wiring test", seed=1234, schema_version="0.7.4")
 
     output_dir = tmp_path / "meta" / "output" / "test_generator"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -25,8 +25,9 @@ def test_asset_assembler_end_to_end(tmp_path) -> None:
     recorded_targets = []
 
     def validator(payload: dict) -> dict:
-        recorded_targets.append(payload["asset_id"])
-        return {"status": "ok", "asset_id": payload["asset_id"]}
+        asset_id = AssetAssembler.resolve_asset_id(payload)
+        recorded_targets.append(asset_id)
+        return {"status": "ok", "asset_id": asset_id}
 
     critic_log = output_dir / "critic.jsonl"
     critic = CriticAgent(validator=validator, log_path=str(critic_log))

@@ -9,6 +9,7 @@ import pytest
 
 from labs import mcp_stdio
 from labs.agents.critic import CriticAgent, MCPUnavailableError
+from labs.generator.assembler import AssetAssembler
 
 
 @pytest.fixture()
@@ -42,7 +43,8 @@ def test_missing_fields_flagged(tmp_path, monkeypatch) -> None:
 def test_successful_validation(tmp_path, base_asset) -> None:
 
     def validator(payload: dict) -> dict:
-        return {"status": "ok", "asset_id": payload["asset_id"]}
+        asset_id = AssetAssembler.resolve_asset_id(payload)
+        return {"status": "ok", "asset_id": asset_id}
 
     critic = CriticAgent(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
     review = critic.review(base_asset)

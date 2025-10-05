@@ -11,6 +11,7 @@ from labs.agents.generator import GeneratorAgent
 from labs.agents.critic import CriticAgent
 from labs.mcp_stdio import MCPUnavailableError, resolve_mcp_endpoint
 from labs.generator.external import GeminiGenerator
+from labs.generator.assembler import AssetAssembler
 
 
 def test_generator_to_critic_pipeline(tmp_path) -> None:
@@ -18,10 +19,11 @@ def test_generator_to_critic_pipeline(tmp_path) -> None:
     critic_log = tmp_path / "critic.jsonl"
 
     generator = GeneratorAgent(log_path=str(generator_log))
-    asset = generator.propose("integration prompt")
+    asset = generator.propose("integration prompt", schema_version="0.7.4")
 
     def validator(payload: dict) -> dict:
-        return {"validated": True, "asset_id": payload["asset_id"]}
+        asset_id = AssetAssembler.resolve_asset_id(payload)
+        return {"validated": True, "asset_id": asset_id}
 
     critic = CriticAgent(validator=validator, log_path=str(critic_log))
     review = critic.review(asset)
@@ -112,11 +114,12 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
     monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
 
     def validator(payload: dict) -> dict:
-        return {"status": "ok", "asset_id": payload["asset_id"]}
+        asset_id = AssetAssembler.resolve_asset_id(payload)
+        return {"status": "ok", "asset_id": asset_id}
 
     monkeypatch.setattr(cli, "build_validator_from_env", lambda: validator)
 
-    exit_code = cli.main(["generate", "aurora bloom"])
+    exit_code = cli.main(["generate", "--schema-version", "0.7.4", "aurora bloom"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -159,6 +162,48 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
     assert log_record["mode"] in {"strict", "relaxed"}
     assert isinstance(log_record["strict"], bool)
     assert log_record["transport"] == resolve_mcp_endpoint()
+
+
+def test_cli_generate_defaults_to_legacy_schema(monkeypatch, tmp_path, capsys) -> None:
+    experiments_dir = tmp_path / "legacy"
+    monkeypatch.setenv("LABS_EXPERIMENTS_DIR", str(experiments_dir))
+
+    class LoggedGeneratorAgent(GeneratorAgent):
+        def __init__(self) -> None:  # pragma: no cover - construction logic trivial
+            super().__init__(log_path=str(tmp_path / "legacy_generator.jsonl"))
+
+    monkeypatch.setattr(cli, "GeneratorAgent", LoggedGeneratorAgent)
+
+    class LoggedCriticAgent(CriticAgent):
+        def __init__(self, validator=None) -> None:  # pragma: no cover - trivial init
+            super().__init__(validator=validator, log_path=str(tmp_path / "legacy_critic.jsonl"))
+
+    monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
+
+    def validator(payload: dict) -> dict:
+        asset_id = AssetAssembler.resolve_asset_id(payload)
+        return {"status": "ok", "asset_id": asset_id}
+
+    monkeypatch.setattr(cli, "build_validator_from_env", lambda: validator)
+
+    exit_code = cli.main(["generate", "legacy cascade"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    payload = json.loads(captured.out)
+    asset = payload["asset"]
+    assert asset["name"]
+    assert "$schema" in asset and "0.7.3" in asset["$schema"]
+    assert "asset_id" not in asset
+    assert "prompt" not in asset
+    assert payload["experiment_path"]
+
+    persisted_files = list(experiments_dir.glob("*.json"))
+    assert persisted_files
+    persisted_asset = json.loads(persisted_files[0].read_text(encoding="utf-8"))
+    assert persisted_asset["name"] == asset["name"]
+    assert "asset_id" not in persisted_asset
+    assert persisted_asset["meta_info"]["provenance"]["asset_id"]
 
 
 def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsys) -> None:
@@ -214,10 +259,10 @@ def test_cli_generate_deterministic_alias(monkeypatch, tmp_path, capsys) -> None
     monkeypatch.setattr(
         cli,
         "build_validator_from_env",
-        lambda: (lambda payload: {"status": "ok", "asset_id": payload["asset_id"]}),
+        lambda: (lambda payload: {"status": "ok", "asset_id": AssetAssembler.resolve_asset_id(payload)}),
     )
 
-    exit_code = cli.main(["generate", "--engine", "deterministic", "alias prompt"])
+    exit_code = cli.main(["generate", "--engine", "deterministic", "--schema-version", "0.7.4", "alias prompt"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -242,11 +287,12 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
     monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
 
     def validator(payload: dict) -> dict:
-        return {"status": "ok", "asset_id": payload["asset_id"]}
+        asset_id = AssetAssembler.resolve_asset_id(payload)
+        return {"status": "ok", "asset_id": asset_id}
 
     monkeypatch.setattr(cli, "build_validator_from_env", lambda: validator)
 
-    exit_code = cli.main(["generate", "--engine", "gemini", "chromatic tides"])
+    exit_code = cli.main(["generate", "--engine", "gemini", "--schema-version", "0.7.4", "chromatic tides"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -285,11 +331,28 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
         generator = GeminiGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
         original_generate = generator.generate
 
-        def wrapped(self, prompt: str, *, parameters=None, seed=None, timeout=None, trace_id=None):
+        def wrapped(
+            self,
+            prompt: str,
+            *,
+            parameters=None,
+            seed=None,
+            timeout=None,
+            trace_id=None,
+            schema_version=None,
+        ):
             recorded["seed"] = seed
             recorded["parameters"] = parameters
             recorded["timeout"] = timeout
-            return original_generate(prompt, parameters=parameters, seed=seed, timeout=timeout, trace_id=trace_id)
+            recorded["schema_version"] = schema_version
+            return original_generate(
+                prompt,
+                parameters=parameters,
+                seed=seed,
+                timeout=timeout,
+                trace_id=trace_id,
+                schema_version=schema_version,
+            )
 
         generator.generate = types.MethodType(wrapped, generator)
         return generator
@@ -301,7 +364,11 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
             super().__init__(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
 
     monkeypatch.setattr(cli, "CriticAgent", LoggedCriticAgent)
-    monkeypatch.setattr(cli, "build_validator_from_env", lambda: (lambda payload: {"status": "ok", "asset_id": payload["asset_id"]}))
+    monkeypatch.setattr(
+        cli,
+        "build_validator_from_env",
+        lambda: (lambda payload: {"status": "ok", "asset_id": AssetAssembler.resolve_asset_id(payload)}),
+    )
 
     args = [
         "generate",
@@ -314,6 +381,8 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
         "--timeout-s",
         "12",
         "--relaxed",
+        "--schema-version",
+        "0.7.4",
         "flagged prompt",
     ]
     exit_code = cli.main(args)
@@ -326,6 +395,7 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
     assert recorded["seed"] == 42
     assert recorded["parameters"] == {"temperature": 0.85}
     assert recorded["timeout"] == 12.0
+    assert recorded["schema_version"] == "0.7.4"
 
 def test_cli_preview_command(monkeypatch, capsys) -> None:
     asset = {"asset_id": "asset-10"}
@@ -351,7 +421,7 @@ def test_cli_apply_command(monkeypatch, capsys) -> None:
     patch = {"id": "patch-20"}
 
     def fake_build_validator_optional():
-        return lambda payload: {"status": "ok", "asset_id": payload["asset_id"]}
+        return lambda payload: {"status": "ok", "asset_id": AssetAssembler.resolve_asset_id(payload)}
 
     def fake_apply(payload_asset, payload_patch, critic):
         assert payload_asset == asset
