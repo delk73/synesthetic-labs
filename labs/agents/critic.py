@@ -32,8 +32,6 @@ def is_fail_fast_enabled() -> bool:
 class CriticAgent:
     """Review assets and surface issues before handing off to MCP validation."""
 
-    REQUIRED_KEYS = ("asset_id", "timestamp", "prompt", "provenance")
-
     def __init__(
         self,
         validator: Optional[ValidatorType] = None,
@@ -71,9 +69,23 @@ class CriticAgent:
             raise ValueError("asset must be a dictionary")
 
         issues: List[str] = []
-        for key in self.REQUIRED_KEYS:
-            if key not in asset:
-                issues.append(f"missing required field: {key}")
+
+        schema_version = 'unknown'
+        schema_url = asset.get('$schema')
+        if isinstance(schema_url, str) and '/' in schema_url:
+            try:
+                schema_version = schema_url.split('/')[-2]
+            except Exception:
+                pass
+        requires_enriched = schema_version >= '0.7.4'
+
+        base_required = []
+        enriched_required = ['asset_id', 'timestamp', 'prompt', 'provenance']
+
+        required_fields = enriched_required if requires_enriched else base_required
+        for field in required_fields:
+            if field not in asset:
+                issues.append(f'missing required field: {field}')
 
         fail_fast = is_fail_fast_enabled()
         validation_status = "pending"
@@ -101,17 +113,19 @@ class CriticAgent:
             }
 
         if issues:
-            message = "MCP validation unavailable: asset missing required fields"
-            issues.append(message)
-            validation_error = _build_error_payload(message)
-            validation_reason = message
-            if fail_fast:
-                validation_status = "failed"
-                should_attempt_validation = False
-                self._logger.error(message)
-            else:
-                validation_status = "warned"
-                self._logger.warning("Validation warning: %s", message)
+            # Only treat as fatal for enriched schemas
+            if requires_enriched:
+                message = "MCP validation unavailable: asset missing required fields"
+                issues.append(message)
+                validation_error = _build_error_payload(message)
+                validation_reason = message
+                if fail_fast:
+                    validation_status = "failed"
+                    should_attempt_validation = False
+                    self._logger.error(message)
+                else:
+                    validation_status = "warned"
+                    self._logger.warning("Validation warning: %s", message)
 
         validator = None
         if should_attempt_validation:
