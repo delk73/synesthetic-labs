@@ -1,6 +1,6 @@
 {
-  "task": "Correct schema_version branching in Labs generator",
-  "objective": "Ensure AssetAssembler.generate outputs assets valid against both 0.7.3 (legacy) and ≥0.7.4 (enriched) schemas.",
+  "task": "Implement schema_version-aware normalization in AssetAssembler",
+  "objective": "Ensure AssetAssembler.generate produces schema-valid assets for both 0.7.3 (legacy) and ≥0.7.4 (enriched). Use dedicated _normalize_0_7_3 and _normalize_0_7_4 helpers. CLI and external logging must surface schema_version and $schema.",
   "changes": [
     {
       "id": "cli_schema_version",
@@ -15,19 +15,31 @@
       ]
     },
     {
-      "id": "assembler_branching",
-      "description": "Modify AssetAssembler.generate to branch on schema_version: 0.7.3 emits legacy fields only, ≥0.7.4 emits enriched fields.",
+      "id": "assembler_generate",
+      "description": "Route generate() output through schema_version-specific normalizers.",
       "edits": [
         {
           "file": "labs/generator/assembler.py",
           "pattern": "return asset",
           "multiple": false,
-          "replacement": "if schema_version.startswith('0.7.3'):\n            # Legacy mode: only 'name' at root, provenance under meta_info\n            asset = {\n                \"$schema\": schema_url,\n                \"name\": prompt,\n                \"shader\": shader_block,\n                \"tone\": tone_block,\n                \"haptic\": haptic_block,\n                \"control\": control_block,\n                \"modulations\": modulations_block,\n                \"rule_bundle\": rule_bundle_block,\n                \"meta_info\": meta_info_block,\n            }\n        else:\n            # Enriched mode: require enriched fields at root\n            asset.update({\n                \"asset_id\": asset_id,\n                \"prompt\": prompt,\n                \"timestamp\": timestamp,\n                \"parameter_index\": sorted(parameter_index),\n                \"provenance\": provenance_block,\n                \"control\": control_block,\n            })\n            asset.pop('name', None)\n        return asset"
+          "replacement": "if schema_version.startswith('0.7.3'):\n            asset = self._normalize_0_7_3(asset, prompt)\n        else:\n            asset = self._normalize_0_7_4(asset, prompt, asset_id, timestamp, parameter_index, provenance_block)\n        return asset"
         }
       ]
     },
     {
-      "id": "external_logging_schema",
+      "id": "assembler_normalizers",
+      "description": "Add _normalize_0_7_3 and _normalize_0_7_4 helpers to enforce per-schema shape.",
+      "edits": [
+        {
+          "file": "labs/generator/assembler.py",
+          "pattern": "def _deterministic_identifiers",
+          "multiple": false,
+          "replacement": "def _normalize_0_7_3(self, asset: Dict[str, object], prompt: str) -> Dict[str, object]:\n        # Keep only fields allowed in 0.7.3\n        return {\n            \"$schema\": asset[\"$schema\"],\n            \"name\": asset.get(\"meta_info\", {}).get(\"title\", prompt),\n            \"shader\": {k: v for k, v in asset[\"shader\"].items() if k in (\"name\", \"description\", \"language\", \"sources\", \"uniforms\", \"meta_info\")},\n            \"tone\": {k: v for k, v in asset[\"tone\"].items() if k in (\"name\", \"description\", \"engine\", \"settings\", \"meta_info\")},\n            \"haptic\": {k: v for k, v in asset[\"haptic\"].items() if k in (\"device\", \"description\", \"input_parameters\", \"meta_info\")},\n            \"control\": asset[\"control\"],\n            \"modulations\": [],\n            \"rule_bundle\": {\"rules\": [], \"meta_info\": {\"version\": self.version}},\n            \"meta_info\": {\"provenance\": asset[\"meta_info\"].get(\"provenance\", {})},\n        }\n\n    def _normalize_0_7_4(self, asset: Dict[str, object], prompt: str, asset_id: str, timestamp: str, parameter_index: Sequence[str], provenance_block: Dict[str, object]) -> Dict[str, object]:\n        # Enriched schema: ensure enriched fields exist\n        asset.update({\n            \"asset_id\": asset_id,\n            \"prompt\": prompt,\n            \"timestamp\": timestamp,\n            \"parameter_index\": sorted(parameter_index),\n            \"provenance\": provenance_block\n        })\n        asset.pop(\"name\", None)\n        return asset\n\n    def _deterministic_identifiers"
+        }
+      ]
+    },
+    {
+      "id": "external_logging",
       "description": "Include schema_version and $schema in external logs; set failure=null on success.",
       "edits": [
         {
@@ -48,17 +60,17 @@
   "constraints": {
     "rules": [
       "Do not edit docs/specs",
-      "For schema_version=0.7.3: only root fields are $schema, name, shader, tone, haptic, control, modulations, rule_bundle, meta_info",
-      "For schema_version>=0.7.4: root must include asset_id, prompt, timestamp, parameter_index, provenance, plus shader/tone/haptic/control/modulations/rule_bundle/meta_info",
+      "0.7.3 output: root fields are $schema, name, shader, tone, haptic, control, modulations, rule_bundle, meta_info.provenance",
+      "≥0.7.4 output: enriched fields required at root, no forbidden legacy extras",
       "Use 'control' key, never 'controls'",
-      "No 'seed' at root for enriched schemas",
-      "pytest must pass with both 0.7.3 and 0.7.4"
+      "pytest must pass for both schema_version=0.7.3 and 0.7.4"
     ]
   },
   "exit_criteria": [
-    "Assets validate cleanly against 0.7.3 and 0.7.4 schemas",
-    "Legacy output has only allowed fields; enriched output has all required enriched fields",
-    "All assets carry correct $schema URL",
-    "External logs always include schema_version, $schema, and failure=null"
+    "0.7.3 assets validate cleanly without extra fields (no shader.input_parameters, no tone.effects, no haptic.profile, no modulations)",
+    "0.7.4 assets validate with asset_id, prompt, timestamp, parameter_index, provenance at root",
+    "All assets include correct $schema URL",
+    "External logs always include schema_version, $schema, and failure=null",
+    "pytest passes both modes"
   ]
 }
