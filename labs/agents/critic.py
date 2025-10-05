@@ -188,7 +188,10 @@ class CriticAgent:
         if validation_status == "pending":
             validation_status = "passed" if len(issues) == 0 else "failed"
 
-        ok = len(issues) == 0 and validation_status in {"passed", "warned", "degraded"}
+        ok = (
+            validation_status == "degraded"
+            or (len(issues) == 0 and validation_status in {"passed", "warned"})
+        )
         reviewed_at = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
 
         review = {

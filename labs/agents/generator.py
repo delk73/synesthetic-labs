@@ -40,12 +40,13 @@ class GeneratorAgent:
         *,
         version: str = "v0.2",
         assembler: Optional[AssetAssembler] = None,
-        schema_version: str = _DEFAULT_SCHEMA_VERSION,
+        schema_version: Optional[str] = None,
     ) -> None:
         self.log_path = log_path
         self._logger = logging.getLogger(self.__class__.__name__)
         self.version = version
-        self.schema_version = schema_version or _DEFAULT_SCHEMA_VERSION
+        resolved_schema = schema_version or os.getenv("LABS_SCHEMA_VERSION") or _DEFAULT_SCHEMA_VERSION
+        self.schema_version = resolved_schema
         self._assembler = assembler or AssetAssembler(
             version=version, schema_version=self.schema_version
         )
@@ -124,7 +125,12 @@ class GeneratorAgent:
             if len(parts) >= 2:
                 schema_version = parts[-2]
 
-        is_legacy_schema = schema_version == "0.7.3"
+        schema_url_str = schema_url.rstrip("/") if isinstance(schema_url, str) else ""
+        legacy_schema_suffix = "/0.7.3/synesthetic-asset.schema.json"
+        is_legacy_schema = (
+            schema_version == "0.7.3"
+            or (schema_url_str.endswith(legacy_schema_suffix))
+        )
 
         asset_id = asset.get("asset_id")
         if not asset_id:
