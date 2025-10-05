@@ -20,8 +20,11 @@ def _resolve_schema_path(schema_identifier: str) -> Path:
         raise ValueError("schema identifier must be a non-empty string")
 
     identifier = schema_identifier.strip()
-    if identifier.startswith("http://") or identifier.startswith("https://"):
-        raise ValueError(f"remote schemas are not supported: {identifier}")
+    if identifier.startswith(("http://", "https://")):
+        filename = Path(identifier).name
+        if not filename:
+            raise ValueError(f"unsupported remote schema: {identifier}")
+        identifier = str(Path("meta") / "schemas" / filename)
 
     path = Path(identifier)
     if not path.is_absolute():

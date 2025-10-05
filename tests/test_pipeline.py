@@ -100,8 +100,8 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
     critic_log = tmp_path / "critic.jsonl"
 
     class LoggedGeneratorAgent(GeneratorAgent):
-        def __init__(self) -> None:  # pragma: no cover - construction logic trivial
-            super().__init__(log_path=str(generator_log))
+        def __init__(self, *, schema_version=None) -> None:  # pragma: no cover - construction logic trivial
+            super().__init__(log_path=str(generator_log), schema_version=schema_version)
 
     monkeypatch.setattr(cli, "GeneratorAgent", LoggedGeneratorAgent)
 
@@ -116,7 +116,7 @@ def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) ->
 
     monkeypatch.setattr(cli, "build_validator_from_env", lambda: validator)
 
-    exit_code = cli.main(["generate", "aurora bloom"])
+    exit_code = cli.main(["generate", "--schema-version", "0.7.4", "aurora bloom"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -171,8 +171,8 @@ def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
     critic_log = tmp_path / "critic.jsonl"
 
     class LoggedGeneratorAgent(GeneratorAgent):
-        def __init__(self) -> None:  # pragma: no cover - trivial init
-            super().__init__(log_path=str(generator_log))
+        def __init__(self, *, schema_version=None) -> None:  # pragma: no cover - trivial init
+            super().__init__(log_path=str(generator_log), schema_version=schema_version)
 
     monkeypatch.setattr(cli, "GeneratorAgent", LoggedGeneratorAgent)
 
@@ -187,7 +187,7 @@ def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
 
     monkeypatch.setattr(cli, "build_validator_from_env", raise_unavailable)
 
-    exit_code = cli.main(["generate", "relaxed mode prompt"])
+    exit_code = cli.main(["generate", "--schema-version", "0.7.4", "relaxed mode prompt"])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -207,8 +207,8 @@ def test_cli_generate_deterministic_alias(monkeypatch, tmp_path, capsys) -> None
     generator_log = tmp_path / "generator.jsonl"
 
     class LoggedGeneratorAgent(GeneratorAgent):
-        def __init__(self) -> None:  # pragma: no cover - trivial init
-            super().__init__(log_path=str(generator_log))
+        def __init__(self, *, schema_version=None) -> None:  # pragma: no cover - trivial init
+            super().__init__(log_path=str(generator_log), schema_version=schema_version)
 
     monkeypatch.setattr(cli, "GeneratorAgent", LoggedGeneratorAgent)
     monkeypatch.setattr(
@@ -217,7 +217,14 @@ def test_cli_generate_deterministic_alias(monkeypatch, tmp_path, capsys) -> None
         lambda: (lambda payload: {"status": "ok", "asset_id": payload["asset_id"]}),
     )
 
-    exit_code = cli.main(["generate", "--engine", "deterministic", "alias prompt"])
+    exit_code = cli.main([
+        "generate",
+        "--engine",
+        "deterministic",
+        "--schema-version",
+        "0.7.4",
+        "alias prompt",
+    ])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -246,7 +253,14 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
 
     monkeypatch.setattr(cli, "build_validator_from_env", lambda: validator)
 
-    exit_code = cli.main(["generate", "--engine", "gemini", "chromatic tides"])
+    exit_code = cli.main([
+        "generate",
+        "--engine",
+        "gemini",
+        "--schema-version",
+        "0.7.4",
+        "chromatic tides",
+    ])
     captured = capsys.readouterr()
 
     assert exit_code == 0
@@ -268,6 +282,8 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
     assert log_record["strict"] == output["review"]["strict"]
     assert log_record["mode"] == "mock"
     assert log_record["mcp_result"] == {"status": "ok", "asset_id": asset["asset_id"]}
+    assert log_record["schema_version"] == "0.7.4"
+    assert log_record["$schema"] == asset["$schema"]
 
     persisted_files = list(experiments_dir.glob("*.json"))
     assert len(persisted_files) == 1
@@ -285,11 +301,28 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
         generator = GeminiGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
         original_generate = generator.generate
 
-        def wrapped(self, prompt: str, *, parameters=None, seed=None, timeout=None, trace_id=None):
+        def wrapped(
+            self,
+            prompt: str,
+            *,
+            parameters=None,
+            seed=None,
+            timeout=None,
+            trace_id=None,
+            schema_version=None,
+        ):
             recorded["seed"] = seed
             recorded["parameters"] = parameters
             recorded["timeout"] = timeout
-            return original_generate(prompt, parameters=parameters, seed=seed, timeout=timeout, trace_id=trace_id)
+            recorded["schema_version"] = schema_version
+            return original_generate(
+                prompt,
+                parameters=parameters,
+                seed=seed,
+                timeout=timeout,
+                trace_id=trace_id,
+                schema_version=schema_version,
+            )
 
         generator.generate = types.MethodType(wrapped, generator)
         return generator
@@ -314,6 +347,8 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
         "--timeout-s",
         "12",
         "--relaxed",
+        "--schema-version",
+        "0.7.4",
         "flagged prompt",
     ]
     exit_code = cli.main(args)
@@ -326,6 +361,7 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
     assert recorded["seed"] == 42
     assert recorded["parameters"] == {"temperature": 0.85}
     assert recorded["timeout"] == 12.0
+    assert recorded["schema_version"] == "0.7.4"
 
 def test_cli_preview_command(monkeypatch, capsys) -> None:
     asset = {"asset_id": "asset-10"}

@@ -20,7 +20,9 @@ from .tone import ToneGenerator
 class AssetAssembler:
     """Compose component generators into a full Synesthetic asset."""
 
-    SCHEMA_URL = "meta/schemas/synesthetic-asset.schema.json"
+    DEFAULT_SCHEMA_VERSION = "0.7.3"
+    SCHEMA_URL_TEMPLATE = "https://schemas.synesthetic.dev/{version}/synesthetic-asset.schema.json"
+    SCHEMA_URL = SCHEMA_URL_TEMPLATE.format(version=DEFAULT_SCHEMA_VERSION)
 
     def __init__(
         self,
@@ -33,6 +35,7 @@ class AssetAssembler:
         meta_generator: Optional[MetaGenerator] = None,
         modulation_generator: Optional[ModulationGenerator] = None,
         rule_bundle_generator: Optional[RuleBundleGenerator] = None,
+        schema_version: str = DEFAULT_SCHEMA_VERSION,
     ) -> None:
         self.version = version
         self._shader = shader_generator or ShaderGenerator(version=version)
@@ -42,12 +45,26 @@ class AssetAssembler:
         self._meta = meta_generator or MetaGenerator(version=version)
         self._modulation = modulation_generator or ModulationGenerator(version=version)
         self._rule_bundle = rule_bundle_generator or RuleBundleGenerator(version=version)
+        self.schema_version = schema_version or self.DEFAULT_SCHEMA_VERSION
 
-    def generate(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, object]:
+    @classmethod
+    def schema_url(cls, schema_version: str) -> str:
+        version = (schema_version or cls.DEFAULT_SCHEMA_VERSION).strip()
+        return cls.SCHEMA_URL_TEMPLATE.format(version=version)
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        seed: Optional[int] = None,
+        schema_version: Optional[str] = None,
+    ) -> Dict[str, object]:
         """Return a fully wired Synesthetic asset for *prompt*."""
 
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
+
+        resolved_schema_version = (schema_version or self.schema_version) or self.DEFAULT_SCHEMA_VERSION
 
         if seed is not None:
             asset_id, timestamp = self._deterministic_identifiers(prompt, seed)
@@ -84,8 +101,10 @@ class AssetAssembler:
             trace_id=asset_id,
         )
 
+        schema_url = self.schema_url(resolved_schema_version)
+
         asset: Dict[str, object] = {
-            "$schema": self.SCHEMA_URL,
+            "$schema": schema_url,
             "asset_id": asset_id,
             "prompt": prompt,
             "seed": seed,
@@ -107,6 +126,78 @@ class AssetAssembler:
             trace_id=asset_id,
         ))
 
+        if resolved_schema_version.startswith("0.7.3"):
+            asset = self._normalize_0_7_3(asset, prompt, self.version)
+        else:
+            asset = self._normalize_0_7_4(
+                asset,
+                prompt,
+                asset_id,
+                timestamp,
+                parameter_index,
+                provenance_block,
+            )
+
+        return asset
+
+    @staticmethod
+    def _normalize_0_7_3(
+        asset: Dict[str, object], prompt: str, assembler_version: str
+    ) -> Dict[str, object]:
+        """Strip enriched fields to satisfy the legacy 0.7.3 schema."""
+
+        meta_info = asset.get("meta_info", {})
+        provenance = meta_info.get("provenance", {}) if isinstance(meta_info, dict) else {}
+
+        shader_block = asset.get("shader", {})
+        tone_block = asset.get("tone", {})
+        haptic_block = asset.get("haptic", {})
+
+        return {
+            "$schema": asset["$schema"],
+            "name": meta_info.get("title", prompt),
+            "shader": {
+                key: value
+                for key, value in shader_block.items()
+                if key in {"name", "description", "language", "sources", "uniforms", "meta_info"}
+            },
+            "tone": {
+                key: value
+                for key, value in tone_block.items()
+                if key in {"name", "description", "engine", "settings", "meta_info"}
+            },
+            "haptic": {
+                key: value
+                for key, value in haptic_block.items()
+                if key in {"device", "description", "input_parameters", "meta_info"}
+            },
+            "control": deepcopy(asset.get("control", {})),
+            "modulations": [],
+            "rule_bundle": {"rules": [], "meta_info": {"version": assembler_version}},
+            "meta_info": {"provenance": deepcopy(provenance)},
+        }
+
+    @staticmethod
+    def _normalize_0_7_4(
+        asset: Dict[str, object],
+        prompt: str,
+        asset_id: str,
+        timestamp: str,
+        parameter_index: Sequence[str],
+        provenance_block: Dict[str, object],
+    ) -> Dict[str, object]:
+        """Ensure enriched schema payload contains all required root fields."""
+
+        asset.update(
+            {
+                "asset_id": asset_id,
+                "prompt": prompt,
+                "timestamp": timestamp,
+                "parameter_index": sorted(parameter_index),
+                "provenance": deepcopy(provenance_block),
+            }
+        )
+        asset.pop("name", None)
         return asset
 
     def _deterministic_identifiers(self, prompt: str, seed: int) -> tuple[str, str]:
