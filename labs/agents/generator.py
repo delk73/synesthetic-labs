@@ -13,6 +13,7 @@ from labs.logging import log_jsonl
 from labs.mcp_stdio import resolve_mcp_endpoint
 
 _DEFAULT_LOG_PATH = "meta/output/labs/generator.jsonl"
+_DEFAULT_SCHEMA_VERSION = "0.7.4"
 
 
 def _strict_mode_enabled() -> bool:
@@ -39,13 +40,23 @@ class GeneratorAgent:
         *,
         version: str = "v0.2",
         assembler: Optional[AssetAssembler] = None,
+        schema_version: str = _DEFAULT_SCHEMA_VERSION,
     ) -> None:
         self.log_path = log_path
         self._logger = logging.getLogger(self.__class__.__name__)
         self.version = version
-        self._assembler = assembler or AssetAssembler(version=version)
+        self.schema_version = schema_version or _DEFAULT_SCHEMA_VERSION
+        self._assembler = assembler or AssetAssembler(
+            version=version, schema_version=self.schema_version
+        )
 
-    def propose(self, prompt: str, *, seed: Optional[int] = None) -> Dict[str, Any]:
+    def propose(
+        self,
+        prompt: str,
+        *,
+        seed: Optional[int] = None,
+        schema_version: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Return a fully assembled asset for *prompt*.
 
         The payload mirrors the canonical Synesthetic schema sections produced
@@ -56,24 +67,34 @@ class GeneratorAgent:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string")
 
-        asset = self._assembler.generate(prompt, seed=seed)
+        target_schema_version = schema_version or self.schema_version
+        asset = self._assembler.generate(
+            prompt,
+            seed=seed,
+            schema_version=target_schema_version,
+        )
 
         timestamp = asset.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        provenance = asset.setdefault("provenance", {})
-        provenance.setdefault("agent", "AssetAssembler")
-        provenance.setdefault("version", self._assembler.version)
-        generator_block = provenance.setdefault("generator", {})
-        generator_block.setdefault("agent", self.__class__.__name__)
-        generator_block.setdefault("version", self.version)
-        generator_block.setdefault("generated_at", timestamp)
-        trace_id = generator_block.get("trace_id") or str(uuid.uuid4())
-        generator_block["trace_id"] = trace_id
 
         meta = asset.setdefault("meta_info", {})
         meta_provenance = meta.setdefault("provenance", {})
+        trace_id = meta_provenance.get("trace_id") or str(uuid.uuid4())
         meta_provenance.setdefault("trace_id", trace_id)
         meta_provenance.setdefault("mode", "local")
         meta_provenance.setdefault("timestamp", timestamp)
+
+        if not target_schema_version.startswith("0.7.3"):
+            provenance = asset.setdefault("provenance", {})
+            provenance.setdefault("agent", "AssetAssembler")
+            provenance.setdefault("version", self._assembler.version)
+            generator_block = provenance.setdefault("generator", {})
+        else:
+            generator_block = meta_provenance.setdefault("generator", {})
+
+        generator_block.setdefault("agent", self.__class__.__name__)
+        generator_block.setdefault("version", self.version)
+        generator_block.setdefault("generated_at", timestamp)
+        generator_block.setdefault("trace_id", trace_id)
 
         self._logger.info("Generated asset %s", asset.get("asset_id"))
 
@@ -82,6 +103,7 @@ class GeneratorAgent:
         log_entry["mode"] = "local"
         log_entry["strict"] = _strict_mode_enabled()
         log_entry["transport"] = resolve_mcp_endpoint()
+        log_entry["schema_version"] = target_schema_version
 
         log_jsonl(self.log_path, log_entry)
         return asset

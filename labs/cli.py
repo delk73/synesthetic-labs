@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, Optional
 
 from labs.agents.critic import CriticAgent, is_fail_fast_enabled
 from labs.agents.generator import GeneratorAgent
+from labs.generator.assembler import AssetAssembler
 from labs.generator.external import ExternalGenerationError, build_external_generator
 from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
 from labs.patches import apply_patch, preview_patch, rate_patch
@@ -86,6 +87,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         choices=("gemini", "openai", "deterministic"),
         help="Optional external engine to fulfil the prompt",
     )
+    generate_parser.add_argument(
+        "--schema-version",
+        type=str,
+        default=os.getenv("LABS_SCHEMA_VERSION", AssetAssembler.DEFAULT_SCHEMA_VERSION),
+        help=f"Target schema version (default: {AssetAssembler.DEFAULT_SCHEMA_VERSION})",
+    )
     generate_parser.add_argument("--seed", type=int, help="Optional random seed for generation")
     generate_parser.add_argument("--temperature", type=float, help="Temperature override for external engines")
     generate_parser.add_argument("--timeout-s", dest="timeout_s", type=int, help="Override external call timeout (seconds)")
@@ -132,14 +139,17 @@ def main(argv: Optional[list[str]] = None) -> int:
                     parameters=external_parameters or None,
                     seed=args.seed,
                     timeout=timeout_value,
+                    schema_version=args.schema_version,
                 )
             except ExternalGenerationError as exc:
                 external_generator.record_failure(exc)
                 _LOGGER.error("External generator %s failed: %s", engine, exc)
                 return 1
         else:
-            generator = GeneratorAgent()
-            asset = generator.propose(args.prompt, seed=args.seed)
+            generator = GeneratorAgent(schema_version=args.schema_version)
+            asset = generator.propose(
+                args.prompt, seed=args.seed, schema_version=args.schema_version
+            )
 
         try:
             validator_callback = _build_validator_optional()
@@ -152,8 +162,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         experiment_path: Optional[str] = None
         if review.get("ok"):
-            persisted_path = _persist_asset(asset)
-            experiment_path = _relativize(persisted_path)
+            if "asset_id" in asset:
+                persisted_path = _persist_asset(asset)
+                experiment_path = _relativize(persisted_path)
+            else:
+                _LOGGER.warning("Asset lacks asset_id; skipping persistence")
         else:
             _LOGGER.error("Generation failed validation; asset not persisted")
 
@@ -164,11 +177,14 @@ def main(argv: Optional[list[str]] = None) -> int:
                 experiment_path=experiment_path,
             )
         elif generator is not None:
-            generator.record_experiment(
-                asset=asset,
-                review=review,
-                experiment_path=experiment_path,
-            )
+            if "asset_id" in asset:
+                generator.record_experiment(
+                    asset=asset,
+                    review=review,
+                    experiment_path=experiment_path,
+                )
+            else:
+                _LOGGER.warning("Skipping experiment log; asset lacks asset_id")
 
         output_payload = {
             "asset": asset,
