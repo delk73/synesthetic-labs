@@ -117,8 +117,31 @@ class GeneratorAgent:
     ) -> Dict[str, Any]:
         """Log a validated experiment linking the asset to persisted output."""
 
-        if "asset_id" not in asset:
-            raise ValueError("asset must include an 'asset_id'")
+        schema_url = asset.get("$schema")
+        schema_version: Optional[str] = None
+        if isinstance(schema_url, str):
+            parts = schema_url.rstrip("/").split("/")
+            if len(parts) >= 2:
+                schema_version = parts[-2]
+
+        is_legacy_schema = schema_version == "0.7.3"
+
+        asset_id = asset.get("asset_id")
+        if not asset_id:
+            if is_legacy_schema:
+                candidate = asset.get("name")
+                if isinstance(candidate, str) and candidate.strip():
+                    asset_id = candidate.strip()
+                else:
+                    meta_info = asset.get("meta_info")
+                    meta_title = meta_info.get("title") if isinstance(meta_info, dict) else None
+                    if isinstance(meta_title, str) and meta_title.strip():
+                        asset_id = meta_title.strip()
+                    else:
+                        asset_id = f"legacy-{uuid.uuid4()}"
+            else:
+                raise ValueError("asset must include an 'asset_id'")
+        asset.setdefault("asset_id", asset_id)
 
         timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
 
@@ -134,7 +157,7 @@ class GeneratorAgent:
         transport = review.get("transport") or resolve_mcp_endpoint()
 
         record = {
-            "asset_id": asset["asset_id"],
+            "asset_id": asset_id,
             "prompt": asset.get("prompt"),
             "experiment_path": experiment_path,
             "trace_id": trace_id,
@@ -154,6 +177,10 @@ class GeneratorAgent:
             },
         }
 
+        if is_legacy_schema and "asset_id" not in asset:
+            record["legacy_schema"] = True
+            record.setdefault("notes", []).append("asset_id synthesized for legacy schema")
+
         if "timestamp" in asset:
             record["asset_timestamp"] = asset["timestamp"]
 
@@ -166,7 +193,7 @@ class GeneratorAgent:
         log_jsonl(self.log_path, record)
         self._logger.info(
             "Recorded experiment for asset %s (persisted=%s)",
-            asset["asset_id"],
+            asset_id,
             bool(experiment_path),
         )
         return record
