@@ -20,7 +20,7 @@ from .tone import ToneGenerator
 class AssetAssembler:
     """Compose component generators into a full Synesthetic asset."""
 
-    DEFAULT_SCHEMA_VERSION = "0.7.4"
+    DEFAULT_SCHEMA_VERSION = "0.7.3"
     SCHEMA_URL_TEMPLATE = "https://schemas.synesthetic.dev/{version}/synesthetic-asset.schema.json"
     SCHEMA_URL = SCHEMA_URL_TEMPLATE.format(version=DEFAULT_SCHEMA_VERSION)
 

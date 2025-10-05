@@ -1,5 +1,5 @@
 ---
-version: v0.3.5
+version: v0.3.4
 lastReviewed: 2025-10-03
 owner: labs-core
 ---
@@ -22,7 +22,9 @@ owner: labs-core
 
 ---
 
-## Scope (v0.3.5 Generator Schema Awareness)
+> This document codifies the v0.3.4 release scope. Future scopes (v0.3.5+) will build on this baseline.
+
+## Scope (v0.3.4 Schema Targeting Hardening)
 
 ### Objectives
 - Add **schema version targeting** for asset generation.

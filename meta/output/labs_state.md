@@ -1,111 +1,113 @@
 ## Summary of repo state
-- Generator and CLI remain pre-schema-awareness: assets always use the local `$schema` path and there is no schema_version input, so branching required for 0.7.3 vs 0.7.4 never occurs.【F:docs/labs_spec.md†L28-L96】【F:labs/generator/assembler.py†L23-L110】【F:labs/cli.py†L82-L135】
-- Critic, MCP resolver, and patch lifecycle continue to enforce transport defaults, strict vs relaxed handling, and shared logging per the earlier v0.3.4 scope.【F:labs/agents/critic.py†L35-L218】【F:labs/mcp_stdio.py†L162-L232】【F:labs/patches.py†L1-L159】
-- External generator integrations (Gemini/OpenAI) still cover env-gated live calls, retries, normalization, and logging, but logs omit schema_version metadata required by the updated spec.【F:labs/generator/external.py†L166-L339】【F:tests/test_external_generator.py†L117-L260】
+- Schema targeting now flows through CLI flag, env fallback, and assembler branching, though the default constant remains 0.7.4 instead of the spec’s 0.7.3 baseline.【F:labs/cli.py†L52-L146】【F:labs/generator/assembler.py†L23-L210】【F:docs/labs_spec.md†L33-L76】
+- Critic, MCP resolver, and patch lifecycle continue to enforce strict vs relaxed validation with transport-aware logging backed by unit tests.【F:labs/agents/critic.py†L61-L218】【F:labs/mcp_stdio.py†L162-L232】【F:labs/patches.py†L47-L156】【F:tests/test_critic.py†L15-L204】
+- External generators meet live-mode requirements: env-gated keys, header redaction, retry/backoff, numeric bounds, and logging now include schema_version metadata.【F:labs/generator/external.py†L82-L840】【F:tests/test_external_generator.py†L43-L260】【F:tests/test_pipeline.py†L244-L306】
+- Documentation lags the implementation: spec header already says v0.3.5, and README/.example.env omit schema-version guidance required by the spec.【F:docs/labs_spec.md†L1-L72】【F:README.md†L19-L104】【F:.example.env†L1-L26】
 
 ## Top gaps & fixes (3-5 bullets)
-- Add schema_version plumbing (env + CLI flag) and generator branching to satisfy the v0.3.4 schema-targeting objectives.【F:docs/labs_spec.md†L28-L96】【F:labs/cli.py†L82-L135】【F:labs/generator/assembler.py†L23-L110】
-- Switch `$schema` tagging to the versioned corpus URL derived from schema_version instead of the bundled relative path.【F:docs/labs_spec.md†L78-L133】【F:labs/generator/assembler.py†L23-L110】
-- Extend external generation context/logging to include schema_version and a null failure field on success per the logging contract.【F:docs/labs_spec.md†L113-L133】【F:labs/generator/external.py†L230-L339】
+- Align `AssetAssembler.DEFAULT_SCHEMA_VERSION` (and related tests/docs) with the spec’s 0.7.3 default or revise the spec header to match the new baseline.【F:labs/generator/assembler.py†L16-L36】【F:docs/labs_spec.md†L61-L76】
+- Extend README and `.example.env` to document the new `--schema-version` flag and `LABS_SCHEMA_VERSION` precedence so operators can target legacy schemas intentionally.【F:labs/cli.py†L52-L138】【F:README.md†L41-L76】【F:.example.env†L1-L26】
+- Clarify the spec header/scope to indicate whether v0.3.4 or v0.3.5 is authoritative for this audit cycle.【F:docs/labs_spec.md†L1-L40】
 
 ## Alignment with labs_spec.md (table: Spec item → Status → Evidence)
 | Spec item | Status | Evidence |
 | --- | --- | --- |
-| Spec version pinned to v0.3.4 | Divergent | Document already states v0.3.5 scope, so repo spec drifted ahead of requested audit version.【F:docs/labs_spec.md†L1-L33】 |
-| Generator exposes schema_version argument + env precedence | Missing | No CLI flag/env handling; generator API still seed-only.【F:docs/labs_spec.md†L39-L64】【F:labs/cli.py†L82-L135】 |
-| Generator branches 0.7.3 vs ≥0.7.4 fields | Missing | AssetAssembler always emits enriched fields regardless of schema version controls that do not exist.【F:docs/labs_spec.md†L30-L96】【F:labs/generator/assembler.py†L66-L110】 |
-| `$schema` URL points at chosen corpus | Divergent | Output keeps static `meta/schemas/...` path instead of versioned HTTPS URL.【F:docs/labs_spec.md†L78-L133】【F:labs/generator/assembler.py†L23-L102】 |
-| External logs capture schema_version + `$schema` | Missing | record_run omits schema_version and `$schema` snapshot in external.jsonl entries.【F:docs/labs_spec.md†L113-L133】【F:labs/generator/external.py†L230-L339】 |
-| MCP validation strict/relaxed parity | Present | Critic enforces fail-fast defaults, downgrades in relaxed mode, and surfaces transport errors.【F:labs/agents/critic.py†L61-L188】【F:tests/test_critic.py†L15-L204】 |
-| External normalization + bounds checks | Present | Normalizer rejects unknown keys, enforces numeric ranges, and tests cover failures.【F:labs/generator/external.py†L639-L780】【F:tests/test_external_generator.py†L266-L365】 |
-| Retry/backoff + size caps | Present | Generator enforces 256KiB/1MiB guards and exponential retries with coverage.【F:labs/generator/external.py†L166-L214】【F:tests/test_external_generator.py†L180-L260】 |
-| TCP default resolver fallback | Present | Resolver returns TCP when unset/invalid with unit tests locking behavior.【F:labs/mcp_stdio.py†L162-L210】【F:tests/test_tcp.py†L175-L188】 |
+| Spec version header matches v0.3.4 scope | Divergent | Spec front matter already declares v0.3.5 objectives while the audit prompt targets v0.3.4.【F:docs/labs_spec.md†L1-L48】 |
+| CLI flag + env precedence (`--schema-version` > `LABS_SCHEMA_VERSION` > default) | Present | CLI adds the flag with env fallback and pipeline tests assert precedence.【F:labs/cli.py†L58-L140】【F:tests/test_pipeline.py†L228-L317】 |
+| Generator branches 0.7.3 legacy vs ≥0.7.4 enriched assets | Present | AssetAssembler routes through `_build_legacy_asset`/`_build_enriched_asset` and tests validate both shapes.【F:labs/generator/assembler.py†L68-L210】【F:tests/test_generator_assembler.py†L1-L87】 |
+| `$schema` URL derived from schema_version template | Present | SCHEMA_URL_TEMPLATE resolves to hosted corpus URLs and CLI/CLI tests assert `$schema` propagation.【F:labs/generator/assembler.py†L16-L54】【F:tests/test_pipeline.py†L244-L306】 |
+| Default schema version remains 0.7.3 | Divergent | Code defaults to 0.7.4 while the spec keeps 0.7.3 as baseline.【F:labs/generator/assembler.py†L16-L24】【F:docs/labs_spec.md†L61-L76】 |
+| External logs capture schema_version, `$schema`, and failure payload | Present | `record_run` writes these fields and tests assert `schema_version` plus `failure` null when validation passes.【F:labs/generator/external.py†L230-L320】【F:tests/test_pipeline.py†L244-L306】【F:tests/test_external_generator.py†L43-L120】 |
+| Critic strict vs relaxed always invokes MCP | Present | Critic toggles fail-fast, surfaces `mcp_unavailable` reasons, and tests cover relaxed mode downgrades.【F:labs/agents/critic.py†L61-L188】【F:tests/test_critic.py†L55-L204】 |
+| Normalization rejects unknown keys & out-of-range values | Present | `_normalise_asset` enforces allowed keys and `_validate_bounds` checks numeric ranges with failing tests.【F:labs/generator/external.py†L639-L840】【F:tests/test_external_generator.py†L266-L365】 |
+| Retry/backoff & size caps follow taxonomy | Present | External generator enforces 256 KiB/1 MiB caps and exponential retries; tests assert taxonomy adherence.【F:labs/generator/external.py†L166-L214】【F:tests/test_external_generator.py†L180-L260】 |
+| TCP fallback when endpoint unset/invalid | Present | Resolver defaults to TCP and tests lock both unset and bogus values.【F:labs/mcp_stdio.py†L162-L210】【F:tests/test_tcp.py†L175-L188】 |
+| Maintainer docs reference schema-version targeting controls | Missing | README and `.example.env` document transports but omit schema-version flag/env guidance.【F:README.md†L19-L104】【F:.example.env†L1-L26】【F:docs/process.md†L39-L60】 |
 
 ## Generator implementation (table: Component → Status → Evidence)
 | Component | Status | Evidence |
 | --- | --- | --- |
-| AssetAssembler deterministic IDs/timestamps | Present | Seeded runs derive stable UUID/timestamp pairs.【F:labs/generator/assembler.py†L112-L120】 |
-| Parameter index aggregation + control pruning | Present | Parameter index built from sections; controls pruned to known parameters.【F:labs/generator/assembler.py†L122-L141】 |
-| Provenance scaffolding | Present | GeneratorAgent backfills provenance/trace metadata and logs experiments.【F:labs/agents/generator.py†L30-L145】【F:tests/test_generator.py†L11-L87】 |
-| Schema-version branching | Missing | No schema_version input or conditional fields implemented.【F:docs/labs_spec.md†L28-L96】【F:labs/generator/assembler.py†L66-L110】 |
+| CLI `--schema-version` flag & env fallback | Present | Flag surfaces in CLI parser with precedence tests covering seed/temperature overrides and schema routing.【F:labs/cli.py†L52-L146】【F:tests/test_pipeline.py†L228-L317】 |
+| AssetAssembler schema branching & hosted `$schema` URLs | Present | `_is_legacy_schema` selects legacy builder, enriched assets include provenance/parameter_index, and tests assert both forms.【F:labs/generator/assembler.py†L68-L210】【F:tests/test_generator_assembler.py†L1-L87】 |
+| GeneratorAgent logging & experiment recording | Present | Agent logs schema_version, trace, and validation metadata; unit tests confirm persistence entries.【F:labs/agents/generator.py†L34-L195】【F:tests/test_generator.py†L11-L118】 |
+| Default schema constant matches spec baseline | Divergent | `DEFAULT_SCHEMA_VERSION` is `0.7.4`, conflicting with spec’s required default of `0.7.3`.【F:labs/generator/assembler.py†L16-L24】【F:docs/labs_spec.md†L61-L76】 |
 
 ## Critic implementation (table: Responsibility → Status → Evidence)
 | Responsibility | Status | Evidence |
 | --- | --- | --- |
-| Required-field checks + trace resolution | Present | Critic enforces core keys and derives trace_id from asset provenance.【F:labs/agents/critic.py†L35-L185】 |
-| MCP bridge + resolver fallback | Present | Critic builds validators from env and reports transport-specific errors.【F:labs/agents/critic.py†L96-L188】【F:tests/test_critic.py†L15-L204】 |
-| Strict vs relaxed behavior | Present | Fail-fast default toggled by LABS_FAIL_FAST with warning downgrade tests.【F:labs/agents/critic.py†L61-L173】【F:tests/test_critic.py†L162-L204】 |
-| Rating log stubs | Present | record_rating persists structured entries with transport metadata.【F:labs/agents/critic.py†L190-L218】【F:tests/test_patches.py†L65-L92】 |
+| Required-field checks & trace resolution | Present | Critic inspects enriched assets, derives `trace_id`, and logs issues when keys missing.【F:labs/agents/critic.py†L74-L150】 |
+| MCP bridge & resolver fallback | Present | Critic builds validators via `build_validator_from_env`, handling stdio/socket/tcp failures with taxonomy detail.【F:labs/agents/critic.py†L96-L188】【F:tests/test_critic.py†L15-L204】 |
+| Strict vs relaxed behavior | Present | LABS_FAIL_FAST toggles failure vs warning paths and tests assert downgraded reviews.【F:labs/agents/critic.py†L61-L173】【F:tests/test_critic.py†L154-L204】 |
+| Rating log stubs | Present | `record_rating` emits structured JSONL entries mirrored in patch lifecycle tests.【F:labs/agents/critic.py†L190-L218】【F:tests/test_patches.py†L65-L92】 |
 
 ## Assembler / Wiring step (bullets: parameter index, dangling reference pruning, provenance)
-- `parameter_index` gathers shader/tone/haptic inputs for downstream validation.【F:labs/generator/assembler.py†L122-L130】
-- Control mappings that lack a known parameter are dropped before output.【F:labs/generator/assembler.py†L131-L141】
-- Asset/meta provenance embeds generator IDs, version, and trace timestamps for reproducibility.【F:labs/generator/assembler.py†L80-L110】
+- `parameter_index` aggregates shader/tone/haptic inputs and deduplicates before enrichment.【F:labs/generator/assembler.py†L122-L170】
+- `_prune_controls` drops mappings whose parameters are absent from the index, avoiding dangling references.【F:labs/generator/assembler.py†L131-L141】
+- Provenance blocks capture timestamps, seeds, asset IDs, and generator metadata for deterministic replay.【F:labs/generator/assembler.py†L80-L118】【F:labs/agents/generator.py†L94-L166】
 
 ## Patch lifecycle (bullets: preview, apply, rate stubs, logging)
-- `preview_patch` logs action, changes, and transport metadata to JSONL.【F:labs/patches.py†L47-L69】【F:tests/test_patches.py†L11-L29】
-- `apply_patch` merges updates, revalidates via Critic, and records failures with reasons.【F:labs/patches.py†L71-L118】【F:tests/test_patches.py†L31-L63】
-- `rate_patch` appends RLHF stubs linked to critic rating entries under the same log stream.【F:labs/patches.py†L121-L156】【F:tests/test_patches.py†L65-L92】
+- `preview_patch` writes structured audit events including trace, strict flag, and transport metadata.【F:labs/patches.py†L47-L74】【F:tests/test_patches.py†L11-L29】
+- `apply_patch` invokes Critic, records validation outcome, and surfaces failure reason/detail when review fails.【F:labs/patches.py†L76-L118】【F:tests/test_patches.py†L31-L63】
+- `rate_patch` records RLHF stubs and links to critic rating logs with shared trace IDs.【F:labs/patches.py†L121-L156】【F:tests/test_patches.py†L65-L92】
 
-## MCP integration (bullets: STDIO, TCP-default, socket-optional validation; failure handling; strict vs relaxed mode; 1 MiB caps; reason/detail logging; resolver fallback)
-- Resolver defaults to TCP when unset/invalid and supports stdio/socket overrides documented in builder.【F:labs/mcp_stdio.py†L162-L232】
-- STDIO builder forwards deprecated SYN_SCHEMAS_DIR once with warning while socket path validation raises socket_unavailable.【F:labs/mcp_stdio.py†L178-L207】【F:tests/test_critic.py†L188-L217】
-- TCP client enforces payload caps via shared transport helpers that raise classified errors.【F:labs/transport.py†L1-L91】【F:tests/test_tcp.py†L160-L172】
-- Critic surfaces `mcp_unavailable` vs `mcp_error` reasons and toggles strict vs relaxed behavior through LABS_FAIL_FAST.【F:labs/agents/critic.py†L61-L188】【F:tests/test_critic.py†L55-L204】
+## MCP integration (bullets: STDIO, TCP-default, socket-optional validation; failure handling; strict vs relaxed mode; 1 MiB caps; reason/detail logging; resolver fallback)
+- `resolve_mcp_endpoint` defaults to TCP, validates stdio/socket envs, and emits deprecated SYN_SCHEMAS_DIR warning once.【F:labs/mcp_stdio.py†L162-L232】【F:tests/test_critic.py†L188-L217】
+- Shared transport helpers cap payloads at 1 MiB and surface errors via MCPUnavailableError during TCP validation.【F:labs/transport.py†L1-L96】【F:tests/test_tcp.py†L110-L172】
+- Critic logs `mcp_unavailable`/`mcp_error` reasons under strict mode and downgrades to warnings when LABS_FAIL_FAST is disabled.【F:labs/agents/critic.py†L96-L188】【F:tests/test_critic.py†L55-L204】
 
 ## External generator integration (bullets: Gemini/OpenAI interface, provenance logging, CLI flags, error handling, MCP-enforced validation)
-- Gemini/OpenAI subclasses inherit shared request envelope, live/mock dispatch, and provenance assembly hooks.【F:labs/generator/external.py†L300-L1040】
-- CLI delegates to external generators, records only MCP-reviewed assets, and logs review metadata.【F:labs/cli.py†L115-L178】【F:tests/test_pipeline.py†L229-L274】
-- External runs log attempts with hashed response metadata and validation outcomes, differentiating success vs failure contexts.【F:labs/generator/external.py†L166-L355】【F:tests/test_external_generator.py†L43-L145】
+- Gemini/OpenAI implementations reuse shared request envelope, live/mock dispatch, and normalization pipeline that injects provenance metadata.【F:labs/generator/external.py†L300-L880】
+- CLI generate command wires schema_version through external generators and only records runs after Critic review.【F:labs/cli.py†L115-L211】【F:tests/test_pipeline.py†L228-L317】
+- `record_run`/`record_failure` append attempts, raw response hashes, schema_version, and validation outcomes to `meta/output/labs/external.jsonl`.【F:labs/generator/external.py†L230-L355】【F:tests/test_external_generator.py†L43-L145】
 
 ## External generation LIVE (v0.3.4) (bullets: env keys, endpoint resolution, Authorization headers, timeout, retry/backoff, size guards, redaction, normalization → schema-valid)
-- Live mode gated by `LABS_EXTERNAL_LIVE` plus provider API keys/endpoints with sanitized header logging.【F:labs/generator/external.py†L82-L207】【F:tests/test_external_generator.py†L117-L178】
-- Authorization headers injected for live calls, redacted in logs, and endpoints resolved from env/defaults.【F:labs/generator/external.py†L438-L467】【F:tests/test_external_generator.py†L117-L145】
-- Retries implement exponential backoff with jitter and respect no-retry taxonomy; size caps enforce 256 KiB/1 MiB limits prior to parsing.【F:labs/generator/external.py†L166-L214】【F:tests/test_external_generator.py†L180-L260】
-- Normalization fills defaults, rejects unknown keys, and enforces numeric bounds before MCP review.【F:labs/generator/external.py†L639-L780】【F:tests/test_external_generator.py†L266-L365】
+- Live mode requires `LABS_EXTERNAL_LIVE=1` plus provider API keys; Authorization headers are redacted in logs.【F:labs/generator/external.py†L82-L215】【F:tests/test_external_generator.py†L117-L176】
+- Request and response payloads respect 256 KiB / 1 MiB caps before parsing, raising taxonomy-aligned errors when exceeded.【F:labs/generator/external.py†L166-L214】【F:tests/test_external_generator.py†L180-L219】
+- Exponential backoff with jitter retries retryable errors and stops on non-retry reasons such as `auth_error`.【F:labs/generator/external.py†L166-L214】【F:tests/test_external_generator.py†L221-L260】
+- Normalization enforces allowed keys, numeric bounds, and fills provenance before delegating to MCP validation.【F:labs/generator/external.py†L639-L840】【F:tests/test_external_generator.py†L266-L365】
+- external.jsonl entries record schema_version, `$schema`, and experiment linkage after successful runs.【F:labs/generator/external.py†L230-L320】【F:tests/test_pipeline.py†L244-L306】
 
 ## Test coverage (table: Feature → Tested? → Evidence, including socket failure coverage, resolver fallback, header injection, size caps, retry taxonomy)
 | Feature | Tested? | Evidence |
 | --- | --- | --- |
-| Critic socket failure detail | Yes | Relaxed/socket tests expect `socket_unavailable` detail.【F:tests/test_critic.py†L188-L204】 |
-| Resolver TCP fallback | Yes | Explicit tests assert TCP default on unset/invalid env.【F:tests/test_tcp.py†L175-L188】 |
-| Header injection & redaction | Yes | Live header test checks Authorization injection/redaction.【F:tests/test_external_generator.py†L117-L176】 |
-| Request/response size caps | Yes | Oversized body tests raise bad_response taxonomy.【F:tests/test_external_generator.py†L180-L219】 |
-| Retry/backoff taxonomy | Yes | Rate-limit test retries until success under expected reasons.【F:tests/test_external_generator.py†L221-L260】 |
-| Schema-version branching/unit matrix | No | Spec demands 0.7.3/0.7.4 tests, but generator tests only cover legacy fields/logging.【F:docs/labs_spec.md†L136-L146】【F:tests/test_generator.py†L11-L87】 |
+| Schema-version branching/unit matrix | Yes | Unit tests assert 0.7.3 legacy assets vs 0.7.4 enriched structure and generator logs.【F:tests/test_generator_assembler.py†L1-L87】【F:tests/test_generator.py†L44-L87】 |
+| CLI flag precedence & relaxed mode plumbing | Yes | Pipeline tests verify schema_version routing, seed/temperature overrides, and LABS_FAIL_FAST toggling.【F:tests/test_pipeline.py†L228-L317】 |
+| Critic socket failure detail | Yes | Socket path test asserts `socket_unavailable` detail in review payload.【F:tests/test_critic.py†L188-L204】 |
+| Resolver TCP fallback | Yes | Tests cover unset and invalid MCP_ENDPOINT values returning TCP.【F:tests/test_tcp.py†L175-L188】 |
+| Header injection & redaction | Yes | Live header test checks Authorization injection and log redaction.【F:tests/test_external_generator.py†L117-L176】 |
+| Size caps & retry taxonomy | Yes | Oversized body and rate-limit tests exercise bad_response and rate_limited branches.【F:tests/test_external_generator.py†L180-L260】 |
+| Normalization rejects unknown/out-of-range | Yes | Tests raise `bad_response` for unknown keys and out-of-range parameter defaults.【F:tests/test_external_generator.py†L266-L365】 |
 
 ## Dependencies and runtime (table: Package → Used in → Required/Optional)
 | Package | Used in | Required/Optional |
 | --- | --- | --- |
-| jsonschema | MCP validation helpers load schema files for asset checks.【F:mcp/validate.py†L9-L96】 | Required |
-| pytest | Test suite imports pytest fixtures across unit tests.【F:tests/test_critic.py†L1-L217】 | Optional (dev/test) |
+| jsonschema | MCP validation helpers load schemas and generator schema tests validate assets.【F:labs/mcp/validate.py†L1-L96】【F:tests/test_generator_schema.py†L1-L40】 | Required |
+| pytest | Entire test suite leverages pytest fixtures/marks for coverage.【F:requirements.txt†L1-L2】【F:tests/test_critic.py†L1-L12】 | Optional (dev/test) |
 
 ## Environment variables (bullets: name, default, transport defaults, behavior when MCP/external API unreachable, deprecated knobs)
-- `MCP_ENDPOINT` controls stdio/socket/tcp transports with TCP fallback when unset or invalid.【F:labs/mcp_stdio.py†L162-L210】
-- `MCP_HOST`/`MCP_PORT` feed TCP validator; missing values raise MCPUnavailableError for strict handling.【F:labs/mcp_stdio.py†L210-L229】
-- `MCP_ADAPTER_CMD` and deprecated `SYN_SCHEMAS_DIR` apply only to STDIO with single warning emission.【F:labs/mcp_stdio.py†L178-L196】【F:tests/test_critic.py†L204-L217】
-- `LABS_FAIL_FAST` toggles strict vs relaxed behavior across critic, generator, and patches.【F:labs/agents/critic.py†L61-L173】【F:labs/patches.py†L17-L66】
-- `LABS_EXTERNAL_LIVE`, provider keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`), and endpoints gate live external traffic; defaults keep mock mode enabled.【F:labs/generator/external.py†L82-L207】【F:.example.env†L18-L26】
-- `LABS_SCHEMA_VERSION` env from spec is absent, leaving schema targeting unconfigurable.【F:docs/labs_spec.md†L67-L72】【F:.example.env†L1-L26】
+- `LABS_SCHEMA_VERSION` overrides generator/CLI defaults; absent values fall back to 0.7.4, creating the noted divergence with the spec baseline.【F:labs/cli.py†L58-L86】【F:labs/agents/generator.py†L42-L86】
+- `LABS_FAIL_FAST` controls strict vs relaxed behavior across generator, critic, and patch modules.【F:labs/agents/critic.py†L61-L86】【F:labs/agents/generator.py†L19-L34】【F:labs/patches.py†L13-L38】
+- `LABS_EXPERIMENTS_DIR` defines persistence location for generated assets written via CLI.【F:labs/cli.py†L18-L64】
+- `LABS_EXTERNAL_LIVE`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, and related endpoint/model vars gate live external calls with redacted logging defaults.【F:labs/generator/external.py†L82-L191】【F:.example.env†L14-L33】
+- `MCP_ENDPOINT`, `MCP_HOST`, `MCP_PORT`, `MCP_ADAPTER_CMD`, `MCP_SOCKET_PATH`, and deprecated `SYN_SCHEMAS_DIR` govern validator transports and surface explicit error messages when misconfigured.【F:labs/mcp_stdio.py†L162-L232】【F:.example.env†L1-L18】【F:tests/test_critic.py†L188-L217】
 
 ## Logging (bullets: structured JSONL, provenance fields, patch/rating/external fields, reason/detail on transport failures, location under meta/output/)
-- `log_jsonl` appends structured entries under `meta/output/labs/` with auto directory creation.【F:labs/logging.py†L10-L35】
-- GeneratorAgent, CriticAgent, and patches append trace/mode/transport-rich records for proposals, reviews, and lifecycle steps.【F:labs/agents/generator.py†L30-L145】【F:labs/agents/critic.py†L164-L218】【F:labs/patches.py†L47-L156】
-- External generator logs capture attempts, raw response hashes, and validation results, but omit schema_version and null failure on success.【F:labs/generator/external.py†L230-L355】
-- external.jsonl/critic/generator logs reside beneath `meta/output/labs/`, matching documented structure.【F:labs/logging.py†L10-L35】【F:tests/test_external_generator.py†L43-L145】
+- `log_jsonl` guarantees append-only JSONL with timestamp injection, ensuring logs under `meta/output/labs/` stay structured.【F:labs/logging.py†L10-L35】
+- Generator, critic, and patch modules log schema_version, transport, strict mode, and trace identifiers for reproducibility.【F:labs/agents/generator.py†L118-L195】【F:labs/agents/critic.py†L170-L218】【F:labs/patches.py†L47-L156】
+- External generator logs include attempts, response hashes, schema_version, `$schema`, and failure payloads per spec.【F:labs/generator/external.py†L230-L320】【F:tests/test_pipeline.py†L244-L306】
 
 ## Documentation accuracy (bullets: README vs. labs_spec.md; TCP as default, socket optional; maintainer docs reference resolver; env cleanup; v0.3.4 setup for API keys/live mode)
-- README still describes `$schema` enforcement and TCP default transports but lacks schema_version guidance now mandated by spec.【F:README.md†L41-L76】
-- Maintainer process doc reiterates resolver responsibilities to avoid transport drift.【F:docs/process.md†L41-L45】
-- README and `.example.env` detail TCP default, optional socket, and live external env setup consistent with v0.3.4 behavior.【F:README.md†L19-L104】【F:.example.env†L1-L26】
-- Spec file itself advertises v0.3.5 objectives, signaling documentation drift from requested v0.3.4 audit baseline.【F:docs/labs_spec.md†L1-L96】
+- README documents MCP transports and external live mode but omits the new schema-version flag/env, leaving operators without guidance on targeting 0.7.3.【F:README.md†L19-L104】
+- `.example.env` mirrors transport/env defaults yet lacks `LABS_SCHEMA_VERSION`, reinforcing the documentation gap.【F:.example.env†L1-L26】
+- Maintainer process doc references transport resolver best practices but does not mention schema-targeting, partially meeting the spec’s documentation expectations.【F:docs/process.md†L39-L60】
+- Spec document header already claims v0.3.5 scope, so spec vs implementation timelines require clarification.【F:docs/labs_spec.md†L1-L48】
 
 ## Detected divergences
-- Spec document already targets v0.3.5 schema-awareness despite audit scope stating v0.3.4.【F:docs/labs_spec.md†L1-L96】
-- Generator lacks schema_version branching and keeps static `$schema` paths, failing updated normalization rules.【F:docs/labs_spec.md†L28-L96】【F:labs/generator/assembler.py†L23-L110】
-- External logs omit schema_version metadata and null failure entries on success contrary to the logging contract.【F:docs/labs_spec.md†L113-L133】【F:labs/generator/external.py†L230-L339】
+- Default schema version constant is 0.7.4 while the spec baseline remains 0.7.3, causing precedence drift unless explicitly overridden.【F:labs/generator/assembler.py†L16-L24】【F:docs/labs_spec.md†L61-L76】
+- Documentation (README, `.example.env`, process) does not describe schema-version targeting controls mandated by the spec.【F:README.md†L19-L104】【F:.example.env†L1-L26】【F:docs/process.md†L39-L60】
+- Spec file versioning (v0.3.5) is ahead of the audit’s v0.3.4 scope, creating expectation ambiguity.【F:docs/labs_spec.md†L1-L48】
 
 ## Recommendations
-- Implement schema_version inputs (env + CLI) and branch AssetAssembler output to honor 0.7.3 legacy vs 0.7.4+ enriched payloads.【F:docs/labs_spec.md†L28-L96】【F:labs/cli.py†L82-L135】【F:labs/generator/assembler.py†L66-L110】
-- Derive `$schema` URLs from the selected schema_version to reference hosted corpus files rather than local relative paths.【F:docs/labs_spec.md†L78-L133】【F:labs/generator/assembler.py†L23-L102】
-- Extend external generator context/log writers to include schema_version, `$schema`, and `failure: null` on success, updating tests accordingly.【F:docs/labs_spec.md†L113-L133】【F:labs/generator/external.py†L230-L339】【F:tests/test_external_generator.py†L43-L176】
+- Decide whether to revert `AssetAssembler.DEFAULT_SCHEMA_VERSION` to 0.7.3 or update the spec/docs to reflect a 0.7.4 baseline, then align tests accordingly.【F:labs/generator/assembler.py†L16-L36】【F:docs/labs_spec.md†L61-L76】
+- Update README, `.example.env`, and maintainer docs to document `LABS_SCHEMA_VERSION`, CLI precedence, and schema-targeting workflows for 0.7.3 vs 0.7.4 assets.【F:labs/cli.py†L52-L146】【F:README.md†L19-L104】【F:.example.env†L1-L26】【F:docs/process.md†L39-L60】
+- Clarify the spec header/version history so audits reference the correct scope (v0.3.4 vs v0.3.5) and avoid mixed guidance for operators.【F:docs/labs_spec.md†L1-L48】
