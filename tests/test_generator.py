@@ -55,7 +55,9 @@ def test_generator_propose_legacy_schema(tmp_path) -> None:
     asset = agent.propose("legacy pulse", schema_version="0.7.3")
 
     assert asset["$schema"] == AssetAssembler.schema_url("0.7.3")
-    assert "asset_id" not in asset
+    assert isinstance(asset["asset_id"], str)
+    assert asset["prompt"] == "legacy pulse"
+    assert isinstance(asset["timestamp"], str)
     assert "parameter_index" not in asset
     assert isinstance(asset["modulations"], list)
     assert asset["modulations"]

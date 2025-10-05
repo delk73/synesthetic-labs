@@ -123,6 +123,8 @@ class AssetAssembler:
             return self._build_legacy_asset(
                 schema_url=schema_url,
                 prompt=prompt,
+                asset_id=asset_id,
+                timestamp=timestamp,
                 base_sections=base_sections,
                 rule_bundle_version=self.version,
             )
@@ -150,6 +152,8 @@ class AssetAssembler:
         *,
         schema_url: str,
         prompt: str,
+        asset_id: str,
+        timestamp: str,
         base_sections: Dict[str, object],
         rule_bundle_version: Optional[str] = None,
     ) -> Dict[str, object]:
@@ -187,6 +191,9 @@ class AssetAssembler:
 
         legacy_asset: Dict[str, object] = {
             "$schema": schema_url,
+            "asset_id": asset_id,
+            "prompt": prompt,
+            "timestamp": timestamp,
             "name": meta_info.get("title") or prompt,
         }
         legacy_asset.update(sections)
@@ -313,9 +320,21 @@ class AssetAssembler:
             or AssetAssembler.schema_url(AssetAssembler.DEFAULT_SCHEMA_VERSION)
         )
 
+        asset_id = str(
+            asset.get("asset_id")
+            or uuid.uuid4()
+        )
+
+        timestamp = str(
+            asset.get("timestamp")
+            or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
+        )
+
         return AssetAssembler._build_legacy_asset(
             schema_url=schema_url,
             prompt=prompt,
+            asset_id=asset_id,
+            timestamp=timestamp,
             base_sections=base_sections,
             rule_bundle_version=assembler_version,
         )
