@@ -20,7 +20,7 @@ from .tone import ToneGenerator
 class AssetAssembler:
     """Compose component generators into a full Synesthetic asset."""
 
-    DEFAULT_SCHEMA_VERSION = "0.7.3"
+    DEFAULT_SCHEMA_VERSION = "0.7.4"
     SCHEMA_URL_TEMPLATE = "https://schemas.synesthetic.dev/{version}/synesthetic-asset.schema.json"
     SCHEMA_URL = SCHEMA_URL_TEMPLATE.format(version=DEFAULT_SCHEMA_VERSION)
 
@@ -103,12 +103,13 @@ class AssetAssembler:
 
         schema_url = self.schema_url(resolved_schema_version)
 
-        asset: Dict[str, object] = {
-            "$schema": schema_url,
-            "asset_id": asset_id,
-            "prompt": prompt,
-            "seed": seed,
-            "timestamp": timestamp,
+        meta_info_block.setdefault("provenance", self._build_meta_provenance(
+            timestamp=timestamp,
+            seed=seed,
+            trace_id=asset_id,
+        ))
+
+        base_sections: Dict[str, object] = {
             "shader": shader_block,
             "tone": tone_block,
             "haptic": haptic_block,
@@ -116,66 +117,208 @@ class AssetAssembler:
             "modulations": modulations_block,
             "rule_bundle": rule_bundle_block,
             "meta_info": meta_info_block,
-            "parameter_index": sorted(parameter_index),
-            "provenance": provenance_block,
         }
 
-        meta_info_block.setdefault("provenance", self._build_meta_provenance(
-            timestamp=timestamp,
-            seed=seed,
-            trace_id=asset_id,
-        ))
-
-        if resolved_schema_version.startswith("0.7.3"):
-            asset = self._normalize_0_7_3(asset, prompt, self.version)
-        else:
-            asset = self._normalize_0_7_4(
-                asset,
-                prompt,
-                asset_id,
-                timestamp,
-                parameter_index,
-                provenance_block,
+        if self._is_legacy_schema(resolved_schema_version):
+            return self._build_legacy_asset(
+                schema_url=schema_url,
+                prompt=prompt,
+                base_sections=base_sections,
+                rule_bundle_version=self.version,
             )
 
-        return asset
+        return self._build_enriched_asset(
+            schema_url=schema_url,
+            prompt=prompt,
+            asset_id=asset_id,
+            timestamp=timestamp,
+            parameter_index=parameter_index,
+            provenance_block=provenance_block,
+            base_sections=base_sections,
+            seed=seed,
+            rule_bundle_version=self.version,
+        )
+
+    @staticmethod
+    def _is_legacy_schema(schema_version: Optional[str]) -> bool:
+        if not schema_version:
+            return False
+        return schema_version.strip().startswith("0.7.3")
+
+    @staticmethod
+    def _build_legacy_asset(
+        *,
+        schema_url: str,
+        prompt: str,
+        base_sections: Dict[str, object],
+        rule_bundle_version: Optional[str] = None,
+    ) -> Dict[str, object]:
+        sections = deepcopy(base_sections)
+
+        if not isinstance(sections.get("shader"), dict):
+            sections["shader"] = {}
+        if not isinstance(sections.get("tone"), dict):
+            sections["tone"] = {}
+        if not isinstance(sections.get("haptic"), dict):
+            sections["haptic"] = {}
+        if not isinstance(sections.get("control"), dict):
+            sections["control"] = {"control_parameters": []}
+
+        modulations = sections.get("modulations")
+        if not isinstance(modulations, list):
+            sections["modulations"] = []
+
+        rule_bundle = sections.get("rule_bundle")
+        if not isinstance(rule_bundle, dict):
+            rule_bundle = {"rules": [], "meta_info": {}}
+            sections["rule_bundle"] = rule_bundle
+        else:
+            sections["rule_bundle"] = deepcopy(rule_bundle)
+            rule_bundle = sections["rule_bundle"]
+
+        AssetAssembler._ensure_rule_bundle_version(rule_bundle, rule_bundle_version)
+
+        meta_info = sections.get("meta_info")
+        if not isinstance(meta_info, dict):
+            meta_info = {}
+            sections["meta_info"] = meta_info
+
+        AssetAssembler._ensure_meta_defaults(meta_info, prompt)
+
+        legacy_asset: Dict[str, object] = {
+            "$schema": schema_url,
+            "name": meta_info.get("title") or prompt,
+        }
+        legacy_asset.update(sections)
+        return legacy_asset
+
+    @staticmethod
+    def _build_enriched_asset(
+        *,
+        schema_url: str,
+        prompt: str,
+        asset_id: str,
+        timestamp: str,
+        parameter_index: Sequence[str],
+        provenance_block: Dict[str, object],
+        base_sections: Dict[str, object],
+        seed: Optional[int],
+        rule_bundle_version: Optional[str] = None,
+    ) -> Dict[str, object]:
+        sections = deepcopy(base_sections)
+
+        if not isinstance(sections.get("shader"), dict):
+            sections["shader"] = {}
+        if not isinstance(sections.get("tone"), dict):
+            sections["tone"] = {}
+        if not isinstance(sections.get("haptic"), dict):
+            sections["haptic"] = {}
+
+        control_block = sections.get("control")
+        if not isinstance(control_block, dict):
+            control_block = {"control_parameters": []}
+            sections["control"] = control_block
+        else:
+            sections["control"] = deepcopy(control_block)
+
+        if not isinstance(sections.get("modulations"), list):
+            sections["modulations"] = []
+
+        rule_bundle = sections.get("rule_bundle")
+        if not isinstance(rule_bundle, dict):
+            rule_bundle = {"rules": [], "meta_info": {}}
+            sections["rule_bundle"] = rule_bundle
+        else:
+            sections["rule_bundle"] = deepcopy(rule_bundle)
+            rule_bundle = sections["rule_bundle"]
+
+        AssetAssembler._ensure_rule_bundle_version(rule_bundle, rule_bundle_version)
+
+        meta_info = sections.get("meta_info")
+        if not isinstance(meta_info, dict):
+            meta_info = {}
+            sections["meta_info"] = meta_info
+
+        AssetAssembler._ensure_meta_defaults(meta_info, prompt)
+
+        normalized_provenance = deepcopy(provenance_block) if isinstance(provenance_block, dict) else {}
+
+        unique_parameters = sorted({param for param in parameter_index if isinstance(param, str)})
+
+        enriched_asset: Dict[str, object] = {
+            "$schema": schema_url,
+            "asset_id": asset_id,
+            "prompt": prompt,
+            "seed": seed,
+            "timestamp": timestamp,
+            "parameter_index": unique_parameters,
+            "provenance": normalized_provenance,
+        }
+        enriched_asset.update(sections)
+        return enriched_asset
+
+    @staticmethod
+    def _ensure_rule_bundle_version(rule_bundle: Dict[str, object], fallback_version: Optional[str]) -> None:
+        if not isinstance(rule_bundle, dict):
+            return
+
+        rules = rule_bundle.get("rules")
+        if not isinstance(rules, list):
+            rule_bundle["rules"] = []
+
+        meta_info = rule_bundle.setdefault("meta_info", {})
+        if not isinstance(meta_info, dict):
+            meta_info = {}
+            rule_bundle["meta_info"] = meta_info
+
+        if fallback_version and not meta_info.get("version"):
+            meta_info["version"] = fallback_version
+        else:
+            meta_info.setdefault("version", fallback_version)
+
+    @staticmethod
+    def _ensure_meta_defaults(meta_info: Dict[str, object], prompt: str) -> None:
+        meta_info.setdefault("title", prompt)
+        meta_info.setdefault(
+            "description",
+            "Synesthetic asset synthesized by the AssetAssembler baseline.",
+        )
+        meta_info.setdefault("category", "multimodal")
+        meta_info.setdefault("complexity", "baseline")
+
+        tags = meta_info.get("tags")
+        if not isinstance(tags, list) or not tags:
+            meta_info["tags"] = ["baseline", "assembler"]
+
+        provenance = meta_info.get("provenance")
+        if not isinstance(provenance, dict):
+            meta_info["provenance"] = {}
 
     @staticmethod
     def _normalize_0_7_3(
         asset: Dict[str, object], prompt: str, assembler_version: str
     ) -> Dict[str, object]:
-        """Strip enriched fields to satisfy the legacy 0.7.3 schema."""
-
-        meta_info = asset.get("meta_info", {})
-        provenance = meta_info.get("provenance", {}) if isinstance(meta_info, dict) else {}
-
-        shader_block = asset.get("shader", {})
-        tone_block = asset.get("tone", {})
-        haptic_block = asset.get("haptic", {})
-
-        return {
-            "$schema": asset["$schema"],
-            "name": meta_info.get("title", prompt),
-            "shader": {
-                key: value
-                for key, value in shader_block.items()
-                if key in {"name", "description", "language", "sources", "uniforms", "meta_info"}
-            },
-            "tone": {
-                key: value
-                for key, value in tone_block.items()
-                if key in {"name", "description", "engine", "settings", "meta_info"}
-            },
-            "haptic": {
-                key: value
-                for key, value in haptic_block.items()
-                if key in {"device", "description", "input_parameters", "meta_info"}
-            },
+        base_sections: Dict[str, object] = {
+            "shader": deepcopy(asset.get("shader", {})),
+            "tone": deepcopy(asset.get("tone", {})),
+            "haptic": deepcopy(asset.get("haptic", {})),
             "control": deepcopy(asset.get("control", {})),
-            "modulations": [],
-            "rule_bundle": {"rules": [], "meta_info": {"version": assembler_version}},
-            "meta_info": {"provenance": deepcopy(provenance)},
+            "modulations": deepcopy(asset.get("modulations", [])),
+            "rule_bundle": deepcopy(asset.get("rule_bundle", {})),
+            "meta_info": deepcopy(asset.get("meta_info", {})),
         }
+
+        schema_url = str(
+            asset.get("$schema")
+            or AssetAssembler.schema_url(AssetAssembler.DEFAULT_SCHEMA_VERSION)
+        )
+
+        return AssetAssembler._build_legacy_asset(
+            schema_url=schema_url,
+            prompt=prompt,
+            base_sections=base_sections,
+            rule_bundle_version=assembler_version,
+        )
 
     @staticmethod
     def _normalize_0_7_4(
@@ -185,20 +328,43 @@ class AssetAssembler:
         timestamp: str,
         parameter_index: Sequence[str],
         provenance_block: Dict[str, object],
+        rule_bundle_version: Optional[str] = None,
     ) -> Dict[str, object]:
-        """Ensure enriched schema payload contains all required root fields."""
+        base_sections: Dict[str, object] = {
+            "shader": deepcopy(asset.get("shader", {})),
+            "tone": deepcopy(asset.get("tone", {})),
+            "haptic": deepcopy(asset.get("haptic", {})),
+            "control": deepcopy(asset.get("control", {})),
+            "modulations": deepcopy(asset.get("modulations", [])),
+            "rule_bundle": deepcopy(asset.get("rule_bundle", {})),
+            "meta_info": deepcopy(asset.get("meta_info", {})),
+        }
 
-        asset.update(
-            {
-                "asset_id": asset_id,
-                "prompt": prompt,
-                "timestamp": timestamp,
-                "parameter_index": sorted(parameter_index),
-                "provenance": deepcopy(provenance_block),
-            }
+        schema_url = str(
+            asset.get("$schema")
+            or AssetAssembler.schema_url(AssetAssembler.DEFAULT_SCHEMA_VERSION)
         )
-        asset.pop("name", None)
-        return asset
+
+        effective_rule_bundle_version = rule_bundle_version
+        rule_bundle = base_sections.get("rule_bundle")
+        if effective_rule_bundle_version is None and isinstance(rule_bundle, dict):
+            meta_info = rule_bundle.get("meta_info")
+            if isinstance(meta_info, dict):
+                version = meta_info.get("version")
+                if isinstance(version, str):
+                    effective_rule_bundle_version = version
+
+        return AssetAssembler._build_enriched_asset(
+            schema_url=schema_url,
+            prompt=prompt,
+            asset_id=asset_id,
+            timestamp=timestamp,
+            parameter_index=parameter_index,
+            provenance_block=provenance_block,
+            base_sections=base_sections,
+            seed=asset.get("seed"),
+            rule_bundle_version=effective_rule_bundle_version,
+        )
 
     def _deterministic_identifiers(self, prompt: str, seed: int) -> tuple[str, str]:
         digest = hashlib.sha1(f"{prompt}|{seed}|{self.version}".encode("utf-8")).hexdigest()

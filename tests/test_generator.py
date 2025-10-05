@@ -57,8 +57,9 @@ def test_generator_propose_legacy_schema(tmp_path) -> None:
     assert asset["$schema"] == AssetAssembler.schema_url("0.7.3")
     assert "asset_id" not in asset
     assert "parameter_index" not in asset
-    assert asset["modulations"] == []
-    assert asset["rule_bundle"]["rules"] == []
+    assert isinstance(asset["modulations"], list)
+    assert asset["modulations"]
+    assert asset["rule_bundle"]["rules"]
     assert "provenance" not in asset
     assert asset["meta_info"]["provenance"]["generator"]["agent"] == "GeneratorAgent"
 

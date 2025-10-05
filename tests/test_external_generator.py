@@ -148,7 +148,7 @@ def test_live_header_injection(monkeypatch, tmp_path) -> None:
     assert context["request_headers"]["Authorization"] == "***redacted***"
     assert context["mode"] == "live"
     assert context["endpoint"] == "https://api.example.com/v1"
-    assert context["schema_version"] == "0.7.3"
+    assert context["schema_version"] == "0.7.4"
 
 
 def test_mock_mode_headers_are_empty(tmp_path) -> None:
@@ -163,7 +163,7 @@ def test_mock_mode_headers_are_empty(tmp_path) -> None:
     assert context["mode"] == "mock"
     assert context["request_headers"] == {}
     assert context["endpoint"].startswith("mock://openai")
-    assert context["schema_version"] == "0.7.3"
+    assert context["schema_version"] == "0.7.4"
 
     review = {
         "ok": True,

@@ -82,6 +82,7 @@ class CriticAgent:
         validation_error: Optional[Dict[str, str]] = None
         transport = resolve_mcp_endpoint()
         trace_id = self._resolve_trace_id(asset)
+        should_attempt_validation = True
 
         def _build_error_payload(message: str, *, unavailable: bool = True) -> Dict[str, str]:
             lowered = message.lower()
@@ -98,36 +99,54 @@ class CriticAgent:
                 "reason": "mcp_unavailable" if unavailable else "mcp_error",
                 "detail": detail,
             }
-        validator = self._validator
-        if validator is None:
-            try:
-                validator = build_validator_from_env()
-                self._validator = validator
-            except MCPUnavailableError as exc:
-                message = f"MCP validation unavailable: {exc}"
-                validation_error = _build_error_payload(str(exc))
-                if fail_fast:
-                    issues.append(message)
-                    validation_status = "failed"
-                    validation_reason = message
-                    self._logger.error(message)
-                else:
-                    validation_status = "warned"
-                    validation_reason = message
-                    self._logger.warning("Validation warning: %s", message)
 
-                    def _lazy_validator(payload: Dict[str, Any]) -> Dict[str, Any]:
-                        actual_validator = build_validator_from_env()
-                        return actual_validator(payload)
+        if issues:
+            message = "MCP validation unavailable: asset missing required fields"
+            issues.append(message)
+            validation_error = _build_error_payload(message)
+            validation_reason = message
+            if fail_fast:
+                validation_status = "failed"
+                should_attempt_validation = False
+                self._logger.error(message)
+            else:
+                validation_status = "warned"
+                self._logger.warning("Validation warning: %s", message)
 
-                    validator = _lazy_validator
+        validator = None
+        if should_attempt_validation:
+            validator = self._validator
+            if validator is None:
+                try:
+                    validator = build_validator_from_env()
                     self._validator = validator
+                except MCPUnavailableError as exc:
+                    message = f"MCP validation unavailable: {exc}"
+                    validation_error = _build_error_payload(str(exc))
+                    if fail_fast:
+                        issues.append(message)
+                        validation_status = "failed"
+                        validation_reason = message
+                        self._logger.error(message)
+                        should_attempt_validation = False
+                    else:
+                        validation_status = "warned"
+                        validation_reason = message
+                        self._logger.warning("Validation warning: %s", message)
 
-        if validator is not None:
+                        def _lazy_validator(payload: Dict[str, Any]) -> Dict[str, Any]:
+                            actual_validator = build_validator_from_env()
+                            return actual_validator(payload)
+
+                        validator = _lazy_validator
+                        self._validator = validator
+
+        if should_attempt_validation and validator is not None:
             try:
                 response = validator(asset)
                 mcp_response = response
-                validation_status = "passed"
+                if validation_status == "pending":
+                    validation_status = "passed"
             except MCPUnavailableError as exc:
                 message = f"MCP validation unavailable: {exc}"
                 validation_error = _build_error_payload(str(exc))
