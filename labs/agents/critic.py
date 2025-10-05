@@ -138,6 +138,7 @@ class CriticAgent:
                     message = f"MCP validation unavailable: {exc}"
                     if fail_fast:
                         validation_error = _build_error_payload(str(exc))
+                        mcp_response = {"ok": False, **validation_error}
                         issues.append(message)
                         validation_status = "failed"
                         validation_reason = message
@@ -147,6 +148,7 @@ class CriticAgent:
                         validation_status = "degraded"
                         validation_reason = message
                         validation_error = _build_error_payload(str(exc))
+                        mcp_response = {"ok": False, **validation_error}
                         self._logger.warning("Validation warning (degraded): %s", message)
                         validator = None
                         should_attempt_validation = False
@@ -154,13 +156,18 @@ class CriticAgent:
         if should_attempt_validation and validator is not None:
             try:
                 response = validator(asset)
-                mcp_response = response
+                if isinstance(response, dict):
+                    mcp_response = dict(response)
+                    mcp_response.setdefault("ok", True)
+                else:
+                    mcp_response = {"ok": True}
                 if validation_status == "pending":
                     validation_status = "passed"
             except MCPUnavailableError as exc:
                 message = f"MCP validation unavailable: {exc}"
                 if fail_fast:
                     validation_error = _build_error_payload(str(exc))
+                    mcp_response = {"ok": False, **validation_error}
                     issues.append(message)
                     validation_status = "failed"
                     validation_reason = message
@@ -169,12 +176,14 @@ class CriticAgent:
                     validation_status = "degraded"
                     validation_reason = message
                     validation_error = _build_error_payload(str(exc))
+                    mcp_response = {"ok": False, **validation_error}
                     self._logger.warning("Validation warning (degraded): %s", message)
             except ConnectionError as exc:  # pragma: no cover - defensive fallback
                 message = f"MCP validation unavailable: {exc}"
                 issues.append(message)
                 self._logger.error(message)
                 validation_error = _build_error_payload(str(exc))
+                mcp_response = {"ok": False, **validation_error}
                 validation_status = "failed"
                 validation_reason = message
             except Exception as exc:  # pragma: no cover - unexpected failures
@@ -182,16 +191,23 @@ class CriticAgent:
                 issues.append(message)
                 self._logger.error("MCP validation failed: %s", exc)
                 validation_error = _build_error_payload(str(exc), unavailable=False)
+                mcp_response = {"ok": False, **validation_error}
                 validation_status = "failed"
                 validation_reason = message
 
         if validation_status == "pending":
             validation_status = "passed" if len(issues) == 0 else "failed"
 
-        ok = (
-            validation_status == "degraded"
-            or (len(issues) == 0 and validation_status in {"passed", "warned"})
-        )
+        if mcp_response is None:
+            if validation_error is not None:
+                mcp_response = {"ok": False, **validation_error}
+            elif validation_status in {"passed", "warned"} and len(issues) == 0:
+                mcp_response = {"ok": True}
+            else:
+                mcp_response = {"ok": False, "reason": "validation_not_attempted"}
+
+        mcp_ok = bool(mcp_response.get("ok"))
+        ok = mcp_ok and (len(issues) == 0 and validation_status in {"passed", "warned"})
         reviewed_at = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
 
         review = {

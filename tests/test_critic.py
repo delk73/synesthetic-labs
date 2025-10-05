@@ -32,7 +32,11 @@ def test_missing_fields_flagged(tmp_path, monkeypatch) -> None:
     assert any("missing required field" in item for item in review["issues"])
     assert any("MCP validation unavailable" in item for item in review["issues"])
     assert review["validation_status"] == "failed"
-    assert review["mcp_response"] is None
+    assert review["mcp_response"] == {
+        "ok": False,
+        "reason": "mcp_unavailable",
+        "detail": "tcp_unavailable",
+    }
     assert review["validation_error"] == {
         "reason": "mcp_unavailable",
         "detail": "tcp_unavailable",
@@ -50,7 +54,9 @@ def test_successful_validation(tmp_path, base_asset) -> None:
     assert review["ok"] is True
     assert review["issues"] == []
     assert review["validation_status"] == "passed"
-    assert review["mcp_response"] == {"status": "ok", "asset_id": "proposal-1"}
+    assert review["mcp_response"]["ok"] is True
+    assert review["mcp_response"]["status"] == "ok"
+    assert review["mcp_response"]["asset_id"] == "proposal-1"
     assert "validation_reason" not in review
 
 
@@ -173,10 +179,14 @@ def test_relaxed_mode_warns_when_validator_unavailable(tmp_path, base_asset, mon
     with caplog.at_level(logging.WARNING):
         review = critic.review(base_asset)
 
-    assert review["ok"] is True
+    assert review["ok"] is False
     assert review["issues"] == []
     assert review["validation_status"] in {"warned", "degraded"}
-    assert review["mcp_response"] is None
+    assert review["mcp_response"] == {
+        "ok": False,
+        "reason": "mcp_unavailable",
+        "detail": "tcp_unavailable",
+    }
     assert review["validation_reason"].startswith("MCP validation unavailable")
     assert any("Validation warning" in message for message in caplog.messages)
     assert review["validation_error"] == {

@@ -161,7 +161,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         review = critic.review(asset)
 
         experiment_path: Optional[str] = None
-        if review.get("ok"):
+        if review.get("ok") and review.get("mcp_response", {}).get("ok"):
             if "asset_id" in asset:
                 persisted_path = _persist_asset(asset)
                 experiment_path = _relativize(persisted_path)
@@ -196,7 +196,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             output_payload["engine"] = engine
 
         print(json.dumps(output_payload, indent=2))
-        return 0 if review.get("ok") else 1
+        return 0 if review.get("ok") and review.get("mcp_response", {}).get("ok") else 1
 
     if args.command == "critique":
         asset = _load_asset(args.asset)
