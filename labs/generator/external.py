@@ -674,6 +674,7 @@ class ExternalGenerator:
             timestamp,
             parameter_index,
             provenance_block,
+            rule_bundle_version,
         )
 
     def _canonicalize_asset(self, payload: JsonDict) -> JsonDict:

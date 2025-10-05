@@ -25,8 +25,9 @@ def test_asset_assembler_legacy_normalisation() -> None:
     assert "asset_id" not in asset
     assert "parameter_index" not in asset
     assert "seed" not in asset
-    assert asset["modulations"] == []
-    assert asset["rule_bundle"]["rules"] == []
+    assert isinstance(asset["modulations"], list)
+    assert asset["modulations"]
+    assert asset["rule_bundle"]["rules"]
     assert set(asset.keys()) == {
         "$schema",
         "name",
@@ -38,10 +39,12 @@ def test_asset_assembler_legacy_normalisation() -> None:
         "rule_bundle",
         "meta_info",
     }
-    assert "input_parameters" not in asset["shader"]
-    assert "effects" not in asset["tone"]
-    assert "profile" not in asset["haptic"]
-    assert asset["meta_info"].keys() == {"provenance"}
+    assert asset["shader"].get("input_parameters")
+    assert asset["tone"].get("effects")
+    assert asset["haptic"].get("profile")
+    assert isinstance(asset["meta_info"], dict)
+    for key in ("title", "description", "category", "complexity", "tags", "provenance"):
+        assert key in asset["meta_info"]
     assert isinstance(asset["meta_info"]["provenance"], dict)
     assert asset["control"]["control_parameters"]
 
@@ -53,6 +56,7 @@ def test_asset_assembler_enriched_normalisation() -> None:
     assert asset["$schema"] == AssetAssembler.schema_url("0.7.4")
     assert asset["prompt"] == "enriched schema"
     assert isinstance(asset["asset_id"], str)
+    assert "seed" in asset
     assert asset["parameter_index"]
     assert asset["provenance"]["agent"] == "AssetAssembler"
 

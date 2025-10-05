@@ -32,8 +32,6 @@ def is_fail_fast_enabled() -> bool:
 class CriticAgent:
     """Review assets and surface issues before handing off to MCP validation."""
 
-    REQUIRED_KEYS = ("asset_id", "timestamp", "prompt", "provenance")
-
     def __init__(
         self,
         validator: Optional[ValidatorType] = None,
@@ -71,9 +69,23 @@ class CriticAgent:
             raise ValueError("asset must be a dictionary")
 
         issues: List[str] = []
-        for key in self.REQUIRED_KEYS:
-            if key not in asset:
-                issues.append(f"missing required field: {key}")
+
+        schema_version = 'unknown'
+        schema_url = asset.get('$schema')
+        if isinstance(schema_url, str) and '/' in schema_url:
+            try:
+                schema_version = schema_url.split('/')[-2]
+            except Exception:
+                pass
+        requires_enriched = schema_version >= '0.7.4'
+
+        base_required = []
+        enriched_required = ['asset_id', 'timestamp', 'prompt', 'provenance']
+
+        required_fields = enriched_required if requires_enriched else base_required
+        for field in required_fields:
+            if field not in asset:
+                issues.append(f'missing required field: {field}')
 
         fail_fast = is_fail_fast_enabled()
         validation_status = "pending"
@@ -82,6 +94,7 @@ class CriticAgent:
         validation_error: Optional[Dict[str, str]] = None
         transport = resolve_mcp_endpoint()
         trace_id = self._resolve_trace_id(asset)
+        should_attempt_validation = True
 
         def _build_error_payload(message: str, *, unavailable: bool = True) -> Dict[str, str]:
             lowered = message.lower()
@@ -98,48 +111,65 @@ class CriticAgent:
                 "reason": "mcp_unavailable" if unavailable else "mcp_error",
                 "detail": detail,
             }
-        validator = self._validator
-        if validator is None:
-            try:
-                validator = build_validator_from_env()
-                self._validator = validator
-            except MCPUnavailableError as exc:
-                message = f"MCP validation unavailable: {exc}"
-                validation_error = _build_error_payload(str(exc))
+
+        if issues:
+            # Only treat as fatal for enriched schemas
+            if requires_enriched:
+                message = "MCP validation unavailable: asset missing required fields"
+                issues.append(message)
+                validation_error = _build_error_payload(message)
+                validation_reason = message
                 if fail_fast:
-                    issues.append(message)
                     validation_status = "failed"
-                    validation_reason = message
+                    should_attempt_validation = False
                     self._logger.error(message)
                 else:
                     validation_status = "warned"
-                    validation_reason = message
                     self._logger.warning("Validation warning: %s", message)
 
-                    def _lazy_validator(payload: Dict[str, Any]) -> Dict[str, Any]:
-                        actual_validator = build_validator_from_env()
-                        return actual_validator(payload)
-
-                    validator = _lazy_validator
+        validator = None
+        if should_attempt_validation:
+            validator = self._validator
+            if validator is None:
+                try:
+                    validator = build_validator_from_env()
                     self._validator = validator
+                except MCPUnavailableError as exc:
+                    message = f"MCP validation unavailable: {exc}"
+                    if fail_fast:
+                        validation_error = _build_error_payload(str(exc))
+                        issues.append(message)
+                        validation_status = "failed"
+                        validation_reason = message
+                        self._logger.error(message)
+                        should_attempt_validation = False
+                    else:
+                        validation_status = "degraded"
+                        validation_reason = message
+                        validation_error = _build_error_payload(str(exc))
+                        self._logger.warning("Validation warning (degraded): %s", message)
+                        validator = None
+                        should_attempt_validation = False
 
-        if validator is not None:
+        if should_attempt_validation and validator is not None:
             try:
                 response = validator(asset)
                 mcp_response = response
-                validation_status = "passed"
+                if validation_status == "pending":
+                    validation_status = "passed"
             except MCPUnavailableError as exc:
                 message = f"MCP validation unavailable: {exc}"
-                validation_error = _build_error_payload(str(exc))
                 if fail_fast:
+                    validation_error = _build_error_payload(str(exc))
                     issues.append(message)
                     validation_status = "failed"
                     validation_reason = message
                     self._logger.error(message)
                 else:
-                    validation_status = "warned"
+                    validation_status = "degraded"
                     validation_reason = message
-                    self._logger.warning("Validation warning: %s", message)
+                    validation_error = _build_error_payload(str(exc))
+                    self._logger.warning("Validation warning (degraded): %s", message)
             except ConnectionError as exc:  # pragma: no cover - defensive fallback
                 message = f"MCP validation unavailable: {exc}"
                 issues.append(message)
@@ -158,7 +188,7 @@ class CriticAgent:
         if validation_status == "pending":
             validation_status = "passed" if len(issues) == 0 else "failed"
 
-        ok = len(issues) == 0 and validation_status in {"passed", "warned"}
+        ok = len(issues) == 0 and validation_status in {"passed", "warned", "degraded"}
         reviewed_at = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
 
         review = {

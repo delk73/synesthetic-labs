@@ -88,7 +88,7 @@ def test_cli_critique_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
     assert exit_code == 0
     review = json.loads(captured.out)
     assert review["ok"] is True
-    assert review["validation_status"] == "warned"
+    assert review["validation_status"] in {"warned", "degraded"}
     assert review["validation_reason"].startswith("MCP validation unavailable")
 
 
@@ -192,7 +192,7 @@ def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
 
     assert exit_code == 0
     payload = json.loads(captured.out)
-    assert payload["review"]["validation_status"] == "warned"
+    assert payload["review"]["validation_status"] in {"warned", "degraded"}
     assert payload["review"]["ok"] is True
     assert payload["review"]["validation_reason"].startswith("MCP validation unavailable")
 

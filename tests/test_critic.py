@@ -175,7 +175,7 @@ def test_relaxed_mode_warns_when_validator_unavailable(tmp_path, base_asset, mon
 
     assert review["ok"] is True
     assert review["issues"] == []
-    assert review["validation_status"] == "warned"
+    assert review["validation_status"] in {"warned", "degraded"}
     assert review["mcp_response"] is None
     assert review["validation_reason"].startswith("MCP validation unavailable")
     assert any("Validation warning" in message for message in caplog.messages)
