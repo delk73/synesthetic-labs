@@ -7,6 +7,7 @@ import os
 
 import pytest
 
+from labs.generator import AssetAssembler
 from labs.generator.external import (
     ExternalGenerationError,
     ExternalRequestError,
@@ -14,6 +15,13 @@ from labs.generator.external import (
     MAX_RESPONSE_BYTES,
     OpenAIGenerator,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_fail_fast(monkeypatch) -> None:
+    """Ensure LABS_FAIL_FAST defaults to strict mode during each test."""
+
+    monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
 
 
 def test_gemini_generator_normalises_asset(tmp_path) -> None:
@@ -148,7 +156,7 @@ def test_live_header_injection(monkeypatch, tmp_path) -> None:
     assert context["request_headers"]["Authorization"] == "***redacted***"
     assert context["mode"] == "live"
     assert context["endpoint"] == "https://api.example.com/v1"
-    assert context["schema_version"] == "0.7.4"
+    assert context["schema_version"] == AssetAssembler.DEFAULT_SCHEMA_VERSION
 
 
 def test_mock_mode_headers_are_empty(tmp_path) -> None:
@@ -163,7 +171,7 @@ def test_mock_mode_headers_are_empty(tmp_path) -> None:
     assert context["mode"] == "mock"
     assert context["request_headers"] == {}
     assert context["endpoint"].startswith("mock://openai")
-    assert context["schema_version"] == "0.7.4"
+    assert context["schema_version"] == AssetAssembler.DEFAULT_SCHEMA_VERSION
 
     review = {
         "ok": True,

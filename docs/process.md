@@ -44,6 +44,12 @@ All work follows the **Spec → Audit → Patch → Repeat** loop.
 * The resolver accepts `tcp`, `stdio`, or `socket` and falls back to TCP when the environment is unset or invalid.
 * Maintainers must exercise the resolver tests (`tests/test_tcp.py`) whenever MCP transport defaults or env naming change to avoid drift against the spec.
 
+## Schema Targeting Discipline
+
+* Generator defaults to schema corpus `0.7.3`; keep `AssetAssembler.DEFAULT_SCHEMA_VERSION` and docs aligned whenever the baseline shifts.
+* Operators may override the default via `LABS_SCHEMA_VERSION` or the CLI `--schema-version` flag (flag → env → default precedence).
+* When updating schema support, extend README/.example.env guidance and ensure coverage in `tests/test_generator_assembler.py` plus the CLI pipeline tests.
+
 ---
 
 ## 3. Patch

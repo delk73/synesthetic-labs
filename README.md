@@ -64,6 +64,16 @@ configurations. When the patch lifecycle commands run, the critic logs patch
 reviews and rating stubs to `meta/output/labs/critic.jsonl` while the patch
 module appends lifecycle events to `meta/output/labs/patches.jsonl`.
 
+### Schema version targeting
+
+- The generator defaults to the `0.7.3` schema corpus, keeping legacy clients
+  compatible without additional flags.
+- Override the target schema by passing `--schema-version` to `labs generate`
+  or defining `LABS_SCHEMA_VERSION`. Precedence: CLI flag → environment variable
+  → default (`0.7.3`).
+- Schema-aware branching emits legacy payloads for `0.7.3` and enriched assets
+  for `0.7.4+`, always tagging `$schema` with the hosted corpus URL.
+
 Unix socket validation is optional in CI; set `LABS_SOCKET_TESTS=1` locally to
 enable the socket transport tests.
 

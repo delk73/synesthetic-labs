@@ -22,7 +22,9 @@ def test_asset_assembler_legacy_normalisation() -> None:
 
     assert asset["$schema"] == AssetAssembler.schema_url("0.7.3")
     assert isinstance(asset["name"], str)
-    assert "asset_id" not in asset
+    assert isinstance(asset["asset_id"], str)
+    assert asset["prompt"] == "legacy schema"
+    assert isinstance(asset["timestamp"], str)
     assert "parameter_index" not in asset
     assert "seed" not in asset
     assert isinstance(asset["modulations"], list)
@@ -30,6 +32,9 @@ def test_asset_assembler_legacy_normalisation() -> None:
     assert asset["rule_bundle"]["rules"]
     assert set(asset.keys()) == {
         "$schema",
+        "asset_id",
+        "prompt",
+        "timestamp",
         "name",
         "shader",
         "tone",
