@@ -1,43 +1,32 @@
 {
-  "task": "Enforce MCP validation before persistence in relaxed mode",
-  "objective": "Ensure critic always runs MCP validation in both strict and relaxed modes, and prevent CLI persistence when validation was skipped or failed.",
+  "task": "Load and validate environment variables at CLI startup",
+  "objective": "Ensure the CLI automatically loads .env, validates presence of LABS_EXTERNAL_LIVE, GEMINI_API_KEY, and OPENAI_API_KEY, and logs warnings if missing. This brings runtime into full compliance with v0.3.4 External Environment Handling requirements.",
   "changes": [
     {
-      "id": "critic_relaxed_validation",
-      "description": "Always invoke MCP validation, even in relaxed mode. If unavailable, set ok=False and reason='mcp_unavailable'.",
-      "edits": [
-        {
-          "file": "labs/agents/critic.py",
-          "pattern": "if not should_attempt_validation:",
-          "multiple": false,
-          "replacement": "if not should_attempt_validation:\n        # Relaxed mode must still attempt validation\n        try:\n            validator = build_validator_from_env()\n            review['mcp_response'] = validator.validate(asset)\n            review['ok'] = review['mcp_response'].get('ok', False)\n        except Exception as exc:\n            review['mcp_response'] = {'ok': False, 'reason': 'mcp_unavailable', 'detail': str(exc)}\n            review['ok'] = False\n        if not review['ok']:\n            return review"
-        }
-      ]
-    },
-    {
-      "id": "cli_persistence_gate",
-      "description": "Block CLI persistence if critic returned ok=False or mcp_response missing.",
+      "id": "cli_env_preload",
+      "description": "Preload .env and validate critical env vars before CLI command parsing.",
       "edits": [
         {
           "file": "labs/cli.py",
-          "pattern": "if review.get\\('ok', True\\):",
+          "pattern": "^import ",
           "multiple": false,
-          "replacement": "if review.get('ok', True) and review.get('mcp_response', {}).get('ok', False):"
+          "replacement": "import os\nimport logging\nfrom dotenv import load_dotenv\n\n# --- Preload .env early ---\nload_dotenv(dotenv_path='.env', override=False)\n\n# --- Validate required env vars ---\nfor key in ['LABS_EXTERNAL_LIVE', 'GEMINI_API_KEY', 'OPENAI_API_KEY']:\n    if not os.getenv(key):\n        logging.warning(f'Missing environment variable {key}; falling back to mock mode.')\n\nimport "
         }
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "Do not modify generator code",
-      "Critic must always include an mcp_response object",
-      "CLI must not persist assets unless mcp_response.ok is True",
-      "Strict mode remains unchanged; relaxed mode now attempts validation or marks failure"
+      "Do not add new dependencies; python-dotenv already required",
+      "Must not alter CLI argument parsing or generator behavior",
+      "Only warn on missing vars, do not raise errors",
+      "Load .env before any subcommand executes"
     ]
   },
   "exit_criteria": [
-    "Relaxed mode performs MCP validation or sets mcp_response.reason='mcp_unavailable'",
-    "Assets with failed or missing validation are not persisted by CLI",
-    "All critic and pipeline tests pass in strict and relaxed modes"
+    "Running CLI without exported vars prints clear warnings",
+    ".env values are visible via os.getenv() in subprocesses",
+    "External generators switch to live mode when LABS_EXTERNAL_LIVE=1",
+    "No change to strict/relaxed validation flow"
   ]
 }
