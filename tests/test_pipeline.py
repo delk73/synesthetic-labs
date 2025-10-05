@@ -13,28 +13,33 @@ from labs.mcp_stdio import MCPUnavailableError, resolve_mcp_endpoint
 from labs.generator.external import GeminiGenerator
 
 
-def test_generator_to_critic_pipeline(tmp_path) -> None:
+def test_generator_to_critic_pipeline(tmp_path, monkeypatch) -> None:
     generator_log = tmp_path / "generator.jsonl"
     critic_log = tmp_path / "critic.jsonl"
 
+    monkeypatch.setenv('LABS_SCHEMA_VERSION', '0.7.3')
     generator = GeneratorAgent(log_path=str(generator_log))
     asset = generator.propose("integration prompt")
 
     def validator(payload: dict) -> dict:
-        return {"validated": True, "asset_id": payload["asset_id"]}
+        asset_identifier = payload.get("asset_id") or payload.get("name")
+        assert asset_identifier  # legacy assets omit asset_id but include name
+        return {"validated": True, "asset_id": asset_identifier}
 
     critic = CriticAgent(validator=validator, log_path=str(critic_log))
     review = critic.review(asset)
 
-    assert "provenance" in asset
     assert "meta_info" in asset
+    assert "provenance" in asset["meta_info"]
     assert asset["control"]["control_parameters"]
     assert asset["modulations"]
     assert asset["rule_bundle"]["rules"]
-    assert asset["provenance"]["generator"]["agent"] == "GeneratorAgent"
+    generator_provenance = asset["meta_info"]["provenance"]["generator"]
+    assert generator_provenance["agent"] == "GeneratorAgent"
     assert review["ok"] is True
     assert review["validation_status"] == "passed"
-    assert review["mcp_response"] == {"validated": True, "asset_id": asset["asset_id"]}
+    expected_asset_id = asset.get("asset_id") or asset["name"]
+    assert review["mcp_response"] == {"validated": True, "asset_id": expected_asset_id}
 
 
 def test_cli_critique_fails_when_mcp_unreachable(monkeypatch, tmp_path, capsys) -> None:
@@ -44,6 +49,7 @@ def test_cli_critique_fails_when_mcp_unreachable(monkeypatch, tmp_path, capsys) 
 
     monkeypatch.setattr(cli, "build_validator_from_env", raise_unavailable)
 
+    monkeypatch.setenv('LABS_SCHEMA_VERSION', '0.7.3')
     generator = GeneratorAgent(log_path=str(tmp_path / "generator.jsonl"))
 
     class LoggedCriticAgent(CriticAgent):
@@ -71,6 +77,7 @@ def test_cli_critique_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
     monkeypatch.delenv("MCP_ADAPTER_CMD", raising=False)
     monkeypatch.setattr(cli, "build_validator_from_env", raise_unavailable)
 
+    monkeypatch.setenv('LABS_SCHEMA_VERSION', '0.7.3')
     generator = GeneratorAgent(log_path=str(tmp_path / "generator.jsonl"))
 
     class LoggedCriticAgent(CriticAgent):
