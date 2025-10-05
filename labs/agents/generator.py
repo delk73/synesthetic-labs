@@ -13,7 +13,7 @@ from labs.logging import log_jsonl
 from labs.mcp_stdio import resolve_mcp_endpoint
 
 _DEFAULT_LOG_PATH = "meta/output/labs/generator.jsonl"
-_DEFAULT_SCHEMA_VERSION = "0.7.4"
+_DEFAULT_SCHEMA_VERSION = "0.7.3"
 
 
 def _strict_mode_enabled() -> bool:
