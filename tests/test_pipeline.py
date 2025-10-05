@@ -39,7 +39,9 @@ def test_generator_to_critic_pipeline(tmp_path, monkeypatch) -> None:
     assert review["ok"] is True
     assert review["validation_status"] == "passed"
     expected_asset_id = asset.get("asset_id") or asset["name"]
-    assert review["mcp_response"] == {"validated": True, "asset_id": expected_asset_id}
+    assert review["mcp_response"]["ok"] is True
+    assert review["mcp_response"]["validated"] is True
+    assert review["mcp_response"]["asset_id"] == expected_asset_id
 
 
 def test_cli_critique_fails_when_mcp_unreachable(monkeypatch, tmp_path, capsys) -> None:
@@ -92,11 +94,16 @@ def test_cli_critique_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
     exit_code = cli.main(["critique", str(asset_path)])
     captured = capsys.readouterr()
 
-    assert exit_code == 0
+    assert exit_code == 1
     review = json.loads(captured.out)
-    assert review["ok"] is True
+    assert review["ok"] is False
     assert review["validation_status"] in {"warned", "degraded"}
     assert review["validation_reason"].startswith("MCP validation unavailable")
+    assert review["mcp_response"] == {
+        "ok": False,
+        "reason": "mcp_unavailable",
+        "detail": "tcp_unavailable",
+    }
 
 
 def test_cli_generate_persists_validated_asset(monkeypatch, tmp_path, capsys) -> None:
@@ -197,14 +204,20 @@ def test_cli_generate_relaxed_mode_warns_validation(monkeypatch, tmp_path, capsy
     exit_code = cli.main(["generate", "--schema-version", "0.7.4", "relaxed mode prompt"])
     captured = capsys.readouterr()
 
-    assert exit_code == 0
+    assert exit_code == 1
     payload = json.loads(captured.out)
+    assert payload["experiment_path"] is None
     assert payload["review"]["validation_status"] in {"warned", "degraded"}
-    assert payload["review"]["ok"] is True
+    assert payload["review"]["ok"] is False
     assert payload["review"]["validation_reason"].startswith("MCP validation unavailable")
+    assert payload["review"]["mcp_response"] == {
+        "ok": False,
+        "reason": "mcp_unavailable",
+        "detail": "tcp_unavailable",
+    }
 
     persisted_files = list(experiments_dir.glob("*.json"))
-    assert len(persisted_files) == 1
+    assert len(persisted_files) == 0
 
 
 def test_cli_generate_deterministic_alias(monkeypatch, tmp_path, capsys) -> None:
@@ -288,7 +301,11 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
     assert log_record["transport"] == output["review"]["transport"]
     assert log_record["strict"] == output["review"]["strict"]
     assert log_record["mode"] == "mock"
-    assert log_record["mcp_result"] == {"status": "ok", "asset_id": asset["asset_id"]}
+    assert log_record["mcp_result"] == {
+        "status": "ok",
+        "asset_id": asset["asset_id"],
+        "ok": True,
+    }
     assert log_record["schema_version"] == "0.7.4"
     assert log_record["$schema"] == asset["$schema"]
 

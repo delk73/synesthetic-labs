@@ -43,7 +43,7 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     review = {
         "ok": True,
         "validation_status": "passed",
-        "mcp_response": {"status": "ok"},
+        "mcp_response": {"status": "ok", "ok": True},
         "transport": "tcp",
         "strict": True,
         "mode": "strict",
@@ -176,7 +176,7 @@ def test_mock_mode_headers_are_empty(tmp_path) -> None:
     review = {
         "ok": True,
         "validation_status": "passed",
-        "mcp_response": {"status": "ok"},
+        "mcp_response": {"status": "ok", "ok": True},
         "transport": "tcp",
         "strict": True,
         "mode": "strict",

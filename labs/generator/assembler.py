@@ -302,42 +302,41 @@ class AssetAssembler:
             meta_info["provenance"] = {}
 
     @staticmethod
-    def _normalize_0_7_3(
-        asset: Dict[str, object], prompt: str, assembler_version: str
-    ) -> Dict[str, object]:
-        base_sections: Dict[str, object] = {
-            "shader": deepcopy(asset.get("shader", {})),
-            "tone": deepcopy(asset.get("tone", {})),
-            "haptic": deepcopy(asset.get("haptic", {})),
-            "control": deepcopy(asset.get("control", {})),
-            "modulations": deepcopy(asset.get("modulations", [])),
-            "rule_bundle": deepcopy(asset.get("rule_bundle", {})),
-            "meta_info": deepcopy(asset.get("meta_info", {})),
-        }
-
+    def _normalize_0_7_3(asset: Dict[str, object], prompt: str, assembler_version: str) -> Dict[str, object]:
+        """Produce a schema 0.7.3–compliant asset (strip all enriched 0.7.4+ fields)."""
         schema_url = str(
             asset.get("$schema")
             or AssetAssembler.schema_url(AssetAssembler.DEFAULT_SCHEMA_VERSION)
         )
 
-        asset_id = str(
-            asset.get("asset_id")
-            or uuid.uuid4()
-        )
+        return {
+            "$schema": schema_url,
+            "name": asset.get("meta_info", {}).get("title", prompt),
+            "shader": {
+                k: v for k, v in asset.get("shader", {}).items()
+                if k in ("name", "description", "language", "sources", "uniforms", "meta_info")
+            },
+            "tone": {
+                k: v for k, v in asset.get("tone", {}).items()
+                if k in ("name", "description", "engine", "settings", "meta_info")
+            },
+            "haptic": {
+                k: v for k, v in asset.get("haptic", {}).items()
+                if k in ("device", "description", "input_parameters", "meta_info")
+            },
+            "control": asset.get("control", {}),
+            "modulations": [],  # forbidden in 0.7.3
+            "rule_bundle": {
+                "name": asset.get("rule_bundle", {}).get("name", "default"),
+                "rules": [],
+                "meta_info": {"version": assembler_version},
+            },
+            "meta_info": {
+                "provenance": asset.get("meta_info", {}).get("provenance", {})
+            },
+        }
 
-        timestamp = str(
-            asset.get("timestamp")
-            or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        )
 
-        return AssetAssembler._build_legacy_asset(
-            schema_url=schema_url,
-            prompt=prompt,
-            asset_id=asset_id,
-            timestamp=timestamp,
-            base_sections=base_sections,
-            rule_bundle_version=assembler_version,
-        )
 
     @staticmethod
     def _normalize_0_7_4(
