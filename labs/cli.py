@@ -9,14 +9,55 @@ import os
 import sys
 from typing import Any, Callable, Dict, Optional
 
+
+def _load_env_file(path: str = ".env", override: bool = False) -> None:
+    if not os.path.exists(path):
+        return
+
+    try:
+        with open(path, "r", encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+
+                if not line or line.startswith("#"):
+                    continue
+
+                if line.startswith("export "):
+                    line = line[len("export ") :]
+
+                if "=" not in line:
+                    continue
+
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+
+                if value and len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+                    value = value[1:-1]
+
+                if not override and key in os.environ:
+                    continue
+
+                os.environ[key] = value
+    except OSError:
+        # If the file cannot be read, continue without raising to avoid breaking CLI startup.
+        pass
+
+
+_load_env_file()
+
+_LOGGER = logging.getLogger("labs.cli")
+
+for _env_var in ("LABS_EXTERNAL_LIVE", "GEMINI_API_KEY", "OPENAI_API_KEY"):
+    if not os.getenv(_env_var):
+        _LOGGER.warning("Missing environment variable %s; falling back to mock mode.", _env_var)
+
 from labs.agents.critic import CriticAgent, is_fail_fast_enabled
 from labs.agents.generator import GeneratorAgent
 from labs.generator.assembler import AssetAssembler
 from labs.generator.external import ExternalGenerationError, build_external_generator
 from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
 from labs.patches import apply_patch, preview_patch, rate_patch
-
-_LOGGER = logging.getLogger("labs.cli")
 
 _EXPERIMENTS_DIR_ENV = "LABS_EXPERIMENTS_DIR"
 _DEFAULT_EXPERIMENTS_DIR = os.path.join("meta", "output", "labs", "experiments")
