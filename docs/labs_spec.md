@@ -68,10 +68,20 @@ labs generate --engine=<gemini|openai|deterministic> "prompt"
 
 ## Environment Variables
 
-| Var                                             | Purpose                             | Default / Notes |
-| ----------------------------------------------- | ----------------------------------- | --------------- |
-| `LABS_SCHEMA_VERSION`                           | Target schema version for generator | `"0.7.3"`       |
-| *(all other vars from v0.3.4 remain unchanged)* |                                     |                 |
+| Var                   | Purpose                                | Default / Notes    |
+| --------------------- | -------------------------------------- | ------------------ |
+| `LABS_SCHEMA_VERSION` | Target schema version for generator    | `"0.7.3"`          |
+| `LABS_EXTERNAL_LIVE`  | Enables live external generator mode   | `"0"` (mock)       |
+| `GEMINI_API_KEY`      | API key for Gemini external generation | *required if live* |
+| `OPENAI_API_KEY`      | API key for OpenAI external generation | *required if live* |
+
+### Environment Preload Requirement
+
+The Labs CLI **must automatically load** a `.env` file from the repository root at startup
+using `python-dotenv`.
+Variables defined there take effect unless already set in the environment.
+If critical keys (`LABS_EXTERNAL_LIVE`, `GEMINI_API_KEY`, `OPENAI_API_KEY`) are missing,
+the CLI must log a warning and revert to mock mode.
 
 ---
 
@@ -91,6 +101,7 @@ labs generate --engine=<gemini|openai|deterministic> "prompt"
 
     * Require root `name`.
     * Forbid enrichment fields.
+
   * **0.7.4+**:
 
     * Drop root `name`; use `meta_info.title`.
@@ -138,8 +149,8 @@ Example (truncated):
 {
   "ts": "2025-10-03T18:32:00Z",
   "trace_id": "1234-5678",
-  "engine": "deterministic",
-  "mode": "mock",
+  "engine": "gemini",
+  "mode": "live",
   "transport": "tcp",
   "schema_version": "0.7.3",
   "normalized_asset": { "$schema": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", ... },
@@ -159,6 +170,7 @@ Example (truncated):
 * **Integration**
 
   * `labs generate --schema-version=0.7.3` passes MCP validation with baseline schemas.
+  * CLI warns if `.env` missing or incomplete; mock mode fallback verified.
   * Critic strict mode aborts on MCP outage; relaxed mode logs and blocks persistence.
 
 ---
@@ -166,6 +178,7 @@ Example (truncated):
 ## Exit Criteria (v0.3.5)
 
 * Generator branching implemented and schema version configurable.
+* `.env` auto-load and validation implemented.
 * All assets tagged with `$schema` and valid against chosen corpus.
 * Critic enforces MCP validation in both modes, blocks persistence on failures.
 * **CI runs schemaVersion=0.7.3 only** (baseline).
