@@ -1,6 +1,6 @@
 ---
 version: v0.3.4
-lastReviewed: 2025-10-03
+lastReviewed: 2025-10-05
 owner: labs-core
 ---
 
@@ -110,6 +110,20 @@ labs generate --engine=<gemini|openai|deterministic> "prompt"
 
 ---
 
+## Validation and Persistence Rules (amendment)
+
+* MCP **must always be invoked** for schema validation — in both strict and relaxed modes.
+* If MCP cannot be reached or the validator fails to build:
+
+  * **Strict mode** → abort immediately with `mcp_unavailable` error.
+  * **Relaxed mode** → still attempt MCP; if unreachable, return review with
+    `ok: false`, `reason: "mcp_unavailable"`, and `validation_status: "failed"`.
+* CLI **MUST NOT persist** assets when `mcp_response.ok` is `false`.
+  Assets may be printed for debugging but never logged as successful experiments.
+* Every review object must include a complete `mcp_response` block, even on failure.
+
+---
+
 ## Logging
 
 * Same files as v0.3.4 (`generator.jsonl`, `critic.jsonl`, `patches.jsonl`, `external.jsonl`).
@@ -145,7 +159,7 @@ Example (truncated):
 * **Integration**
 
   * `labs generate --schema-version=0.7.3` passes MCP validation with baseline schemas.
-  * `labs generate --schema-version=0.7.4` passes MCP validation once schema corpus bumped.
+  * Critic strict mode aborts on MCP outage; relaxed mode logs and blocks persistence.
 
 ---
 
@@ -153,7 +167,8 @@ Example (truncated):
 
 * Generator branching implemented and schema version configurable.
 * All assets tagged with `$schema` and valid against chosen corpus.
-* CI runs both `0.7.3` (baseline) and `0.7.4` (forward-looking).
+* Critic enforces MCP validation in both modes, blocks persistence on failures.
+* **CI runs schemaVersion=0.7.3 only** (baseline).
 * No ad-hoc stripping needed in Labs pipeline.
 
 ---

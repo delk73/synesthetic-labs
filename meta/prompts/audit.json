@@ -1,6 +1,6 @@
 {
   "task": "Audit synesthetic-labs repo state (v0.3.4 Asset Generation Calls, External Generators live, TCP-default, hardening, schema-version branching)",
-  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md v0.3.4. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot. Generator must emit schema-valid assets for the declared schema_version (default 0.7.3), include $schema, and branch between legacy and enriched output. Critic must mirror MCP validation in strict mode.",
+  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md v0.3.4. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot. Generator must emit schema-valid assets for the declared schema_version (default 0.7.3), include $schema, and branch between legacy and enriched output. Critic must invoke MCP validation in strict AND relaxed modes; CLI must not persist when mcp_response.ok is false.",
   "constraints": {
     "style": "deterministic, terse, Markdown headings with bullets/tables",
     "rules": [
@@ -15,7 +15,7 @@
       "TCP MUST be the default transport when MCP_ENDPOINT is unset/invalid; STDIO only when explicitly set; socket is OPTIONAL and may be skipped in CI if documented",
       "Labs MUST call MCP for schema validation via STDIO, socket, or TCP; any local fallback is a non-compliant divergence",
       "Generator MUST branch on schema_version (0.7.3 vs 0.7.4+), emit $schema, and only include fields valid for that schema",
-      "Critic MUST fail in strict mode when MCP fails; relaxed mode may log warnings but MUST NOT persist invalid assets",
+      "Critic MUST fail in strict mode when MCP fails; relaxed mode may log warnings but MUST NOT persist invalid/unvalidated assets",
       "Labs MUST log generator, critic, patch, MCP, and external generator interactions with reason/detail on failures; silent failures are non-compliant",
       "Unused/legacy env vars (e.g., backend knobs) MUST be removed or documented as deprecated; otherwise mark Divergent",
       "Socket transport MUST have failure coverage in critic tests to assert socket_unavailable detail",
@@ -25,6 +25,7 @@
       "external.jsonl MUST include provenance (engine, endpoint, model, params, trace_id, mode, schema_version) and failure.reason/detail when applicable",
       "Normalization MUST reject unknown top-level keys and wrong-typed sections, returning bad_response errors (labs/generator/external.py).",
       "Pre-flight numeric bounds (haptic intensity, parameter defaults vs min/max) MUST be enforced before MCP validation; violations must raise bad_response/out_of_range with reason/detail logging.",
+      "CI scope for this audit is schemaVersion=0.7.3 ONLY; forward-looking 0.7.4 tests may be skipped but should be marked if present",
       "Audit is incomplete unless both output files are created or overwritten with non-empty content"
     ],
     "sections": [
@@ -78,9 +79,9 @@
     "Spec v0.3.4 features mapped to Present / Missing / Divergent in table form (including live external calls)",
     "Generator, Critic, Assembler, and Patch lifecycle explicitly verified",
     "MCP validation integration checked for STDIO, TCP (default), and socket (optional) with doc status",
-    "Strict vs relaxed mode both invoke MCP; if failures occur, logs contain reason/detail (no skips)",
+    "Strict and relaxed modes both invoke MCP; if failures occur, logs contain reason/detail (no skips)",
+    "CLI persistence is gated on mcp_response.ok == true; assets not persisted when validation fails or is unreachable",
     "Generator branching by schema_version and $schema tagging verified",
-    "Critic strict/relaxed behavior aligned with spec verified",
     "External generator provenance, MCP-enforced validation, and error handling verified",
     "External LIVE path verified: env keys present, endpoint resolution, Authorization header, timeout/retry/backoff behavior, size caps (256KiB req / 1MiB resp), redaction in logs",
     "external.jsonl presence and schema verified (provenance, request params, response hash/size, failure fields, schema_version)",
@@ -94,6 +95,7 @@
     "Dependencies mapped to imports in a table with evidence",
     "Environment variables listed with defaults (TCP default), deprecated/unused knobs identified or removed (SYN_SCHEMAS_DIR marked STDIO-only deprecated)",
     "Logging practices verified (structured JSONL, provenance, patch/rating/external, reason/detail, meta/output/)",
-    "README cross-checked against docs/labs_spec.md for TCP default, socket optional, resolver reference, env cleanup, and v0.3.4 live-call setup"
+    "README cross-checked against docs/labs_spec.md for TCP default, socket optional, resolver reference, env cleanup, and v0.3.4 live-call setup",
+    "CI scope validated to run schemaVersion=0.7.3 only; any 0.7.4 tests present are optional/skipped"
   ]
 }
