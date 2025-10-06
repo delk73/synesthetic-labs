@@ -1,104 +1,118 @@
 {
-  "task": "Audit synesthetic-labs repo state (v0.3.4 Asset Generation Calls, External Generators live, TCP-default, hardening, schema-version branching, env preload)",
-  "objective": "Compare implementation, tests, and docs against docs/labs_spec.md v0.3.4+. Report what is Present, Missing, or Divergent, and export an updated AGENTS.md snapshot. Generator must emit schema-valid assets for the declared schema_version (default 0.7.3), include $schema, and branch between legacy and enriched output. CLI must preload .env, validate required environment variables, and log fallback to mock mode when unset.",
-  "constraints": {
-    "style": "deterministic, terse, Markdown headings with bullets/tables",
-    "rules": [
-      "Ground all findings in visible code/tests/docs",
-      "Mark functionality not present as Missing",
-      "Mark intentional design differences as Divergent",
-      "No speculation about unseen behavior",
-      "Recommendations must cite evidence (file path + line/section) and be actionable code/test/doc changes only",
-      "Always write the full audit report directly to meta/output/labs_state.md (overwrite if exists, non-empty)",
-      "Always write the updated agent snapshot directly to AGENTS.md (overwrite if exists, non-empty)",
-      "MCP validation MUST be invoked in all modes (strict and relaxed); skipping validation is a non-compliant divergence",
-      "TCP MUST be the default transport when MCP_ENDPOINT is unset/invalid; STDIO only when explicitly set; socket is OPTIONAL and may be skipped in CI if documented",
-      "Labs MUST call MCP for schema validation via STDIO, socket, or TCP; any local fallback is a non-compliant divergence",
-      "Generator MUST branch on schema_version (0.7.3 vs 0.7.4+), emit $schema, and only include fields valid for that schema",
-      "CLI MUST preload .env at startup and warn if critical env vars (GEMINI_API_KEY, OPENAI_API_KEY) are missing",
-      "Critic MUST fail in strict mode when MCP fails; relaxed mode may log warnings but MUST NOT persist invalid/unvalidated assets",
-      "Labs MUST log generator, critic, patch, MCP, and external generator interactions with reason/detail on failures; silent failures are non-compliant",
-      "Deprecated or unused env vars MUST be removed or documented as deprecated; LABS_EXTERNAL_LIVE explicitly marked removed",
-      "Socket transport MUST have failure coverage in critic tests to assert socket_unavailable detail",
-      "resolve_mcp_endpoint fallback MUST be unit-tested to lock default/fallback behaviour",
-      "Maintainer docs MUST reference transport provenance resolver, schema-version targeting, and .env preload to avoid drift",
-      "External live calls MUST handle API keys via env, set Authorization headers (or X-Goog-Api-Key for Gemini), redact secrets in logs, enforce 256KiB req / 1MiB resp caps, and implement retry/backoff with correct no-retry taxonomy",
-      "External generators MUST include generationConfig.responseMimeType=application/json for structured JSON output (Gemini live mode)",
-      "external.jsonl MUST include provenance (engine, endpoint, model, params, trace_id, mode, schema_version) and failure.reason/detail when applicable",
-      "Normalization MUST reject unknown top-level keys and wrong-typed sections, returning bad_response errors (labs/generator/external.py)",
-      "Pre-flight numeric bounds (haptic intensity, parameter defaults vs min/max) MUST be enforced before MCP validation; violations must raise bad_response/out_of_range with reason/detail logging",
-      "CI scope for this audit is schemaVersion=0.7.3 ONLY; forward-looking 0.7.4 tests may be skipped but should be marked if present",
-      "Audit is incomplete unless both output files are created or overwritten with non-empty content"
-    ],
+  "$schema": "https://schemas.synesthetic.dev/audit-spec.schema.json",
+  "version": "v0.3.4",
+  "spec_ref": "docs/labs_spec.md#synesthetic-labs-spec-v0.3.4-core",
+  "style": "deterministic-terse",
+  "output": {
+    "paths": ["meta/output/labs_state.md", "AGENTS.md"],
+    "format": "markdown",
+    "must_write": true
+  },
+  "rules": [
+    {
+      "id": "schema-branching",
+      "section": "2 · Schema-Targeting Hardening",
+      "requirement": "Generator MUST branch by schema_version and inject $schema URL.",
+      "verify": [
+        {"path": "labs/generator/assembler.py", "match": ["$schema", "schema_version"]},
+        {"path": "tests/test_generator_assembler.py", "match": ["0.7.3", "0.7.4"]}
+      ]
+    },
+    {
+      "id": "mcp-validation-modes",
+      "section": "7 · Validation Rules",
+      "requirement": "Strict and relaxed runs MUST both invoke MCP; persistence only if mcp_response.ok is true.",
+      "verify": [
+        {"path": "labs/cli.py", "match": ["mcp_response", "ok"]},
+        {"path": "labs/agents/critic.py", "match": ["mcp_unavailable", "strict"]},
+        {"path": "tests/test_pipeline.py", "match": ["relaxed", "ok", "persist", "False"]}
+      ]
+    },
+    {
+      "id": "env-preload",
+      "section": "4 · Environment — Preload Rule",
+      "requirement": "CLI MUST preload .env, merge with os.environ, warn when keys missing.",
+      "verify": [
+        {"path": "labs/cli.py", "match": ["dotenv", "load", "warning|warn|missing|GEMINI_API_KEY|OPENAI_API_KEY"], "regex": true},
+        {"path": "requirements.txt", "match": ["python-dotenv|dotenv"], "regex": true}
+      ]
+    },
+    {
+      "id": "tcp-default",
+      "section": "7 · Validation Rules (transport provenance)",
+      "requirement": "TCP MUST be default transport when MCP_ENDPOINT unset/invalid.",
+      "verify": [
+        {"path": "labs/mcp_stdio.py", "match": ["tcp", "default", "resolve_mcp_endpoint"]},
+        {"path": "tests/test_tcp.py", "match": ["default", "tcp"]}
+      ]
+    },
+    {
+      "id": "gemini-structured-request",
+      "section": "5.1 · Structured Output (Gemini)",
+      "requirement": "Gemini request MUST include contents/parts/text and generationConfig.responseMimeType='application/json'.",
+      "verify": [
+        {"path": "labs/generator/external.py", "match": ["contents", "parts", "text", "generationConfig", "responseMimeType", "application/json"]}
+      ]
+    },
+    {
+      "id": "gemini-structured-response-parse",
+      "section": "5.1 · Structured Output (Gemini)",
+      "requirement": "Response MUST be parsed from candidates[0].content.parts[0].text and json-decoded to asset.",
+      "verify": [
+        {"path": "labs/generator/external.py", "match": ["candidates[0].content.parts[0].text", "json.loads|json_loads"], "regex": true},
+        {"path": "tests/test_external_generator.py", "match": ["candidates", "parts", "responseMimeType", "json"], "regex": true}
+      ]
+    },
+    {
+      "id": "external-limits-retry",
+      "section": "5.2 · Headers & Limits",
+      "requirement": "Enforce 256KiB req / 1MiB resp caps; no-retry on 4xx; correct headers.",
+      "verify": [
+        {"path": "labs/generator/external.py", "match": ["256 * 1024|262144", "1024 * 1024|1048576"], "regex": true},
+        {"path": "labs/generator/external.py", "match": ["X-Goog-Api-Key|Authorization"], "regex": true},
+        {"path": "tests/test_external_generator.py", "match": ["no-retry", "4\\d\\d|400|404"], "regex": true}
+      ]
+    },
+    {
+      "id": "logging-provenance",
+      "section": "8 · Logging",
+      "requirement": "external.jsonl MUST record engine, endpoint, schema_version, trace_id, reason/detail on failures.",
+      "verify": [
+        {"path": "labs/logging.py", "match": ["external.jsonl"]},
+        {"path": "labs/generator/external.py", "match": ["schema_version", "trace_id", "reason", "detail"]}
+      ]
+    },
+    {
+      "id": "normalization-contract",
+      "section": "6 · Normalization Contract",
+      "requirement": "Unknown keys/wrong types → bad_response; numeric bounds → out_of_range.",
+      "verify": [
+        {"path": "labs/generator/external.py", "match": ["bad_response", "out_of_range"]},
+        {"path": "tests/test_external_generator.py", "match": ["bad_response|out_of_range"], "regex": true}
+      ]
+    },
+    {
+      "id": "deprecated-knobs",
+      "section": "Docs hygiene",
+      "requirement": "LABS_EXTERNAL_LIVE removed or explicitly deprecated in code/docs.",
+      "verify": [
+        {"path": "README.md", "match": ["LABS_EXTERNAL_LIVE"], "absent": true},
+        {"path": ".example.env", "match": ["LABS_EXTERNAL_LIVE"], "absent": true}
+      ]
+    }
+  ],
+  "report": {
     "sections": [
       "Summary of repo state",
-      "Top gaps & fixes (3-5 bullets)",
-      "Alignment with labs_spec.md (table: Spec item → Status → Evidence)",
-      "Generator implementation (table: Component → Status → Evidence)",
-      "Critic implementation (table: Responsibility → Status → Evidence)",
-      "Assembler / Wiring step (bullets: parameter index, dangling reference pruning, provenance)",
-      "Patch lifecycle (bullets: preview, apply, rate stubs, logging)",
-      "MCP integration (bullets: STDIO, TCP-default, socket-optional validation; failure handling; strict vs relaxed mode; 1 MiB caps; reason/detail logging; resolver fallback)",
-      "External generator integration (bullets: Gemini/OpenAI interface, provenance logging, CLI flags, error handling, structured-output enforcement, MCP validation)",
-      "External generation LIVE (v0.3.4) (bullets: env keys, endpoint resolution, Authorization/X-Goog-Api-Key headers, timeout, retry/backoff, size guards, redaction, normalization → schema-valid, .env preload)",
-      "Test coverage (table: Feature → Tested? → Evidence, including socket failure coverage, resolver fallback, header injection, size caps, retry taxonomy, .env preload warnings, structured-output)",
-      "Dependencies and runtime (table: Package → Used in → Required/Optional)",
-      "Environment variables (bullets: name, default, transport defaults, behavior when MCP/external API unreachable, .env preload, deprecated knobs)",
-      "Logging (bullets: structured JSONL, provenance fields, patch/rating/external fields, reason/detail on transport failures, location under meta/output/)",
-      "Documentation accuracy (bullets: README vs labs_spec.md; TCP default; socket optional; maintainer docs reference resolver, env preload, schema targeting; v0.3.4 setup for API keys/live mode)",
-      "Detected divergences",
+      "Alignment (table: Rule → Status → Evidence)",
+      "Top gaps & fixes",
       "Recommendations"
-    ]
-  },
-  "scope": {
-    "files": [
-      "README.md",
-      "docs/labs_spec.md",
-      "requirements.txt",
-      "labs/*.py",
-      "labs/generator/*.py",
-      "labs/cli.py",
-      "tests/*.py",
-      "meta/",
-      "AGENTS.md",
-      ".github/workflows/",
-      ".env.example",
-      ".env.sample"
-    ]
-  },
-  "output": {
-    "paths": [
-      "meta/output/labs_state.md",
-      "AGENTS.md"
     ],
-    "format": "Markdown",
-    "must_write": true,
-    "stdout_optional": true
+    "status_values": ["Present", "Missing", "Divergent"]
   },
   "exit_criteria": [
-    "meta/output/labs_state.md is written and non-empty",
-    "AGENTS.md snapshot updated with current audit findings",
-    "Spec v0.3.4 features mapped to Present / Missing / Divergent in table form (including live external calls)",
-    "Generator, Critic, Assembler, and Patch lifecycle explicitly verified",
-    "CLI preloads .env automatically and logs warnings for missing critical vars (manual parser acceptable)",
-    "MCP validation integration checked for STDIO, TCP (default), and socket (optional) with doc status",
-    "Strict and relaxed modes both invoke MCP; if failures occur, logs contain reason/detail (no skips)",
-    "CLI persistence is gated on mcp_response.ok == true; assets not persisted when validation fails or is unreachable",
-    "Generator branching by schema_version and $schema tagging verified",
-    "External generator provenance, structured-output compliance, MCP-enforced validation, and error handling verified",
-    "External LIVE path verified: .env preload works, env keys present, endpoint resolution, Authorization/X-Goog-Api-Key header, timeout/retry/backoff behavior, size caps (256KiB req / 1MiB resp), redaction in logs",
-    "external.jsonl presence and schema verified (provenance, request params, response hash/size, failure fields, schema_version)",
-    "Critic socket failure coverage test verified",
-    "Unit test for resolve_mcp_endpoint fallback verified",
-    "Header injection test verified for live mode; no header in mock mode",
-    "Normalization contract verified: unknown keys/types rejected, canonical defaults applied, and bad_response errors emitted on failure",
-    "Pre-flight numeric bounds enforced before MCP validation; out-of-range values trigger bad_response/out_of_range with logged detail",
-    "Maintainer docs reference transport provenance resolver, .env preload, and schema-version targeting",
-    "Test coverage summarized in a table with evidence, including TCP default, resolver fallback, and .env preload warnings",
-    "Dependencies mapped to imports in a table with evidence",
-    "Environment variables listed with defaults (TCP default), .env preload documented, deprecated/unused knobs identified or removed (LABS_EXTERNAL_LIVE marked removed)",
-    "Logging practices verified (structured JSONL, provenance, patch/rating/external, reason/detail, meta/output/)",
-    "README cross-checked against docs/labs_spec.md for TCP default, socket optional, env preload reference, resolver mention, and v0.3.4 live-call setup",
-    "CI scope validated to run schemaVersion=0.7.3 only; any 0.7.4 tests present are optional/skipped"
+    "meta/output/labs_state.md non-empty",
+    "AGENTS.md overwritten (non-empty)",
+    "Every rule reported with Present/Missing/Divergent and ≤3 evidence lines"
   ]
 }
