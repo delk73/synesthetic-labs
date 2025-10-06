@@ -127,6 +127,31 @@ def _minimal_asset_payload() -> dict:
     }
 
 
+def test_gemini_build_request_injects_response_mime_type() -> None:
+    generator = GeminiGenerator(mock_mode=True, sleeper=lambda _: None)
+
+    payload = generator._build_request({}, "structured", {})
+
+    assert payload["contents"][0]["parts"][0]["text"] == "structured"
+    assert payload["generationConfig"] == {"responseMimeType": "application/json"}
+
+
+def test_gemini_build_request_merges_generation_config_parameters() -> None:
+    generator = GeminiGenerator(mock_mode=True, sleeper=lambda _: None)
+
+    payload = generator._build_request(
+        {},
+        "structured",
+        {"temperature": 0.25, "max_tokens": 128, "seed": 42},
+    )
+
+    generation_config = payload["generationConfig"]
+    assert generation_config["responseMimeType"] == "application/json"
+    assert generation_config["temperature"] == 0.25
+    assert generation_config["maxOutputTokens"] == 128
+    assert generation_config["seed"] == 42
+
+
 def test_live_header_injection(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("LABS_EXTERNAL_LIVE", "1")
     monkeypatch.setenv("OPENAI_API_KEY", "live-123")
