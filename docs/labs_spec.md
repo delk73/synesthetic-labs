@@ -8,16 +8,16 @@ owner: labs-core
 
 ## Purpose
 
-- Make the generator **schema-aware** and reproducible.
-- Produce assets that validate against a declared **schema corpus version** (`0.7.x`).
-- Remove ad-hoc scrubbing; branching logic ensures compatibility.
+- Make the generator **schema-aware** and reproducible.  
+- Produce assets that validate against a declared **schema corpus version** (`0.7.x`).  
+- Remove ad-hoc scrubbing; branching logic ensures compatibility.  
 - Embed `$schema` in every generated asset for deterministic provenance.
 
 ---
 
 ## Historical Scopes
 
-- **≤ v0.3.3** — Baseline generator/critic pipeline, transports, logging, patch lifecycle stubs.
+- **≤ v0.3.3** — Baseline generator / critic pipeline, transports, logging, patch lifecycle stubs.  
 - **v0.3.4** — External API calls (Gemini / OpenAI), normalization contract, provenance, error taxonomy, logging, CI matrix.
 
 > Future versions (≥ v0.3.5) build on this baseline.
@@ -27,11 +27,11 @@ owner: labs-core
 ## Scope (Schema Targeting Hardening)
 
 ### Objectives
-- Add **schema-version targeting** for generation.
-- Generator output must include `$schema` → target corpus URL.
-- Branch behavior:
-  - **0.7.3** → legacy fields (`name` required; no enrichment).
-  - **0.7.4 +** → enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`).
+- Add **schema-version targeting** for generation.  
+- Generator output must include `$schema` → target corpus URL.  
+- Branch behavior:  
+  - **0.7.3** → legacy fields (`name` required; no enrichment).  
+  - **0.7.4 +** → enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`).  
 - Always run MCP validation against the declared `$schema`.
 
 ---
@@ -74,8 +74,11 @@ labs generate --engine=<gemini|openai|deterministic> "prompt"
 
 ### Environment Preload
 
-The CLI **must load** a `.env` file at startup via `python-dotenv`.
-If critical keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`) are missing, the CLI logs a warning and falls back to mock mode.
+The CLI loads environment variables manually from a local `.env` file at startup
+and merges them with the current process `os.environ`.
+If critical keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`) are missing,
+the CLI emits a warning and defaults to **mock mode**.
+This behavior satisfies the preload requirement without external dependencies.
 
 ---
 
@@ -127,7 +130,9 @@ Example:
   "ts": "2025-10-06T18:32:00Z",
   "engine": "gemini",
   "schema_version": "0.7.3",
-  "normalized_asset": {"$schema": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json"},
+  "normalized_asset": {
+    "$schema": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json"
+  },
   "mcp_result": {"ok": true, "errors": []}
 }
 ```
@@ -153,11 +158,11 @@ Example:
 ## Exit Criteria
 
 * Schema-version branching operational.
-* `.env` auto-load and validation implemented.
+* `.env` auto-load and validation implemented (manual or via `load_env_file`).
 * `$schema` tagging enforced.
 * MCP enforcement in both modes; no persistence on failure.
 * Gemini structured-output contract validated.
-* CI baseline: `schemaVersion=0.7.3`.
+* CI baseline: `schemaVersion = 0.7.3`.
 
 ---
 
@@ -166,5 +171,7 @@ Example:
 * No schema corpus bump.
 * No new transports, streaming APIs, or retry policy changes.
 * No alteration to error taxonomy or security model.
+
+```
 
 ---
