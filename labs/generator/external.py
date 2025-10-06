@@ -1224,7 +1224,7 @@ class GeminiGenerator(ExternalGenerator):
             ]
         }
 
-        generation_config: JsonDict = {}
+        generation_config: JsonDict = {"responseMimeType": "application/json"}
         temperature = parameters.get("temperature")
         if isinstance(temperature, Real):
             generation_config["temperature"] = float(temperature)
@@ -1237,8 +1237,7 @@ class GeminiGenerator(ExternalGenerator):
         if isinstance(seed, int):
             generation_config["seed"] = seed
 
-        if generation_config:
-            payload["generationConfig"] = generation_config
+        payload["generationConfig"] = generation_config
 
         return payload
 
