@@ -1,32 +1,38 @@
 {
-  "task": "Load and validate environment variables at CLI startup",
-  "objective": "Ensure the CLI automatically loads .env, validates presence of LABS_EXTERNAL_LIVE, GEMINI_API_KEY, and OPENAI_API_KEY, and logs warnings if missing. This brings runtime into full compliance with v0.3.4 External Environment Handling requirements.",
+  "task": "Add connectivity check for GeminiGenerator",
+  "objective": "Ensure GeminiGenerator verifies that GEMINI_ENDPOINT and GEMINI_API_KEY are set and reachable before sending generation requests. If missing or unreachable, raise a fast-fail error with explicit reason, instead of retrying three times on 404.",
   "changes": [
     {
-      "id": "cli_env_preload",
-      "description": "Preload .env and validate critical env vars before CLI command parsing.",
+      "id": "gemini_connectivity_check",
+      "description": "Add connectivity_check() method and integrate into generate() before first request.",
       "edits": [
         {
-          "file": "labs/cli.py",
-          "pattern": "^import ",
+          "file": "labs/generator/external.py",
+          "pattern": "class GeminiGenerator",
           "multiple": false,
-          "replacement": "import os\nimport logging\nfrom dotenv import load_dotenv\n\n# --- Preload .env early ---\nload_dotenv(dotenv_path='.env', override=False)\n\n# --- Validate required env vars ---\nfor key in ['LABS_EXTERNAL_LIVE', 'GEMINI_API_KEY', 'OPENAI_API_KEY']:\n    if not os.getenv(key):\n        logging.warning(f'Missing environment variable {key}; falling back to mock mode.')\n\nimport "
+          "replacement": "class GeminiGenerator:\n    def connectivity_check(self) -> None:\n        import os, requests, logging\n        endpoint = os.getenv('GEMINI_ENDPOINT') or self.default_endpoint\n        api_key = os.getenv('GEMINI_API_KEY')\n        if not api_key:\n            raise RuntimeError('GEMINI_API_KEY not set; cannot run live Gemini generation')\n        if not endpoint:\n            raise RuntimeError('GEMINI_ENDPOINT not set; cannot run live Gemini generation')\n        try:\n            resp = requests.get(endpoint.split(':generate')[0], timeout=5)\n            if resp.status_code >= 400:\n                logging.warning(f'Gemini endpoint check returned {resp.status_code}')\n        except Exception as exc:\n            raise RuntimeError(f'Gemini endpoint connectivity check failed: {exc}')\n\n"
+        },
+        {
+          "file": "labs/generator/external.py",
+          "pattern": "def generate\\(",
+          "multiple": false,
+          "replacement": "def generate(self, *args, **kwargs):\n        # --- Fast fail: validate env + endpoint ---\n        try:\n            self.connectivity_check()\n        except Exception as exc:\n            raise RuntimeError(f'Gemini connectivity check failed before generation: {exc}')\n        "
         }
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "Do not add new dependencies; python-dotenv already required",
-      "Must not alter CLI argument parsing or generator behavior",
-      "Only warn on missing vars, do not raise errors",
-      "Load .env before any subcommand executes"
+      "Use only standard library + requests (already in requirements)",
+      "Do not alter retry/backoff logic; this runs before it",
+      "If endpoint missing or unreachable, raise RuntimeError immediately",
+      "Preserve mock mode when LABS_EXTERNAL_LIVE != 1"
     ]
   },
   "exit_criteria": [
-    "Running CLI without exported vars prints clear warnings",
-    ".env values are visible via os.getenv() in subprocesses",
-    "External generators switch to live mode when LABS_EXTERNAL_LIVE=1",
-    "No change to strict/relaxed validation flow"
+    "Gemini live runs fail fast with clear error if endpoint or API key missing",
+    "Logs show warning or RuntimeError with reason='connectivity_check_failed'",
+    "Valid env and endpoint proceed normally to generation",
+    "No change to OpenAIGenerator or deterministic engine behavior"
   ]
 }

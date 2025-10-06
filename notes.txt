@@ -26,3 +26,35 @@ python -m labs.cli generate "make a circle harmony asset"
 
 export MCP_ADAPTER_CMD="docker exec -i synesthetic-mcp-serve-1 python -m mcp"
 export LABS_FAIL_FAST=1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+python - <<'PY'
+import os
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=".env", override=True)
+for k in ["LABS_EXTERNAL_LIVE","GEMINI_API_KEY","GEMINI_ENDPOINT","LABS_SCHEMA_VERSION"]:
+    print(f"{k}={os.getenv(k)}")
+PY
+

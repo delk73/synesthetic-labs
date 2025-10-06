@@ -1083,18 +1083,34 @@ class ExternalGenerator:
 
 
 class GeminiGenerator(ExternalGenerator):
+    """Google Gemini generator (v1beta generateContent)."""
+
     engine = "gemini"
     api_version = "v1beta"
 
     api_key_env = "GEMINI_API_KEY"
     endpoint_env = "GEMINI_ENDPOINT"
-    default_endpoint = "https://generativelanguage.googleapis.com/v1beta/models/text:generate"
+    default_endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    )
+    default_model = "gemini-2.0-flash"
+
+    def _build_live_headers(self, api_key: str) -> Tuple[Dict[str, str], Dict[str, str]]:
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": api_key,
+        }
+        log_headers = self._sanitize_headers_for_log(headers)
+        log_headers["X-Goog-Api-Key"] = "***redacted***"
+        return headers, log_headers
 
     def connectivity_check(
         self,
         *,
         endpoint: Optional[str] = None,
         api_key: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: float = 5.0,
     ) -> None:
         """Ensure Gemini endpoint and credentials are available before live requests."""
 
@@ -1124,23 +1140,22 @@ class GeminiGenerator(ExternalGenerator):
                 retryable=False,
             )
 
-        healthcheck_url = resolved_endpoint
-        if ":generate" in resolved_endpoint:
-            healthcheck_url = resolved_endpoint.split(":generate", 1)[0]
+        request_headers = headers or self._build_live_headers(resolved_api_key)[0]
+        payload = {"contents": [{"parts": [{"text": "ping"}]}]}
 
         try:
-            response = requests.get(healthcheck_url, timeout=5)
+            response = requests.post(resolved_endpoint, json=payload, headers=request_headers, timeout=timeout)
         except requests.RequestException as exc:
-            self._logger.warning("Gemini connectivity probe failed for %s: %s", healthcheck_url, exc)
+            self._logger.warning("Gemini connectivity probe failed for %s: %s", resolved_endpoint, exc)
             raise ExternalRequestError(
                 "connectivity_check_failed",
                 "endpoint_unreachable",
                 retryable=False,
             ) from exc
 
-        if response.status_code >= 400:
+        if not (200 <= response.status_code < 300):
             self._logger.warning(
-                "Gemini connectivity check returned %s for %s", response.status_code, healthcheck_url
+                "Gemini connectivity check returned %s for %s", response.status_code, resolved_endpoint
             )
             raise ExternalRequestError(
                 "connectivity_check_failed",
@@ -1151,20 +1166,21 @@ class GeminiGenerator(ExternalGenerator):
         self._connectivity_checked = True
 
     def _resolve_live_settings(self) -> Dict[str, Any]:
-        settings = super()._resolve_live_settings()
+        api_key = (os.getenv(self.api_key_env or "") or "").strip()
+        if not api_key:
+            raise ExternalRequestError("auth_error", "missing_api_key", retryable=False)
 
-        headers = settings.get("headers", {})
-        auth_header = headers.get("Authorization") if isinstance(headers, dict) else None
-        api_key: Optional[str] = None
-        if isinstance(auth_header, str) and auth_header.lower().startswith("bearer "):
-            api_key = auth_header[7:]
+        endpoint = (os.getenv(self.endpoint_env or "") or self.default_endpoint or self.endpoint or "").strip()
+        if not endpoint:
+            raise ExternalRequestError("network_error", "missing_endpoint", retryable=False)
 
-        self.connectivity_check(endpoint=settings.get("endpoint"), api_key=api_key)
-        return settings
+        headers, log_headers = self._build_live_headers(api_key)
+        self.connectivity_check(endpoint=endpoint, api_key=api_key, headers=headers)
+        return {"endpoint": endpoint, "headers": headers, "log_headers": log_headers}
 
     def default_parameters(self) -> JsonDict:
         return {
-            "model": os.getenv("GEMINI_MODEL", "gemini-pro"),
+            "model": os.getenv("GEMINI_MODEL", self.default_model),
             "temperature": None,
         }
 

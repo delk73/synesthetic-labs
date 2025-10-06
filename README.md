@@ -2,6 +2,39 @@
 
 Synesthetic Labs delivers the v0.3 generator → critic workflow with deterministic Python agents, optional Gemini/OpenAI engines, Unix socket + TCP MCP transports, and a patch lifecycle stub exercised via the CLI.
 
+```mermaid
+flowchart LR
+  subgraph Local["Local Runtime"]
+    CLI["CLI (labs/cli.py)"]
+    GEN["Generator (AssetAssembler + External engines)"]
+    CRIT["Critic (labs/agents/critic.py)"]
+  end
+
+  subgraph External["External Systems"]
+    subgraph ENG["External Engines"]
+      GEMINI["Gemini API"]
+      OPENAI["OpenAI API"]
+    end
+    MCP["MCP Adapter (synesthetic-mcp)"]
+    SCHEMAS["Schemas (synesthetic-schemas)"]
+  end
+
+  CLI --> GEN
+  GEN --> CRIT
+  GEN -->|if LABS_EXTERNAL_LIVE=1| ENG
+  ENG -->|live API call| GEN
+  CRIT -->|validate| MCP
+  MCP -->|imports| SCHEMAS
+  MCP -->|mcp_response| CRIT
+  CRIT -->|review + ok/fail| CLI
+
+  style Local fill:#1b1b1b,stroke:#fff,stroke-width:2px
+  style External fill:#262626,stroke:#ccc,stroke-width:1.5px
+  style ENG fill:#222,stroke:#888,stroke-width:1px
+  style GEMINI fill:#1a3d6d,stroke:#9cf,stroke-width:1.5px
+  style OPENAI fill:#3d1a6d,stroke:#c9f,stroke-width:1.5px
+```
+
 ## Quickstart
 
 ```bash
@@ -102,13 +135,42 @@ python -m labs.cli generate --engine openai \
   --seed 42 --temperature 0.7 --timeout-s 20 --relaxed "spectral chorus"
 ```
 
-Highlights:
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant LABS as Labs CLI + Generator
+    participant CRIT as Critic (MCP validation client)
+    participant MCP as MCP Validator
+    participant GEM as Gemini API
+
+    U->>LABS: python -m labs.cli generate "prompt"<br/>--engine gemini --schema-version 0.7.3
+    LABS->>LABS: load_dotenv(".env")<br/>validate env vars
+    LABS->>GEM: POST /v1beta/models/gemini-pro:generateContent<br/>with Authorization header
+    GEM-->>LABS: JSON asset candidate
+
+    LABS->>LABS: normalize → add $schema + provenance<br/>(0.7.3 legacy or 0.7.4 enriched)
+    LABS->>CRIT: send asset for validation
+
+    CRIT->>MCP: validate JSON via TCP
+    MCP-->>CRIT: mcp_response {ok, reason, errors[]}
+
+    CRIT-->>LABS: review {ok, mcp_response, validation_status}
+    LABS->>LABS: persist if ok=True and validated<br/>else print errors
+    LABS-->>U: print result + logs → meta/output/labs/
+```
+
+
+
+## Highlights:
 
 - `labs/generator/external.py` loads provider credentials from env, injects `Authorization` headers in live mode, enforces 256 KiB/1 MiB size caps, and retries with exponential backoff based on the spec taxonomy.
 - Every run appends a JSONL entry under `meta/output/labs/external.jsonl` capturing the trace ID, transport, strict flag, redacted request headers, raw response hash/size, normalized asset, and MCP validation result.
 - Live runs require `LABS_EXTERNAL_LIVE=1` plus provider keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`); keys are redacted in logs and provenance metadata is written under `asset.meta_info.provenance`.
 - The CLI exposes `--seed`, `--temperature`, `--timeout-s`, and `--strict/--relaxed` flags so operators can control determinism, request budgets, and fail-fast behaviour.
 - See `docs/troubleshooting_external.md` for error taxonomy hints (`auth_error`, `rate_limited`, `timeout`, `bad_response`, `server_error`, `network_error`).
+
+
 
 ## Further Reading
 
