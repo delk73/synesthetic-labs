@@ -17,6 +17,8 @@ from copy import deepcopy
 from numbers import Real
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import requests
+
 from labs.generator.assembler import AssetAssembler
 from labs.logging import log_external_generation
 
@@ -1087,6 +1089,78 @@ class GeminiGenerator(ExternalGenerator):
     api_key_env = "GEMINI_API_KEY"
     endpoint_env = "GEMINI_ENDPOINT"
     default_endpoint = "https://generativelanguage.googleapis.com/v1beta/models/text:generate"
+
+    def connectivity_check(
+        self,
+        *,
+        endpoint: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ) -> None:
+        """Ensure Gemini endpoint and credentials are available before live requests."""
+
+        if (
+            self.mock_mode
+            or self._transport is not None
+            or getattr(self, "_connectivity_checked", False)
+        ):
+            return
+
+        resolved_endpoint = (
+            (endpoint or os.getenv(self.endpoint_env or "") or self.default_endpoint or self.endpoint or "").strip()
+        )
+        resolved_api_key = (api_key or os.getenv(self.api_key_env or "") or "").strip()
+
+        if not resolved_api_key:
+            raise ExternalRequestError(
+                "connectivity_check_failed",
+                "missing_api_key",
+                retryable=False,
+            )
+
+        if not resolved_endpoint:
+            raise ExternalRequestError(
+                "connectivity_check_failed",
+                "missing_endpoint",
+                retryable=False,
+            )
+
+        healthcheck_url = resolved_endpoint
+        if ":generate" in resolved_endpoint:
+            healthcheck_url = resolved_endpoint.split(":generate", 1)[0]
+
+        try:
+            response = requests.get(healthcheck_url, timeout=5)
+        except requests.RequestException as exc:
+            self._logger.warning("Gemini connectivity probe failed for %s: %s", healthcheck_url, exc)
+            raise ExternalRequestError(
+                "connectivity_check_failed",
+                "endpoint_unreachable",
+                retryable=False,
+            ) from exc
+
+        if response.status_code >= 400:
+            self._logger.warning(
+                "Gemini connectivity check returned %s for %s", response.status_code, healthcheck_url
+            )
+            raise ExternalRequestError(
+                "connectivity_check_failed",
+                f"unexpected_status_{response.status_code}",
+                retryable=False,
+            )
+
+        self._connectivity_checked = True
+
+    def _resolve_live_settings(self) -> Dict[str, Any]:
+        settings = super()._resolve_live_settings()
+
+        headers = settings.get("headers", {})
+        auth_header = headers.get("Authorization") if isinstance(headers, dict) else None
+        api_key: Optional[str] = None
+        if isinstance(auth_header, str) and auth_header.lower().startswith("bearer "):
+            api_key = auth_header[7:]
+
+        self.connectivity_check(endpoint=settings.get("endpoint"), api_key=api_key)
+        return settings
 
     def default_parameters(self) -> JsonDict:
         return {
