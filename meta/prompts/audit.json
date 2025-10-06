@@ -1,8 +1,6 @@
 {
-  "$schema": "https://schemas.synesthetic.dev/audit-spec.schema.json",
   "version": "v0.3.4",
   "spec_ref": "docs/labs_spec.md#synesthetic-labs-spec-v0.3.4-core",
-  "style": "deterministic-terse",
   "output": {
     "paths": ["meta/output/labs_state.md", "AGENTS.md"],
     "format": "markdown",
@@ -33,8 +31,8 @@
       "section": "4 · Environment — Preload Rule",
       "requirement": "CLI MUST preload .env, merge with os.environ, warn when keys missing.",
       "verify": [
-        {"path": "labs/cli.py", "match": ["dotenv", "load", "warning|warn|missing|GEMINI_API_KEY|OPENAI_API_KEY"], "regex": true},
-        {"path": "requirements.txt", "match": ["python-dotenv|dotenv"], "regex": true}
+        {"path": "labs/cli.py", "match": ["dotenv", "load", "GEMINI_API_KEY", "OPENAI_API_KEY"]},
+        {"path": "requirements.txt", "match": ["python-dotenv", "dotenv"]}
       ]
     },
     {
@@ -59,8 +57,8 @@
       "section": "5.1 · Structured Output (Gemini)",
       "requirement": "Response MUST be parsed from candidates[0].content.parts[0].text and json-decoded to asset.",
       "verify": [
-        {"path": "labs/generator/external.py", "match": ["candidates[0].content.parts[0].text", "json.loads|json_loads"], "regex": true},
-        {"path": "tests/test_external_generator.py", "match": ["candidates", "parts", "responseMimeType", "json"], "regex": true}
+        {"path": "labs/generator/external.py", "match": ["candidates[0].content.parts[0].text", "json.loads"]},
+        {"path": "tests/test_external_generator.py", "match": ["candidates", "parts", "responseMimeType", "json"]}
       ]
     },
     {
@@ -68,9 +66,8 @@
       "section": "5.2 · Headers & Limits",
       "requirement": "Enforce 256KiB req / 1MiB resp caps; no-retry on 4xx; correct headers.",
       "verify": [
-        {"path": "labs/generator/external.py", "match": ["256 * 1024|262144", "1024 * 1024|1048576"], "regex": true},
-        {"path": "labs/generator/external.py", "match": ["X-Goog-Api-Key|Authorization"], "regex": true},
-        {"path": "tests/test_external_generator.py", "match": ["no-retry", "4\\d\\d|400|404"], "regex": true}
+        {"path": "labs/generator/external.py", "match": ["256 * 1024", "1024 * 1024", "X-Goog-Api-Key", "Authorization"]},
+        {"path": "tests/test_external_generator.py", "match": ["no-retry", "400", "404"]}
       ]
     },
     {
@@ -88,7 +85,7 @@
       "requirement": "Unknown keys/wrong types → bad_response; numeric bounds → out_of_range.",
       "verify": [
         {"path": "labs/generator/external.py", "match": ["bad_response", "out_of_range"]},
-        {"path": "tests/test_external_generator.py", "match": ["bad_response|out_of_range"], "regex": true}
+        {"path": "tests/test_external_generator.py", "match": ["bad_response", "out_of_range"]}
       ]
     },
     {
