@@ -29,10 +29,10 @@
     {
       "id": "env-preload",
       "section": "4 · Environment — Preload Rule",
-      "requirement": "CLI MUST preload .env, merge with os.environ, warn when keys missing.",
+      "requirement": "CLI must preload .env (manual or python-dotenv), merge with os.environ, warn when keys missing, and fall back to mock mode.",
       "verify": [
-        {"path": "labs/cli.py", "match": ["dotenv", "load", "GEMINI_API_KEY", "OPENAI_API_KEY"]},
-        {"path": "requirements.txt", "match": ["python-dotenv", "dotenv"]}
+        {"path": "labs/cli.py", "match": ["load_env_file", "os.environ", "GEMINI_API_KEY", "OPENAI_API_KEY"]},
+        {"path": "requirements.txt", "match": ["dotenv"], "optional": true}
       ]
     },
     {
