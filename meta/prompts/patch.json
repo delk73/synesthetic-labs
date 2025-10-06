@@ -1,38 +1,31 @@
 {
-  "task": "Add connectivity check for GeminiGenerator",
-  "objective": "Ensure GeminiGenerator verifies that GEMINI_ENDPOINT and GEMINI_API_KEY are set and reachable before sending generation requests. If missing or unreachable, raise a fast-fail error with explicit reason, instead of retrying three times on 404.",
+  "task": "Fix GeminiGenerator payload structure",
+  "objective": "Ensure the JSON body for Gemini :generateContent requests matches the expected API shape and includes generationConfig.responseMimeType for structured output.",
   "changes": [
     {
-      "id": "gemini_connectivity_check",
-      "description": "Add connectivity_check() method and integrate into generate() before first request.",
+      "id": "gemini_payload_fix",
+      "description": "Repair _build_request() to emit correct content and generationConfig fields.",
       "edits": [
         {
           "file": "labs/generator/external.py",
-          "pattern": "class GeminiGenerator",
+          "pattern": "def _build_request",
           "multiple": false,
-          "replacement": "class GeminiGenerator:\n    def connectivity_check(self) -> None:\n        import os, requests, logging\n        endpoint = os.getenv('GEMINI_ENDPOINT') or getattr(self, 'default_endpoint', None)\n        api_key = os.getenv('GEMINI_API_KEY')\n        if not api_key:\n            raise RuntimeError('GEMINI_API_KEY not set; cannot run live Gemini generation')\n        if not endpoint:\n            raise RuntimeError('GEMINI_ENDPOINT not set; cannot run live Gemini generation')\n\n        try:\n            # strip off :generateContent if present\n            base_url = endpoint.split(':generate')[0]\n            resp = requests.get(base_url, timeout=5)\n            if resp.status_code >= 400:\n                logging.warning(f'Gemini connectivity check returned {resp.status_code} for {base_url}')\n        except Exception as exc:\n            raise RuntimeError(f'Gemini endpoint connectivity check failed: {exc}')\n\n"
-        },
-        {
-          "file": "labs/generator/external.py",
-          "pattern": "def generate\\(",
-          "multiple": false,
-          "replacement": "def generate(self, *args, **kwargs):\n        # --- Fast fail: validate env + endpoint before any live request ---\n        try:\n            self.connectivity_check()\n        except Exception as exc:\n            raise RuntimeError(f'Gemini connectivity check failed before generation: {exc}')\n        "
+          "replacement": "def _build_request(self, prompt: str, **kwargs):\n        # Gemini expects 'contents' with 'role' and 'parts', plus generationConfig\n        return {\n            'contents': [\n                {\n                    'role': 'user',\n                    'parts': [{'text': prompt}]\n                }\n            ],\n            'generationConfig': {\n                'responseMimeType': 'application/json'\n            }\n        }"
         }
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "Use only standard library + requests (already in requirements)",
-      "Do not alter retry/backoff logic; this runs before it",
-      "If endpoint missing or unreachable, raise RuntimeError immediately",
-      "Preserve mock mode when LABS_EXTERNAL_LIVE != 1"
+      "Preserve retry/backoff logic and headers.",
+      "Inject generationConfig.responseMimeType exactly once.",
+      "No connectivity probing or unrelated changes.",
+      "Use the same schema branching and provenance stamping."
     ]
   },
   "exit_criteria": [
-    "Gemini live runs fail fast with clear error if endpoint or API key missing",
-    "Logs show warning or RuntimeError with reason='connectivity_check_failed'",
-    "Valid env and endpoint proceed normally to generation",
-    "No change to OpenAIGenerator or deterministic engine behavior"
+    "Gemini live requests return 200 with valid structured JSON output.",
+    "Tests confirm inclusion of generationConfig.responseMimeType.",
+    "No regressions in OpenAI or deterministic generator flows."
   ]
 }
