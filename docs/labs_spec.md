@@ -7,7 +7,7 @@ owner: labs-core
 # Synesthetic Labs Spec (v0.3.4-core)
 
 ## Purpose
-Define reproducible, schema-aware asset generation for the **Labs** toolchain.
+Define reproducible, schema-aware asset generation for the **Labs** toolchain.  
 Ensure deterministic provenance, environment preload, and structured external-API output.
 
 ---
@@ -65,7 +65,13 @@ Precedence: flag → `LABS_SCHEMA_VERSION` → default `0.7.3`.
 
 ### Preload Rule
 
-CLI **must preload** `.env` (manual or `python-dotenv`), merge with `os.environ`, warn when critical keys missing, and fall back to mock mode.
+CLI **must preload** environment variables from a `.env` file —
+either **manually** (for example, `_load_env_file`) **or via** a library such as `python-dotenv`.
+The preload logic must:
+
+1. Merge loaded values with `os.environ`.
+2. Warn when critical keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`) are missing.
+3. Default to **mock mode** when no valid API keys are found.
 
 ---
 
@@ -118,7 +124,7 @@ CLI **must preload** `.env` (manual or `python-dotenv`), merge with `os.environ`
 ## 8 · Logging
 
 * Write `generator.jsonl`, `critic.jsonl`, `patches.jsonl`, `external.jsonl`.
-* Each entry includes: `engine`, `endpoint`, `schema_version`, `trace_id`, `reason/detail` on failure.
+* Each entry includes: `engine`, `endpoint`, `schema_version`, `trace_id`, and `reason/detail` on failure.
 
 ---
 
