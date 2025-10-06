@@ -12,10 +12,13 @@ import socket
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import uuid
 from copy import deepcopy
 from numbers import Real
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
+import requests
 
 from labs.generator.assembler import AssetAssembler
 from labs.logging import log_external_generation
@@ -29,7 +32,7 @@ _BACKOFF_FACTOR = 2.0
 _BACKOFF_CAP_SECONDS = 5.0
 _JITTER_FRACTION = 0.2
 
-SENSITIVE_HEADERS = {"authorization"}
+SENSITIVE_HEADERS = {"authorization", "x-goog-api-key"}
 
 _BASELINE_SCHEMA_VERSION = "0.7.4"
 _BASELINE_ASSET = AssetAssembler(schema_version=_BASELINE_SCHEMA_VERSION).generate(
@@ -1081,22 +1084,162 @@ class ExternalGenerator:
 
 
 class GeminiGenerator(ExternalGenerator):
+    """Google Gemini generator (v1beta generateContent)."""
+
     engine = "gemini"
     api_version = "v1beta"
 
     api_key_env = "GEMINI_API_KEY"
     endpoint_env = "GEMINI_ENDPOINT"
-    default_endpoint = "https://generativelanguage.googleapis.com/v1beta/models/text:generate"
+    default_endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    )
+    default_model = "gemini-2.0-flash"
+
+    def _build_live_headers(self, api_key: str) -> Tuple[Dict[str, str], Dict[str, str]]:
+        headers = {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": api_key,
+        }
+        return headers, self._sanitize_headers_for_log(headers)
+
+    def _build_request_endpoint(self, endpoint: str, api_key: str) -> str:
+        parsed = urlparse(endpoint)
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        query["key"] = api_key
+        return urlunparse(parsed._replace(query=urlencode(query)))
+
+    def connectivity_check(
+        self,
+        *,
+        endpoint: Optional[str] = None,
+        api_key: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: float = 5.0,
+    ) -> None:
+        """Ensure Gemini endpoint and credentials are available before live requests."""
+
+        if (
+            self.mock_mode
+            or self._transport is not None
+            or getattr(self, "_connectivity_checked", False)
+        ):
+            return
+
+        resolved_endpoint = (
+            (endpoint or os.getenv(self.endpoint_env or "") or self.default_endpoint or self.endpoint or "").strip()
+        )
+        resolved_api_key = (api_key or os.getenv(self.api_key_env or "") or "").strip()
+
+        if not resolved_api_key:
+            raise ExternalRequestError(
+                "connectivity_check_failed",
+                "missing_api_key",
+                retryable=False,
+            )
+
+        if not resolved_endpoint:
+            raise ExternalRequestError(
+                "connectivity_check_failed",
+                "missing_endpoint",
+                retryable=False,
+            )
+
+        request_headers = headers or self._build_live_headers(resolved_api_key)[0]
+        request_endpoint = self._build_request_endpoint(resolved_endpoint, resolved_api_key)
+        payload = self._build_request({}, "ping", {})
+
+        try:
+            response = requests.post(request_endpoint, json=payload, headers=request_headers, timeout=timeout)
+        except requests.RequestException as exc:
+            self._logger.warning("Gemini connectivity probe failed for %s: %s", resolved_endpoint, exc)
+            raise ExternalRequestError(
+                "connectivity_check_failed",
+                "endpoint_unreachable",
+                retryable=False,
+            ) from exc
+
+        if not (200 <= response.status_code < 300):
+            self._logger.warning(
+                "Gemini connectivity check returned %s for %s", response.status_code, resolved_endpoint
+            )
+            raise ExternalRequestError(
+                "connectivity_check_failed",
+                f"unexpected_status_{response.status_code}",
+                retryable=False,
+            )
+
+        self._connectivity_checked = True
+
+    def _resolve_live_settings(self) -> Dict[str, Any]:
+        api_key = (os.getenv(self.api_key_env or "") or "").strip()
+        if not api_key:
+            raise ExternalRequestError("auth_error", "missing_api_key", retryable=False)
+
+        endpoint = (os.getenv(self.endpoint_env or "") or self.default_endpoint or self.endpoint or "").strip()
+        if not endpoint:
+            raise ExternalRequestError("network_error", "missing_endpoint", retryable=False)
+
+        headers, log_headers = self._build_live_headers(api_key)
+        request_endpoint = self._build_request_endpoint(endpoint, api_key)
+        self._gemini_request_endpoint = request_endpoint
+        self.connectivity_check(endpoint=endpoint, api_key=api_key, headers=headers)
+        return {"endpoint": endpoint, "headers": headers, "log_headers": log_headers}
+
+    def _dispatch(
+        self,
+        endpoint: str,
+        payload: JsonDict,
+        *,
+        headers: Dict[str, str],
+        timeout: float,
+        prompt: str,
+        parameters: JsonDict,
+    ) -> Tuple[JsonDict, bytes]:
+        request_endpoint = getattr(self, "_gemini_request_endpoint", endpoint)
+        return super()._dispatch(
+            request_endpoint,
+            payload,
+            headers=headers,
+            timeout=timeout,
+            prompt=prompt,
+            parameters=parameters,
+        )
 
     def default_parameters(self) -> JsonDict:
         return {
-            "model": os.getenv("GEMINI_MODEL", "gemini-pro"),
+            "model": os.getenv("GEMINI_MODEL", self.default_model),
             "temperature": None,
         }
 
     def _build_request(self, envelope: JsonDict, prompt: str, parameters: JsonDict) -> JsonDict:
-        payload = dict(envelope)
-        payload.setdefault("parameters", {})
+        payload: JsonDict = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {"text": prompt},
+                    ],
+                }
+            ]
+        }
+
+        generation_config: JsonDict = {}
+        temperature = parameters.get("temperature")
+        if isinstance(temperature, Real):
+            generation_config["temperature"] = float(temperature)
+
+        max_tokens = parameters.get("max_tokens")
+        if isinstance(max_tokens, int) and max_tokens > 0:
+            generation_config["maxOutputTokens"] = max_tokens
+
+        seed = parameters.get("seed")
+        if isinstance(seed, int):
+            generation_config["seed"] = seed
+
+        if generation_config:
+            payload["generationConfig"] = generation_config
+
         return payload
 
     def _mock_response(self, prompt: str, parameters: JsonDict) -> JsonDict:
@@ -1150,8 +1293,42 @@ class GeminiGenerator(ExternalGenerator):
         schema_version: str,
     ) -> JsonDict:
         asset_payload = response.get("asset")
+        if isinstance(asset_payload, dict):
+            return self._normalise_asset(
+                asset_payload,
+                prompt=prompt,
+                parameters=parameters,
+                response=response,
+                trace_id=trace_id,
+                mode=mode,
+                endpoint=endpoint,
+                response_hash=response_hash,
+                schema_version=schema_version,
+            )
+
+        try:
+            candidate = response["candidates"][0]
+            content = candidate["content"]
+            parts = content["parts"]
+            text = parts[0]["text"]
+        except (KeyError, IndexError, TypeError):
+            raise ExternalRequestError(
+                "bad_response",
+                "missing_text_candidates",
+                retryable=False,
+            )
+
+        try:
+            asset_payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ExternalRequestError("bad_response", f"invalid_json:{exc.msg}", retryable=False) from exc
+
         if not isinstance(asset_payload, dict):
-            raise ValueError("Gemini response missing 'asset' payload")
+            raise ExternalRequestError(
+                "bad_response",
+                "decoded_payload_not_object",
+                retryable=False,
+            )
         return self._normalise_asset(
             asset_payload,
             prompt=prompt,
