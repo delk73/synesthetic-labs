@@ -1,6 +1,6 @@
 ---
 version: v0.3.4
-lastReviewed: 2025-10-05
+lastReviewed: 2025-10-06
 owner: labs-core
 ---
 
@@ -8,37 +8,37 @@ owner: labs-core
 
 ## Purpose
 
-- Extend v0.3.4 by making the generator **schema-aware**.
-- Allow Labs to produce assets that validate against a **declared schema corpus version** (`0.7.x`).
-- Remove ad-hoc scrubbing: branching logic in generator ensures compatibility.
-- Maintain reproducibility by embedding `$schema` in every generated asset.
+- Make the generator **schema-aware** and reproducible.
+- Produce assets that validate against a declared **schema corpus version** (`0.7.x`).
+- Remove ad-hoc scrubbing; branching logic ensures compatibility.
+- Embed `$schema` in every generated asset for deterministic provenance.
 
 ---
 
 ## Historical Scopes
 
-- **≤ v0.3.3**: Baseline generator/critic pipeline, transports, logging, patch lifecycle stubs, external scaffolding.
-- **v0.3.4**: External API calls (Gemini/OpenAI), normalization contract, provenance, error taxonomy, logging, CI matrix.
+- **≤ v0.3.3** — Baseline generator/critic pipeline, transports, logging, patch lifecycle stubs.
+- **v0.3.4** — External API calls (Gemini / OpenAI), normalization contract, provenance, error taxonomy, logging, CI matrix.
+
+> Future versions (≥ v0.3.5) build on this baseline.
 
 ---
 
-> This document codifies the v0.3.4 release scope. Future scopes (v0.3.5+) will build on this baseline.
-
-## Scope (v0.3.4 Schema Targeting Hardening)
+## Scope (Schema Targeting Hardening)
 
 ### Objectives
-- Add **schema version targeting** for asset generation.
-- Generator output must include `$schema` pointing to the target corpus URL.
+- Add **schema-version targeting** for generation.
+- Generator output must include `$schema` → target corpus URL.
 - Branch behavior:
-  - **0.7.3**: emit legacy fields (root `name` required, no enrichment fields).
-  - **0.7.4+**: emit enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`); root `name` removed in favor of `meta_info.title`.
+  - **0.7.3** → legacy fields (`name` required; no enrichment).
+  - **0.7.4 +** → enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`).
 - Always run MCP validation against the declared `$schema`.
 
 ---
 
 ## Interfaces
 
-#### Generator Contract
+### Generator Contract
 ```python
 def generate_asset(
     prompt: str,
@@ -47,149 +47,124 @@ def generate_asset(
     params: Optional[dict[str, Any]] = None,
     trace_id: Optional[str] = None
 ) -> dict:
-    """
-    Returns a normalized SynestheticAsset object
-    that conforms to the target schema_version.
-    """
+    """Return a normalized SynestheticAsset object conforming to schema_version."""
 ```
 
-#### CLI
+### CLI
 
 ```
 labs generate --engine=<gemini|openai|deterministic> "prompt"
     [--seed <int>] [--temperature <float>] [--timeout-s <int>]
-    [--schema-version <ver>]   # new
+    [--schema-version <ver>]
     [--strict|--relaxed]
 ```
 
-* Precedence: `--schema-version` flag > `LABS_SCHEMA_VERSION` env > default (`0.7.3`).
+*Precedence:* `--schema-version` > `LABS_SCHEMA_VERSION` > default (`0.7.3`).
 
 ---
 
 ## Environment Variables
 
-| Var                   | Purpose                                | Default / Notes    |
-| --------------------- | -------------------------------------- | ------------------ |
-| `LABS_SCHEMA_VERSION` | Target schema version for generator    | `"0.7.3"`          |
-| `LABS_EXTERNAL_LIVE`  | Enables live external generator mode   | `"0"` (mock)       |
-| `GEMINI_API_KEY`      | API key for Gemini external generation | *required if live* |
-| `OPENAI_API_KEY`      | API key for OpenAI external generation | *required if live* |
+| Var                   | Purpose                                       | Default / Notes          |
+| --------------------- | --------------------------------------------- | ------------------------ |
+| `LABS_SCHEMA_VERSION` | Target schema corpus version                  | `"0.7.3"`                |
+| `LABS_FAIL_FAST`      | Validation behavior (1 = abort, 0 = degraded) | `"1"`                    |
+| `GEMINI_API_KEY`      | Gemini API key                                | Required for live Gemini |
+| `OPENAI_API_KEY`      | OpenAI API key                                | Required for live OpenAI |
 
-### Environment Preload Requirement
+### Environment Preload
 
-The Labs CLI **must automatically load** a `.env` file from the repository root at startup
-using `python-dotenv`.
-Variables defined there take effect unless already set in the environment.
-If critical keys (`LABS_EXTERNAL_LIVE`, `GEMINI_API_KEY`, `OPENAI_API_KEY`) are missing,
-the CLI must log a warning and revert to mock mode.
+The CLI **must load** a `.env` file at startup via `python-dotenv`.
+If critical keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`) are missing, the CLI logs a warning and falls back to mock mode.
 
 ---
 
-## Normalization Contract (updates)
+## External Generation (v0.3.5 extension)
 
-* Every asset **must** include `$schema` root key:
+### Structured Output for Gemini
 
-  ```json
-  {
-    "$schema": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json"
-  }
-  ```
-
-* Branching rules:
-
-  * **0.7.3**:
-
-    * Require root `name`.
-    * Forbid enrichment fields.
-
-  * **0.7.4+**:
-
-    * Drop root `name`; use `meta_info.title`.
-    * Include enrichment fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`).
-
-* Provenance injection rules remain unchanged from v0.3.4.
+* Gemini integrations **must** set
+  `"generationConfig":{"responseMimeType":"application/json"}`
+  to enforce JSON-structured responses.
+* Returned content is parsed from
+  `candidates[0].content.parts[0].text`
+  and must decode to a valid Synesthetic asset JSON object.
+* This replaces prior ad-hoc text-to-JSON parsing.
 
 ---
 
-## Validation
+## Normalization Contract
 
-* Same as v0.3.4:
-
-  * Pre-flight checks (section presence, numeric bounds).
-  * Always invoke MCP with strict JSON validation.
-* Validation occurs **against the declared `$schema` version**.
+* Every asset includes a `$schema` root key.
+* Branching rules identical to prior spec.
+* Provenance injection unchanged.
 
 ---
 
-## Validation and Persistence Rules (amendment)
+## Validation Rules
 
-* MCP **must always be invoked** for schema validation — in both strict and relaxed modes.
-* If MCP cannot be reached or the validator fails to build:
+* Always invoke MCP with strict JSON validation.
+* Validate against the declared `$schema`.
+* If MCP unreachable:
 
-  * **Strict mode** → abort immediately with `mcp_unavailable` error.
-  * **Relaxed mode** → still attempt MCP; if unreachable, return review with
-    `ok: false`, `reason: "mcp_unavailable"`, and `validation_status: "failed"`.
-* CLI **MUST NOT persist** assets when `mcp_response.ok` is `false`.
-  Assets may be printed for debugging but never logged as successful experiments.
-* Every review object must include a complete `mcp_response` block, even on failure.
+  * **Strict (`LABS_FAIL_FAST=1`)** → abort with `mcp_unavailable`.
+  * **Relaxed (`LABS_FAIL_FAST=0`)** → return review with
+    `ok:false`, `reason:"mcp_unavailable"`, `validation_status:"degraded"`.
+* CLI never persists assets when `ok:false`.
+* Each review must include a full `mcp_response` block.
 
 ---
 
 ## Logging
 
-* Same files as v0.3.4 (`generator.jsonl`, `critic.jsonl`, `patches.jsonl`, `external.jsonl`).
-* `external.jsonl` entries MUST include:
+* Output files: `generator.jsonl`, `critic.jsonl`, `patches.jsonl`, `external.jsonl`.
+* Each `external.jsonl` entry records `schema_version` and `$schema` URL.
 
-  * `schema_version`
-  * `$schema` URL from the generated asset.
-
-Example (truncated):
+Example:
 
 ```json
 {
-  "ts": "2025-10-03T18:32:00Z",
-  "trace_id": "1234-5678",
+  "ts": "2025-10-06T18:32:00Z",
   "engine": "gemini",
-  "mode": "live",
-  "transport": "tcp",
   "schema_version": "0.7.3",
-  "normalized_asset": { "$schema": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", ... },
-  "mcp_result": { "ok": true, "errors": [] }
+  "normalized_asset": {"$schema": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json"},
+  "mcp_result": {"ok": true, "errors": []}
 }
 ```
 
 ---
 
-## Tests (matrix additions for v0.3.5)
+## Tests (Matrix Additions for v0.3.5)
 
-* **Unit**
+**Unit**
 
-  * Generator emits valid `0.7.3` asset when configured.
-  * Generator emits valid `0.7.4` asset when configured.
-  * `$schema` tag matches chosen `schema_version`.
-* **Integration**
+* Generator emits valid 0.7.3 and 0.7.4 assets.
+* `$schema` matches chosen version.
 
-  * `labs generate --schema-version=0.7.3` passes MCP validation with baseline schemas.
-  * CLI warns if `.env` missing or incomplete; mock mode fallback verified.
-  * Critic strict mode aborts on MCP outage; relaxed mode logs and blocks persistence.
+**Integration**
+
+* `labs generate --schema-version=0.7.3` passes MCP validation.
+* CLI warns if `.env` incomplete.
+* Critic strict mode aborts on MCP outage; relaxed logs & blocks persistence.
+* Gemini structured-output path verified via `responseMimeType`.
 
 ---
 
-## Exit Criteria (v0.3.5)
+## Exit Criteria
 
-* Generator branching implemented and schema version configurable.
+* Schema-version branching operational.
 * `.env` auto-load and validation implemented.
-* All assets tagged with `$schema` and valid against chosen corpus.
-* Critic enforces MCP validation in both modes, blocks persistence on failures.
-* **CI runs schemaVersion=0.7.3 only** (baseline).
-* No ad-hoc stripping needed in Labs pipeline.
+* `$schema` tagging enforced.
+* MCP enforcement in both modes; no persistence on failure.
+* Gemini structured-output contract validated.
+* CI baseline: `schemaVersion=0.7.3`.
 
 ---
 
 ## Non-Goals
 
-* No schema corpus bump bundled in this Labs spec.
-* No new transports, no provider fine-tuning, no streaming APIs.
-* No change to error taxonomy, retry, or security model (from v0.3.4).
+* No schema corpus bump.
+* No new transports, streaming APIs, or retry policy changes.
+* No alteration to error taxonomy or security model.
 
 ---
