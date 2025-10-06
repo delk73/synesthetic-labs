@@ -4,39 +4,32 @@ lastReviewed: 2025-10-06
 owner: labs-core
 ---
 
-# Synesthetic Labs Spec
+# Synesthetic Labs Spec (v0.3.4-core)
 
 ## Purpose
-
-- Make the generator **schema-aware** and reproducible.  
-- Produce assets that validate against a declared **schema corpus version** (`0.7.x`).  
-- Remove ad-hoc scrubbing; branching logic ensures compatibility.  
-- Embed `$schema` in every generated asset for deterministic provenance.
+Define reproducible, schema-aware asset generation for the **Labs** toolchain.
+Ensure deterministic provenance, environment preload, and structured external-API output.
 
 ---
 
-## Historical Scopes
-
-- **≤ v0.3.3** — Baseline generator / critic pipeline, transports, logging, patch lifecycle stubs.  
-- **v0.3.4** — External API calls (Gemini / OpenAI), normalization contract, provenance, error taxonomy, logging, CI matrix.
-
-> Future versions (≥ v0.3.5) build on this baseline.
-
----
-
-## Scope (Schema Targeting Hardening)
-
-### Objectives
-- Add **schema-version targeting** for generation.  
-- Generator output must include `$schema` → target corpus URL.  
-- Branch behavior:  
-  - **0.7.3** → legacy fields (`name` required; no enrichment).  
-  - **0.7.4 +** → enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`).  
-- Always run MCP validation against the declared `$schema`.
+## 1 · Historical Scopes
+| Version | Summary |
+|----------|----------|
+| ≤ v0.3.3 | Baseline generator / critic / transport / logging / patch stubs |
+| **v0.3.4** | External API (Gemini / OpenAI), normalization, provenance, error taxonomy, CI matrix |
+| ≥ v0.3.5 | Planned structured-output extension (already partially required here) |
 
 ---
 
-## Interfaces
+## 2 · Schema-Targeting Hardening
+- Generator **must branch** by `schema_version` and inject `$schema` → corpus URL.  
+- 0.7.3 → legacy fields (`name` required; no enrichment).  
+- 0.7.4 + → enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`).  
+- All generator outputs validated via **MCP** against declared `$schema`.
+
+---
+
+## 3 · Interfaces
 
 ### Generator Contract
 ```python
@@ -47,130 +40,112 @@ def generate_asset(
     params: Optional[dict[str, Any]] = None,
     trace_id: Optional[str] = None
 ) -> dict:
-    """Return a normalized SynestheticAsset object conforming to schema_version."""
+    """Return a normalized SynestheticAsset conforming to schema_version."""
 ```
 
-### CLI
+### CLI Usage
 
 ```
 labs generate --engine=<gemini|openai|deterministic> "prompt"
-    [--seed <int>] [--temperature <float>] [--timeout-s <int>]
-    [--schema-version <ver>]
-    [--strict|--relaxed]
+              [--schema-version <ver>] [--strict|--relaxed]
 ```
 
-*Precedence:* `--schema-version` > `LABS_SCHEMA_VERSION` > default (`0.7.3`).
+Precedence: flag → `LABS_SCHEMA_VERSION` → default `0.7.3`.
 
 ---
 
-## Environment Variables
+## 4 · Environment
 
-| Var                   | Purpose                                       | Default / Notes          |
-| --------------------- | --------------------------------------------- | ------------------------ |
-| `LABS_SCHEMA_VERSION` | Target schema corpus version                  | `"0.7.3"`                |
-| `LABS_FAIL_FAST`      | Validation behavior (1 = abort, 0 = degraded) | `"1"`                    |
-| `GEMINI_API_KEY`      | Gemini API key                                | Required for live Gemini |
-| `OPENAI_API_KEY`      | OpenAI API key                                | Required for live OpenAI |
+| Var                   | Purpose                            | Default   |
+| --------------------- | ---------------------------------- | --------- |
+| `LABS_SCHEMA_VERSION` | Target schema corpus version       | `"0.7.3"` |
+| `LABS_FAIL_FAST`      | Validation behaviour (1 = abort)   | `"1"`     |
+| `GEMINI_API_KEY`      | Gemini API key (required for live) | –         |
+| `OPENAI_API_KEY`      | OpenAI API key (required for live) | –         |
 
-### Environment Preload
+### Preload Rule
 
-The CLI loads environment variables manually from a local `.env` file at startup
-and merges them with the current process `os.environ`.
-If critical keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`) are missing,
-the CLI emits a warning and defaults to **mock mode**.
-This behavior satisfies the preload requirement without external dependencies.
+CLI **must preload** `.env` (manual or `python-dotenv`), merge with `os.environ`, warn when critical keys missing, and fall back to mock mode.
 
 ---
 
-## External Generation (v0.3.5 extension)
+## 5 · External Generation (Gemini / OpenAI)
 
-### Structured Output for Gemini
+### 5.1 Structured Output (Gemini)
 
-* Gemini integrations **must** set
-  `"generationConfig":{"responseMimeType":"application/json"}`
-  to enforce JSON-structured responses.
-* Returned content is parsed from
-  `candidates[0].content.parts[0].text`
-  and must decode to a valid Synesthetic asset JSON object.
-* This replaces prior ad-hoc text-to-JSON parsing.
+1. Request body **must** follow Gemini `generateContent` schema:
 
----
+   ```json
+   {
+     "contents": [
+       {"role": "user", "parts": [{"text": "<prompt>"}]}
+     ],
+     "generationConfig": {"responseMimeType": "application/json"}
+   }
+   ```
+2. Response must be parsed from
+   `candidates[0].content.parts[0].text` → `json.loads()`.
+3. Parsed JSON must form a valid Synesthetic Asset (`$schema` present).
+4. Failure to produce valid JSON → `bad_response` taxonomy.
 
-## Normalization Contract
+### 5.2 Headers & Limits
 
-* Every asset includes a `$schema` root key.
-* Branching rules identical to prior spec.
-* Provenance injection unchanged.
-
----
-
-## Validation Rules
-
-* Always invoke MCP with strict JSON validation.
-* Validate against the declared `$schema`.
-* If MCP unreachable:
-
-  * **Strict (`LABS_FAIL_FAST=1`)** → abort with `mcp_unavailable`.
-  * **Relaxed (`LABS_FAIL_FAST=0`)** → return review with
-    `ok:false`, `reason:"mcp_unavailable"`, `validation_status:"degraded"`.
-* CLI never persists assets when `ok:false`.
-* Each review must include a full `mcp_response` block.
+* Gemini: `X-Goog-Api-Key`.
+* OpenAI: `Authorization: Bearer`.
+* Enforce caps → 256 KiB request / 1 MiB response.
+* Implement retry/back-off taxonomy; no-retry on 4xx.
 
 ---
 
-## Logging
+## 6 · Normalization Contract
 
-* Output files: `generator.jsonl`, `critic.jsonl`, `patches.jsonl`, `external.jsonl`.
-* Each `external.jsonl` entry records `schema_version` and `$schema` URL.
-
-Example:
-
-```json
-{
-  "ts": "2025-10-06T18:32:00Z",
-  "engine": "gemini",
-  "schema_version": "0.7.3",
-  "normalized_asset": {
-    "$schema": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json"
-  },
-  "mcp_result": {"ok": true, "errors": []}
-}
-```
+* Unknown top-level keys → `bad_response`.
+* Wrong type → `bad_response`.
+* Numeric bounds violations → `out_of_range`.
+* Provenance block and `$schema` required in final asset.
 
 ---
 
-## Tests (Matrix Additions for v0.3.5)
+## 7 · Validation Rules
 
-**Unit**
-
-* Generator emits valid 0.7.3 and 0.7.4 assets.
-* `$schema` matches chosen version.
-
-**Integration**
-
-* `labs generate --schema-version=0.7.3` passes MCP validation.
-* CLI warns if `.env` incomplete.
-* Critic strict mode aborts on MCP outage; relaxed logs & blocks persistence.
-* Gemini structured-output path verified via `responseMimeType`.
+* Always invoke MCP (strict & relaxed).
+* **Strict:** abort on MCP failure (`mcp_unavailable`).
+* **Relaxed:** log warning + return `ok:false`, no persistence.
+* CLI must never persist assets when `ok:false`.
 
 ---
 
-## Exit Criteria
+## 8 · Logging
 
-* Schema-version branching operational.
-* `.env` auto-load and validation implemented (manual or via `load_env_file`).
-* `$schema` tagging enforced.
-* MCP enforcement in both modes; no persistence on failure.
-* Gemini structured-output contract validated.
-* CI baseline: `schemaVersion = 0.7.3`.
+* Write `generator.jsonl`, `critic.jsonl`, `patches.jsonl`, `external.jsonl`.
+* Each entry includes: `engine`, `endpoint`, `schema_version`, `trace_id`, `reason/detail` on failure.
 
 ---
 
-## Non-Goals
+## 9 · Testing Matrix (v0.3.4)
 
-* No schema corpus bump.
-* No new transports, streaming APIs, or retry policy changes.
-* No alteration to error taxonomy or security model.
+| Category    | Must Pass Checks                                            |
+| ----------- | ----------------------------------------------------------- |
+| Unit        | `$schema` stamped 0.7.3 / 0.7.4 branches                    |
+| Integration | MCP validation strict/relaxed                               |
+| External    | Gemini structured-output (`responseMimeType` + JSON decode) |
+| CLI         | `.env` preload + warnings                                   |
+
+---
+
+## 10 · Exit Criteria
+
+* Schema-branching operational and validated.
+* `.env` preload present + warnings functional.
+* MCP strict/relaxed modes verified.
+* Gemini structured-output request/response validated end-to-end.
+* CI baseline schemaVersion = 0.7.3.
+
+---
+
+## 11 · Non-Goals
+
+No schema corpus bump; no new transports or retry policies; no taxonomy changes.
 
 ```
 
