@@ -1,31 +1,45 @@
 {
-  "task": "Add schema-aware branching to _normalise_asset()",
-  "objective": "Ensure generator output conditionally includes provenance and metadata fields only for schema ≥ 0.7.4. Prevents 0.7.3 validator rejections from enriched assets.",
+  "task": "Cleanup schema-branching and validator logic (v0.3.5 alignment)",
+  "objective": "Remove redundant enrichment stripping from _normalise_asset() and make _resolve_schema_path() version-aware to load correct schema files under meta/schemas/<version>/.",
   "changes": [
     {
-      "id": "normalise_asset_schema_branching",
-      "description": "Update _normalise_asset() to branch on schema_version and strip non-0.7.3 fields.",
+      "id": "normalise_asset_cleanup",
+      "description": "Simplify schema branching; remove manual .pop() stripping; enrich only for >=0.7.4.",
       "edits": [
         {
           "file": "labs/generator/external.py",
           "pattern": "def _normalise_asset",
           "multiple": false,
-          "replacement": "from datetime import datetime\nimport uuid\n\ndef _normalise_asset(self, asset: dict, input_parameters: dict | None = None):\n    asset['$schema'] = self.schema_url\n\n    # Branch by schema_version: enrich only for >= 0.7.4\n    if getattr(self, 'schema_version', '0.7.3') >= '0.7.4':\n        asset['provenance'] = self._make_provenance_block()\n        asset['asset_id'] = str(uuid.uuid4())\n        asset['timestamp'] = datetime.now().isoformat()\n    else:\n        for field in ('provenance', 'asset_id', 'timestamp', 'parameter_index'):\n            asset.pop(field, None)\n\n    # Preserve existing input_parameters propagation\n    if input_parameters:\n        asset.setdefault('provenance', {}).setdefault('input_parameters', input_parameters)\n\n    return asset"
+          "replacement": "from datetime import datetime\nimport uuid\n\ndef _normalise_asset(self, asset: dict, input_parameters: dict | None = None):\n    asset['$schema'] = self.schema_url\n\n    # Enrich only for schema >= 0.7.4; legacy versions remain lean\n    if getattr(self, 'schema_version', '0.7.3') >= '0.7.4':\n        asset['provenance'] = self._make_provenance_block()\n        asset['asset_id'] = str(uuid.uuid4())\n        asset['timestamp'] = datetime.now().isoformat()\n    else:\n        # Legacy path: no enrichment or stripping\n        asset.setdefault('meta_info', {})\n\n    if input_parameters:\n        asset.setdefault('provenance', {}).setdefault('input_parameters', input_parameters)\n\n    return asset"
+        }
+      ]
+    },
+    {
+      "id": "validator_version_aware_cleanup",
+      "description": "Make _resolve_schema_path() extract version number from $schema URL and resolve to meta/schemas/<version>/<filename>.",
+      "edits": [
+        {
+          "file": "labs/mcp/validate.py",
+          "pattern": "def _resolve_schema_path",
+          "multiple": false,
+          "replacement": "def _resolve_schema_path(schema_identifier: str) -> Path:\n    import re\n    if not isinstance(schema_identifier, str) or not schema_identifier.strip():\n        raise ValueError('schema identifier must be a non-empty string')\n\n    identifier = schema_identifier.strip()\n    if identifier.startswith(('http://', 'https://')):\n        match = re.search(r'/(\\d+\\.\\d+\\.\\d+)/', identifier)\n        version = match.group(1) if match else None\n        filename = Path(identifier).name\n        base_dir = _ROOT / 'meta' / 'schemas'\n        if version:\n            candidate = base_dir / version / filename\n            if candidate.exists():\n                return candidate\n        identifier = str(base_dir / filename)\n\n    path = Path(identifier)\n    if not path.is_absolute():\n        path = (_ROOT / path).resolve()\n    return path"
         }
       ]
     }
   ],
   "constraints": {
+    "style": "deterministic, minimal, PEP8-compliant",
     "rules": [
-      "Do not modify generator API signatures or provenance helpers.",
-      "Keep import ordering consistent with PEP8.",
-      "Maintain backward compatibility with 0.7.3 validation.",
-      "Preserve provenance enrichment for schema >= 0.7.4."
+      "Remove all redundant .pop() field deletions.",
+      "Ensure backward compatibility for 0.7.3.",
+      "Validator must cleanly resolve versioned schema URLs.",
+      "No new dependencies or side effects."
     ]
   },
   "exit_criteria": [
-    "Assets generated with --schema-version 0.7.3 validate cleanly against 0.7.3 schemas.",
-    "Assets generated with --schema-version 0.7.4 retain provenance, asset_id, and timestamp.",
-    "pytest passes for both schema versions with identical business logic behavior."
+    "Assets generated with --schema-version 0.7.3 validate cleanly using meta/schemas/0.7.3/*.json.",
+    "Assets generated with --schema-version 0.7.4 validate cleanly using meta/schemas/0.7.4/*.json.",
+    "pytest passes for both schema branches with deterministic provenance behavior.",
+    "No legacy .pop() stripping remains anywhere in codebase."
   ]
 }
