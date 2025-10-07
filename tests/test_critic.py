@@ -68,7 +68,7 @@ def test_validation_failure_when_mcp_unavailable(tmp_path, base_asset, caplog, m
 
     critic = CriticAgent(validator=validator, log_path=str(tmp_path / "critic.jsonl"))
 
-    with caplog.at_level(logging.ERROR):
+    with caplog.at_level(logging.WARNING):
         review = critic.review(base_asset)
 
     assert review["ok"] is False
@@ -111,7 +111,7 @@ def test_critic_fails_when_stdio_validator_unavailable(tmp_path, base_asset, mon
 
     critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
 
-    with caplog.at_level(logging.ERROR):
+    with caplog.at_level(logging.WARNING):
         review = critic.review(base_asset)
 
     assert review["ok"] is False
@@ -131,7 +131,7 @@ def test_critic_reports_missing_mcp_command(tmp_path, base_asset, monkeypatch, c
 
     critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
 
-    with caplog.at_level(logging.ERROR):
+    with caplog.at_level(logging.WARNING):
         review = critic.review(base_asset)
 
     assert review["ok"] is False
@@ -151,7 +151,7 @@ def test_critic_handles_stub_failure(tmp_path, base_asset, monkeypatch, caplog) 
 
     critic = CriticAgent(log_path=str(tmp_path / "critic.jsonl"))
 
-    with caplog.at_level(logging.ERROR):
+    with caplog.at_level(logging.WARNING):
         review = critic.review(base_asset)
 
     assert review["ok"] is False
