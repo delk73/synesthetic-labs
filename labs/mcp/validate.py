@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, MutableMapping
 
 import jsonschema
 from jsonschema import Draft202012Validator, ValidationError
+from urllib.parse import urlparse
 
 JsonDict = Dict[str, Any]
 
@@ -20,11 +21,22 @@ def _resolve_schema_path(schema_identifier: str) -> Path:
         raise ValueError("schema identifier must be a non-empty string")
 
     identifier = schema_identifier.strip()
-    if identifier.startswith(("http://", "https://")):
-        filename = Path(identifier).name
-        if not filename:
+    parsed = urlparse(identifier)
+    if parsed.scheme in {"http", "https"}:
+        segments = [part for part in Path(parsed.path).parts if part]
+        if not segments:
             raise ValueError(f"unsupported remote schema: {identifier}")
-        identifier = str(Path("meta") / "schemas" / filename)
+        filename = segments[-1]
+        candidates = []
+        if len(segments) >= 2:
+            version = segments[-2]
+            candidates.append(Path("meta") / "schemas" / version / filename)
+        candidates.append(Path("meta") / "schemas" / filename)
+        for candidate in candidates:
+            path = (_ROOT / candidate).resolve()
+            if path.exists():
+                return path
+        raise ValueError(f"schema_not_found:{identifier}")
 
     path = Path(identifier)
     if not path.is_absolute():

@@ -31,6 +31,7 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     asset, context = generator.generate("ambient waves", schema_version="0.7.4")
 
     assert asset["prompt"] == "ambient waves"
+    assert asset["provenance"]["agent"] == "ExternalGenerator"
     provenance = asset["provenance"]["generator"]
     assert provenance["engine"] == "gemini"
     assert provenance["mode"] == "mock"
@@ -79,6 +80,20 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     assert record["schema_version"] == "0.7.4"
     assert record["$schema"] == asset["$schema"]
     assert record["failure"] is None
+
+
+def test_gemini_generator_legacy_schema_keeps_payload_lean() -> None:
+    generator = GeminiGenerator(mock_mode=True, sleeper=lambda _: None)
+
+    asset, context = generator.generate("legacy ambient", schema_version="0.7.3")
+
+    assert asset["$schema"].endswith("/0.7.3/synesthetic-asset.schema.json")
+    assert "asset_id" not in asset
+    assert "timestamp" not in asset
+    assert "provenance" not in asset
+    meta_info = asset.get("meta_info") or {}
+    assert not meta_info.get("provenance")
+    assert context["schema_version"] == "0.7.3"
 
 
 def test_external_generator_logs_failure_when_transport_errors(monkeypatch, tmp_path) -> None:
@@ -183,7 +198,7 @@ def test_live_header_injection(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(OpenAIGenerator, "_post_json", fake_post_json, raising=False)
 
     asset, context = generator.generate("live prompt", seed=7, timeout=5)
-    assert asset["meta_info"]["provenance"]["mode"] == "live"
+    assert not asset.get("meta_info", {}).get("provenance")
     assert captured["headers"]["Authorization"] == "Bearer live-123"
     assert context["request_headers"]["Authorization"] == "***redacted***"
     assert context["mode"] == "live"
@@ -414,3 +429,48 @@ def test_normalization_rejects_out_of_range_values() -> None:
             )
     assert excinfo.value.reason == "bad_response"
     assert "out_of_range" in excinfo.value.detail or "invalid_bounds" in excinfo.value.detail
+
+
+def test_normalization_merges_existing_provenance_input_parameters() -> None:
+    generator = GeminiGenerator(mock_mode=True, sleeper=lambda _: None)
+    response = {
+        "id": "existing-response",
+        "asset": {
+            "shader": {},
+            "tone": {},
+            "haptic": {},
+            "control": {},
+            "meta": {},
+            "meta_info": {},
+            "modulations": [],
+            "rule_bundle": {},
+            "provenance": {
+                "input_parameters": {
+                    "prompt": "seed prompt",
+                    "parameters": {"alpha": 1},
+                    "notes": ["preserve"],
+                },
+                "generator": {"response_id": "existing-response"},
+            },
+        },
+    }
+
+    asset = generator._normalise_asset(
+        response["asset"],
+        prompt="merged prompt",
+        parameters={"model": "gemini-pro", "seed": 5},
+        response=response,
+        trace_id="trace",
+        mode="mock",
+        endpoint="mock://gemini",
+        response_hash="abc123def456",
+        schema_version="0.7.4",
+    )
+
+    provenance = asset["provenance"]
+    input_parameters = provenance["input_parameters"]
+    assert input_parameters["prompt"] == "merged prompt"
+    assert input_parameters["notes"] == ["preserve"]
+    assert input_parameters["parameters"]["alpha"] == 1
+    assert input_parameters["parameters"]["seed"] == 5
+    assert provenance["generator"]["response_id"] == "existing-response"

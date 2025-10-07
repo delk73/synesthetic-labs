@@ -82,7 +82,7 @@ If `MCP_ENDPOINT` is unset or set to an unsupported value, Labs automatically fa
 
 All assets emitted by the generator and accepted by the MCP validator are
 required to include a top-level `$schema` field that points at the bundled
-`meta/schemas/synesthetic-asset.schema.json`. Validator responses surface a
+`meta/schemas/<version>/synesthetic-asset.schema.json`. Validator responses surface a
 `validation_failed` error on `/$schema` when the field is missing or when the
 legacy `$schemaRef` value is provided.
 

@@ -118,6 +118,7 @@ class ExternalGenerator:
         backoff_seconds: float = _DEFAULT_BACKOFF_BASE_SECONDS,
         timeout_seconds: float = 35.0,
         sleeper: Callable[[float], None] = time.sleep,
+        schema_version: Optional[str] = None,
     ) -> None:
         if max_retries < 1:
             raise ValueError("max_retries must be >= 1")
@@ -138,6 +139,7 @@ class ExternalGenerator:
         self.timeout_seconds = timeout_seconds
         self._sleep = sleeper
         self._logger = logging.getLogger(self.__class__.__name__)
+        self.schema_version = schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION
 
     # Public API -----------------------------------------------------------------
     def generate(
@@ -578,45 +580,46 @@ class ExternalGenerator:
         response_hash: str,
         schema_version: str,
     ) -> JsonDict:
-        self._logger.debug("Normalizing asset payload: %s", json.dumps(asset_payload, indent=2)[:1000])
+        self._logger.debug(
+            "Normalizing asset payload: %s", json.dumps(asset_payload, indent=2)[:1000]
+        )
+
+        if isinstance(asset_payload, list):
+            items = [item for item in asset_payload if isinstance(item, dict)]
+            if items:
+                self._logger.debug("Converting array response to single object")
+                asset_payload = items[0]
+
         if not isinstance(asset_payload, dict):
             self._logger.error("Asset payload is not a dictionary: %s", type(asset_payload))
             raise ExternalRequestError("bad_response", "asset_not_object", retryable=False)
-            
-        # Handle array of objects (common Gemini format)
-        if isinstance(asset_payload, list) and len(asset_payload) > 0 and isinstance(asset_payload[0], dict):
-            self._logger.debug("Converting array response to single object")
-            asset_payload = asset_payload[0]
-        
-        # Add missing required sections if needed
-        sections_to_check = ["shader", "tone", "haptic"]
-        for section in sections_to_check:
-            if section not in asset_payload:
-                self._logger.debug(f"Adding missing '{section}' section")
-                if section == "shader":
-                    asset_payload[section] = {
-                        "prompt": prompt, 
-                        "style": "geometric" if "square" in prompt.lower() else "dynamic"
-                    }
-                elif section == "tone":
-                    asset_payload[section] = {"mood": "balanced"}
-                elif section == "haptic":
-                    asset_payload[section] = {"pattern": "balanced"}
-                    
-        # Add empty control section if missing
-        if "control" not in asset_payload:
-            asset_payload["control"] = {}
+
+        for section in ("shader", "tone", "haptic"):
+            if section in asset_payload:
+                continue
+            self._logger.debug("Adding missing '%s' section", section)
+            if section == "shader":
+                asset_payload[section] = {
+                    "prompt": prompt,
+                    "style": "geometric" if "square" in prompt.lower() else "dynamic",
+                }
+            elif section == "tone":
+                asset_payload[section] = {"mood": "balanced"}
+            else:
+                asset_payload[section] = {"pattern": "balanced"}
+
+        asset_payload.setdefault("control", {})
 
         canonical = self._canonicalize_asset(asset_payload)
         self._validate_bounds(canonical)
 
-        timestamp = canonical.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        asset_id = (
-            canonical.get("asset_id")
-            or canonical.get("id")
-            or canonical.get("meta", {}).get("asset_id")
-            or str(uuid.uuid4())
+        resolved_schema_version = (
+            schema_version
+            or self.schema_version
+            or AssetAssembler.DEFAULT_SCHEMA_VERSION
         )
+        schema_url = AssetAssembler.schema_url(resolved_schema_version)
+        enriched_schema = self._supports_enriched_schema(resolved_schema_version)
 
         shader_section = self._merge_structured_section("shader", canonical.get("shader"))
         tone_section = self._merge_structured_section("tone", canonical.get("tone"))
@@ -644,21 +647,25 @@ class ExternalGenerator:
             modulations = deepcopy(_DEFAULT_MODULATIONS)
 
         rule_bundle = self._build_rule_bundle(canonical.get("rule_bundle"))
-
-        resolved_schema_version = schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION
-        schema_url = AssetAssembler.schema_url(resolved_schema_version)
-
-        try:
-            version_tuple = tuple(int(part) for part in resolved_schema_version.split("."))
-        except ValueError:
-            enriched_schema = resolved_schema_version >= "0.7.4"
-        else:
-            enriched_schema = version_tuple >= (0, 7, 4)
-
         rule_bundle_version = (
-            rule_bundle.get("meta_info", {})
-            .get("version", self.api_version)
+            rule_bundle.get("meta_info", {}).get("version", self.api_version)
         )
+
+        timestamp: Optional[str]
+        existing_timestamp = canonical.get("timestamp")
+        timestamp = existing_timestamp if isinstance(existing_timestamp, str) else None
+        if enriched_schema:
+            timestamp = timestamp or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
+
+        asset_id: Optional[str] = canonical.get("asset_id")
+        if not isinstance(asset_id, str) or not asset_id.strip():
+            asset_id = canonical.get("id")
+        if not isinstance(asset_id, str) or not asset_id.strip():
+            meta_asset_id = canonical.get("meta", {}).get("asset_id")  # type: ignore[arg-type]
+            if isinstance(meta_asset_id, str) and meta_asset_id.strip():
+                asset_id = meta_asset_id
+        if enriched_schema and (not isinstance(asset_id, str) or not asset_id.strip()):
+            asset_id = str(uuid.uuid4())
 
         sanitized_parameters = {
             key: deepcopy(value)
@@ -676,31 +683,42 @@ class ExternalGenerator:
             parameters=parameters,
             mode=mode,
             response_hash=response_hash,
+            include_provenance=enriched_schema,
         )
         if not isinstance(meta_info, dict):
             meta_info = {}
 
-        provenance_block = self._build_external_provenance(
-            asset_id=asset_id,
-            parameters=parameters,
-            trace_id=trace_id,
-            mode=mode,
-            endpoint=endpoint,
-            response=response,
-            timestamp=timestamp,
-        )
+        provenance_block: Optional[Dict[str, Any]] = None
+        if enriched_schema and isinstance(timestamp, str):
+            existing_provenance = canonical.get("provenance")
+            if not isinstance(existing_provenance, dict):
+                existing_provenance = None
 
-        provenance_block["input_parameters"] = {
-            "prompt": prompt,
-            "parameters": sanitized_parameters,
-            "taxonomy": {
-                "domain": "visual",
-                "task": "generation",
-                "style": "square" if "square" in prompt.lower() else "compositional"
-            },
-        }
-
-        meta_info.setdefault("provenance", {}).update(provenance_block)
+            provenance_block = self._make_provenance_block(
+                asset_id=asset_id,
+                parameters=parameters,
+                trace_id=trace_id,
+                mode=mode,
+                endpoint=endpoint,
+                response=response,
+                timestamp=timestamp,
+                input_parameters={
+                    "prompt": prompt,
+                    "parameters": sanitized_parameters,
+                    "taxonomy": {
+                        "domain": "visual",
+                        "task": "generation",
+                        "style": (
+                            "square" if "square" in prompt.lower() else "compositional"
+                        ),
+                    },
+                },
+                existing=existing_provenance,
+            )
+            meta_info.setdefault("provenance", {})
+            meta_info["provenance"] = self._deep_merge_dicts(
+                meta_info.get("provenance", {}), provenance_block
+            )
 
         if not enriched_schema:
             legacy_asset: JsonDict = {
@@ -739,12 +757,22 @@ class ExternalGenerator:
         return AssetAssembler._normalize_0_7_4(
             enriched_asset,
             prompt,
-            asset_id,
-            timestamp,
+            asset_id if isinstance(asset_id, str) else str(uuid.uuid4()),
+            timestamp if isinstance(timestamp, str) else _dt.datetime.now(tz=_dt.timezone.utc).isoformat(),
             parameter_index,
-            provenance_block,
+            provenance_block or {},
             rule_bundle_version,
         )
+
+    @staticmethod
+    def _supports_enriched_schema(schema_version: Optional[str]) -> bool:
+        if not schema_version:
+            return False
+        try:
+            parts = tuple(int(part) for part in str(schema_version).split("."))
+        except ValueError:
+            return str(schema_version) >= "0.7.4"
+        return parts >= (0, 7, 4)
 
     def _canonicalize_asset(self, payload: JsonDict) -> JsonDict:
         if not isinstance(payload, dict):
@@ -1065,13 +1093,14 @@ class ExternalGenerator:
         meta_payload: Any,
         meta_info_payload: Any,
         *,
-        timestamp: str,
+        timestamp: Optional[str],
         seed: Optional[int],
-        trace_id: str,
+        trace_id: Optional[str],
         endpoint: str,
         parameters: JsonDict,
         mode: str,
         response_hash: str,
+        include_provenance: bool,
     ) -> Dict[str, Any]:
         base = deepcopy(_DEFAULT_SECTIONS["meta_info"])
         for source in (meta_payload, meta_info_payload):
@@ -1089,22 +1118,27 @@ class ExternalGenerator:
         base.setdefault("category", "multimodal")
         base.setdefault("complexity", "baseline")
 
-        base["provenance"] = {
-            "engine": self.engine,
-            "endpoint": endpoint,
-            "model": parameters.get("model"),
-            "parameters": {
-                "temperature": parameters.get("temperature"),
-                "seed": seed,
-            },
-            "trace_id": trace_id,
-            "mode": mode,
-            "timestamp": timestamp,
-            "response_hash": response_hash,
-        }
+        if include_provenance:
+            existing = base.get("provenance") if isinstance(base.get("provenance"), dict) else {}
+            provenance_block: Dict[str, Any] = {
+                "engine": self.engine,
+                "endpoint": endpoint,
+                "model": parameters.get("model"),
+                "parameters": {
+                    "temperature": parameters.get("temperature"),
+                    "seed": seed,
+                },
+                "trace_id": trace_id,
+                "mode": mode,
+                "timestamp": timestamp,
+                "response_hash": response_hash,
+            }
+            base["provenance"] = self._deep_merge_dicts(existing, provenance_block)
+        else:
+            base.pop("provenance", None)
         return base
 
-    def _build_external_provenance(
+    def _make_provenance_block(
         self,
         *,
         asset_id: str,
@@ -1114,8 +1148,10 @@ class ExternalGenerator:
         endpoint: str,
         response: JsonDict,
         timestamp: str,
+        input_parameters: Optional[Dict[str, Any]] = None,
+        existing: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        return {
+        provenance = {
             "agent": "ExternalGenerator",
             "version": self.api_version,
             "seed": parameters.get("seed"),
@@ -1131,6 +1167,11 @@ class ExternalGenerator:
                 "response_id": response.get("id"),
             },
         }
+        if input_parameters is not None:
+            provenance["input_parameters"] = input_parameters
+        if existing:
+            provenance = self._deep_merge_dicts(existing, provenance)
+        return provenance
 
     def _deep_merge_dicts(self, base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
         merged = deepcopy(base)

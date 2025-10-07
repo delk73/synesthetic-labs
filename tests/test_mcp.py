@@ -24,7 +24,7 @@ def test_validate_asset_requires_top_level_schema() -> None:
 
 
 def test_validate_asset_rejects_schema_ref() -> None:
-    result = validate_asset({"$schemaRef": "meta/schemas/synesthetic-asset.schema.json"})
+    result = validate_asset({"$schemaRef": "meta/schemas/0.7.4/synesthetic-asset.schema.json"})
 
     assert result["ok"] is False
     assert result["reason"] == "validation_failed"
@@ -44,7 +44,7 @@ def test_validate_many_rolls_up_failures() -> None:
     assembler = AssetAssembler(schema_version="0.7.4")
     asset = assembler.generate("batch validation", schema_version="0.7.4")
 
-    batch = [asset, {"$schema": "meta/schemas/synesthetic-asset.schema.json", "asset_id": 1}]
+    batch = [asset, {"$schema": "meta/schemas/0.7.4/synesthetic-asset.schema.json", "asset_id": 1}]
 
     response = validate_many(batch)
 
