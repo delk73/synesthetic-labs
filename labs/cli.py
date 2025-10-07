@@ -15,7 +15,9 @@ from dotenv import load_dotenv
 def _load_env_file() -> None:
     """Load environment variables using python-dotenv and enforce required keys."""
 
-    load_dotenv()
+    # Resolve .env path relative to project root
+    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    load_dotenv(dotenv_path=env_path)
 
     logger = logging.getLogger("labs.cli")
     for required_key in ("GEMINI_API_KEY", "GEMINI_MODEL"):
