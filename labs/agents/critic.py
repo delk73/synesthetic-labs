@@ -137,9 +137,9 @@ class CriticAgent:
                     self._validator = validator
                 except MCPUnavailableError as exc:
                     message = f"MCP validation unavailable: {exc}"
-                    if not relaxed_mode:
-                        issues.append(str(exc))
-                        issues.append(message)
+                    issues.append(str(exc))
+                    issues.append(message)
+                    self._logger.warning(message)
                     if fail_fast:
                         validation_error = _build_error_payload(str(exc))
                         mcp_response = {"ok": False, **validation_error}
@@ -168,9 +168,9 @@ class CriticAgent:
                     validation_status = "passed"
             except MCPUnavailableError as exc:
                 message = f"MCP validation unavailable: {exc}"
-                if not relaxed_mode:
-                    issues.append(str(exc))
-                    issues.append(message)
+                issues.append(str(exc))
+                issues.append(message)
+                self._logger.warning(message)
                 if fail_fast:
                     validation_error = _build_error_payload(str(exc))
                     mcp_response = {"ok": False, **validation_error}
