@@ -34,12 +34,21 @@
       ]
     },
     {
-      "id": "normalization-provenance-v0.3.5",
-      "section": "5 · Lifecycle & 6 · Provenance",
-      "requirement": "Post-generation, the asset MUST be normalized with a '$schema' key and a complete, dynamic 'provenance' object including 'input_parameters'.",
+      "id": "normalization-schema-0.7.3-v0.3.5",
+      "section": "5 · Lifecycle",
+      "requirement": "When schema_version == '0.7.3', asset MUST include a top-level '$schema' and omit provenance, parameters, and enrichment fields.",
       "verify": [
-        {"path": "labs/generator.py", "match": ["'$schema'", "'provenance'", "engine", "endpoint", "trace_id", "input_parameters"]},
-        {"path": "tests/test_generator.py", "match": ["assert '$schema' in result", "assert 'provenance' in result"]}
+        {"path": "labs/generator.py", "match": ["if schema_version == '0.7.3'", "asset['$schema']", "pop('provenance')", "normalize_0_7_3"]},
+        {"path": "tests/test_generator.py", "match": ["0.7.3", "assert '$schema' in result", "not in result", "'provenance'"]}
+      ]
+    },
+    {
+      "id": "normalization-enriched-schema-v0.3.5",
+      "section": "5 · Lifecycle & 6 · Provenance",
+      "requirement": "For schema_version >= '0.7.4', asset MUST include a '$schema' key and full provenance object with engine, endpoint, trace_id, and input_parameters.",
+      "verify": [
+        {"path": "labs/generator.py", "match": ["if schema_version >= '0.7.4'", "build_provenance", "engine", "endpoint", "trace_id", "input_parameters"]},
+        {"path": "tests/test_generator.py", "match": ["0.7.4", "assert 'provenance' in result"]}
       ]
     },
     {

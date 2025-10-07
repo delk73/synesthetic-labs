@@ -1,27 +1,32 @@
-# Synesthetic Labs Agents Audit (v0.3.5)
-
-This update captures how the Generator and Critic agents line up with the v0.3.5 specification and where they still need work.
+# Synesthetic Labs State Report (v0.3.5)
 
 ## Summary of Repo State
-- Core agent coordination (schema branching, MCP validation handoff, external retry discipline) remains healthy.
-- Environment bootstrapping still relies on a handwritten `.env` parser and lacks the `python-dotenv` adoption and GEMINI defaults mandated by the spec.
-- Provenance/logging output trails the new expectations around taxonomy and input-parameter disclosure.
 
-## Generator Agent
-- Continues to branch between 0.7.3 legacy layouts and enriched ≥0.7.4 assets while injecting `$schema` and provenance data.
-- Gemini integration issues structured requests (`contents → parts → text`, `responseMimeType='application/json'`) and retries 5xx responses, but its normalized assets omit the required `input_parameters` block inside the provenance object.
-- External run logging persists to `meta/output/labs/external.jsonl` with engine/endpoint/trace IDs; taxonomy metadata is not yet recorded.
+This report summarizes the alignment of the `synesthetic-labs` repository with the v0.3.5 specification. The audit reveals a solid foundation with several key features already implemented. However, there are notable gaps and divergences in areas like schema normalization, MCP validation, and structured logging, indicating that the codebase is in a transitional state.
 
-## Critic Agent
-- Honors `LABS_FAIL_FAST`/CLI `--strict` & `--relaxed` flags when deciding whether MCP outages abort or downgrade reviews.
-- Records MCP availability and validation outcomes in structured JSONL logs, preventing asset persistence when the validator reports `ok=False`.
+## Alignment
 
-## Transport & Environment
-- MCP helpers still fall back to TCP sockets when an endpoint is missing, aligning with transport guarantees.
-- The CLI warns about missing `LABS_EXTERNAL_LIVE`/API keys but ships no `.env.example`, leaving the toggle undocumented and the GEMINI model selection unset.
+| Rule | Status | Evidence |
+|---|---|---|
+| `env-preload-v0.3.5` | Present | `dotenv`, `GEMINI_API_KEY`, and `LABS_FAIL_FAST` are used in `labs/cli.py`. |
+| `gemini-request-structure-v0.3.5` | Present | Gemini requests correctly include `contents/parts/text` and `generationConfig`. |
+| `gemini-response-parse-v0.3.5` | Divergent | Response parsing logic exists, but the literal string `candidates[0].content.parts[0].text` is not present in `labs/generator/external.py`. |
+| `normalization-schema-0.7.3-v0.3.5` | Divergent | `labs/generator.py` calls `_normalize_0_7_3` but is missing the explicit `if schema_version == '0.7.3'` check. |
+| `normalization-enriched-schema-v0.3.5` | Present | Enriched schema normalization for versions `>= 0.7.4` is correctly implemented. |
+| `error-handling-retry-v0.3.5` | Present | Network/server errors are retried, and client errors fail immediately as expected. |
+| `structured-logging-v0.3.5` | Divergent | `labs/generator/external.py` uses `log_external_generation` instead of the specified `log_event`. |
+| `mcp-validation-flow-v0.3.5` | Divergent | `labs/cli.py` is missing the `invoke_mcp` call, and the corresponding test file is absent. |
+| `mcp-version-aware-validator-v0.3.5` | Divergent | The validator in `labs/mcp/validate.py` does not dynamically resolve schema paths based on version. |
+| `external-live-toggle-v0.3.5` | Present | The `LABS_EXTERNAL_LIVE` environment variable is correctly used to toggle live API calls. |
 
-## Outstanding Work
-1. Replace the bespoke `_load_env_file()` logic with `python-dotenv`, wire up GEMINI defaults, and add the dependency to `requirements.txt`.
-2. Extend provenance normalization so generated assets surface `input_parameters` alongside existing trace data.
-3. Add `taxonomy` fields to the external generation log schema and update tests to assert the richer payload.
-4. Provide an `.env.example` (or equivalent docs) that highlights `LABS_EXTERNAL_LIVE` and other required keys under the new spec.
+## Top Gaps & Fixes
+
+1.  **MCP Integration:** The MCP validation flow is incomplete. The `invoke_mcp` function needs to be implemented in `labs/cli.py`, and `tests/test_cli.py` should be created to verify its functionality.
+2.  **Schema Versioning:** The schema normalization logic needs to be updated to be fully version-aware. This includes adding the explicit `if schema_version == '0.7.3'` check in `labs/generator.py` and implementing version-based path resolution in `labs/mcp/validate.py`.
+3.  **Logging Consistency:** The structured logging implementation should be standardized. The `log_event` function should be used consistently across the codebase, or the audit rule should be updated to reflect the use of `log_external_generation`.
+
+## Recommendations
+
+*   **Prioritize MCP Integration:** Completing the MCP validation flow is critical for ensuring the integrity of generated assets.
+*   **Refactor Schema Handling:** A more robust and centralized approach to schema versioning and resolution will improve maintainability and reduce the likelihood of errors.
+*   **Standardize Logging:** Consistent logging practices are essential for effective monitoring and debugging. The development team should agree on a standard logging interface and apply it throughout the codebase.
