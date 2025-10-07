@@ -16,6 +16,7 @@ venv/
 .env/
 .env
 .env.*
+!.env.example
 
 # Test and coverage
 .pytest_cache/

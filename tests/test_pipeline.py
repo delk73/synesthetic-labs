@@ -50,6 +50,7 @@ def test_cli_critique_fails_when_mcp_unreachable(monkeypatch, tmp_path, capsys) 
         raise MCPUnavailableError("adapter missing")
 
     monkeypatch.setattr(cli, "build_validator_from_env", raise_unavailable)
+    monkeypatch.setenv("LABS_FAIL_FAST", "1")
 
     monkeypatch.setenv('LABS_SCHEMA_VERSION', '0.7.3')
     generator = GeneratorAgent(log_path=str(tmp_path / "generator.jsonl"))

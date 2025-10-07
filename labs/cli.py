@@ -9,39 +9,26 @@ import os
 import sys
 from typing import Any, Callable, Dict, Optional
 
+from dotenv import load_dotenv
 
-def _load_env_file(path: str = ".env", override: bool = False) -> None:
-    if not os.path.exists(path):
-        return
 
-    try:
-        with open(path, "r", encoding="utf-8") as env_file:
-            for raw_line in env_file:
-                line = raw_line.strip()
+def _load_env_file() -> None:
+    """Load environment variables using python-dotenv and enforce required keys."""
 
-                if not line or line.startswith("#"):
-                    continue
+    # Resolve .env path relative to project root
+    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    load_dotenv(dotenv_path=env_path)
 
-                if line.startswith("export "):
-                    line = line[len("export ") :]
+    # Set up defaults as per v0.3.5 specification
+    os.environ.setdefault("GEMINI_MODEL", "gemini-2.0-flash")
+    os.environ.setdefault("LABS_FAIL_FAST", "false")
+    os.environ.setdefault("LABS_SCHEMA_VERSION", "0.7.3")
 
-                if "=" not in line:
-                    continue
-
-                key, value = line.split("=", 1)
-                key = key.strip()
-                value = value.strip()
-
-                if value and len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-                    value = value[1:-1]
-
-                if not override and key in os.environ:
-                    continue
-
-                os.environ[key] = value
-    except OSError:
-        # If the file cannot be read, continue without raising to avoid breaking CLI startup.
-        pass
+    # Log warnings for missing required keys
+    logger = logging.getLogger("labs.cli")
+    for required_key in ("GEMINI_API_KEY", "LABS_EXTERNAL_LIVE"):
+        if not os.getenv(required_key):
+            logger.warning("Missing required env var: %s", required_key)
 
 
 _load_env_file()
@@ -62,7 +49,9 @@ from labs.patches import apply_patch, preview_patch, rate_patch
 _EXPERIMENTS_DIR_ENV = "LABS_EXPERIMENTS_DIR"
 _DEFAULT_EXPERIMENTS_DIR = os.path.join("meta", "output", "labs", "experiments")
 def _configure_logging() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    log_level = os.getenv("LABS_LOG_LEVEL", "INFO")
+    level = getattr(logging, log_level.upper(), logging.INFO)
+    logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
 def _load_asset(value: str) -> Dict[str, Any]:

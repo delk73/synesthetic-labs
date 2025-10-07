@@ -88,6 +88,7 @@ class CriticAgent:
                 issues.append(f'missing required field: {field}')
 
         fail_fast = is_fail_fast_enabled()
+        relaxed_mode = not fail_fast
         validation_status = "pending"
         validation_reason: Optional[str] = None
         mcp_response: Optional[Dict[str, Any]] = None
@@ -136,10 +137,12 @@ class CriticAgent:
                     self._validator = validator
                 except MCPUnavailableError as exc:
                     message = f"MCP validation unavailable: {exc}"
+                    issues.append(str(exc))
+                    issues.append(message)
+                    self._logger.warning(message)
                     if fail_fast:
                         validation_error = _build_error_payload(str(exc))
                         mcp_response = {"ok": False, **validation_error}
-                        issues.append(message)
                         validation_status = "failed"
                         validation_reason = message
                         self._logger.error(message)
@@ -165,10 +168,12 @@ class CriticAgent:
                     validation_status = "passed"
             except MCPUnavailableError as exc:
                 message = f"MCP validation unavailable: {exc}"
+                issues.append(str(exc))
+                issues.append(message)
+                self._logger.warning(message)
                 if fail_fast:
                     validation_error = _build_error_payload(str(exc))
                     mcp_response = {"ok": False, **validation_error}
-                    issues.append(message)
                     validation_status = "failed"
                     validation_reason = message
                     self._logger.error(message)

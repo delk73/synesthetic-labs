@@ -70,6 +70,15 @@
       ]
     },
     {
+      "id": "mcp-version-aware-validator-v0.3.5",
+      "section": "5 · Lifecycle",
+      "requirement": "_resolve_schema_path() MUST extract version (e.g., 0.7.3 / 0.7.4) from $schema and resolve to meta/schemas/<version>/<filename>, falling back when missing.",
+      "verify": [
+        {"path": "labs/mcp/validate.py", "match": ["_resolve_schema_path", "re.search", "version", "meta/schemas", "candidate.exists", "return candidate"]},
+        {"path": "tests/test_mcp_validate.py", "match": ["0.7.3", "0.7.4", "validate_asset"]}
+      ]
+    },
+    {
       "id": "external-live-toggle-v0.3.5",
       "section": "2 · Environment",
       "requirement": "The LABS_EXTERNAL_LIVE environment variable MUST be checked to enable/disable live API calls.",

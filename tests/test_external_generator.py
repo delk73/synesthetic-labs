@@ -35,6 +35,10 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     assert provenance["engine"] == "gemini"
     assert provenance["mode"] == "mock"
     assert provenance["api_version"] == generator.api_version
+    assert context["taxonomy"] == "external.gemini"
+    input_parameters = asset["provenance"]["input_parameters"]
+    assert input_parameters["prompt"] == "ambient waves"
+    assert input_parameters["parameters"]["model"] == generator.default_model
     assert asset["control"]["control_parameters"]
     assert asset["meta_info"]["provenance"]["engine"] == "gemini"
     assert context["schema_version"] == "0.7.4"
@@ -65,6 +69,7 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
         record["normalized_asset"]["meta_info"]["provenance"]["trace_id"]
         == context["trace_id"]
     )
+    assert record["taxonomy"] == "external.gemini"
     assert record["raw_response"]["hash"] == context["raw_response"]["hash"]
     assert record["raw_response"]["size"] == context["raw_response"]["size"]
     assert record["transport"] == "tcp"
@@ -134,6 +139,7 @@ def test_gemini_build_request_injects_response_mime_type() -> None:
 
     assert payload["contents"][0]["parts"][0]["text"] == "structured"
     assert payload["generationConfig"] == {"responseMimeType": "application/json"}
+    assert payload["model"] == generator.default_model
 
 
 def test_gemini_build_request_merges_generation_config_parameters() -> None:
@@ -150,6 +156,7 @@ def test_gemini_build_request_merges_generation_config_parameters() -> None:
     assert generation_config["temperature"] == 0.25
     assert generation_config["maxOutputTokens"] == 128
     assert generation_config["seed"] == 42
+    assert payload["model"] == generator.default_model
 
 
 def test_live_header_injection(monkeypatch, tmp_path) -> None:

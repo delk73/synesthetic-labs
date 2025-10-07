@@ -90,6 +90,8 @@ The raw text from the LLM is parsed directly into a Python dictionary.
     *   Add top-level `$schema` key.
     *   Generate and add the `provenance` object.
 4.  **Validate** – Invoke MCP against the normalized asset.
+  The MCP validator is now version-aware: it resolves the schema file based on the $schema URL embedded in the asset (e.g., .../0.7.3/... → meta/schemas/0.7.3/, .../0.7.4/... → meta/schemas/0.7.4/).
+  If the specific version directory is missing use0.7.3
 5.  **Persist** – Save the asset to disk only if validation passes (or generates a warning in relaxed mode).
 
 ---
@@ -162,10 +164,12 @@ The `taxonomy` field provides a classification of the generation outcome.
 | Area | Requirement |
 |---|---|
 | Schema branching | 0.7.3 / 0.7.4 verified |
+| MCP schema resolution | Versioned `$schema` URLs correctly load matching schema folders 
 | MCP | `strict` & `relaxed` modes pass and fail correctly |
 | External | Gemini `gemini-2.0-flash` returns 200 OK |
 | CLI | Env preload, flag precedence, and warnings are verified |
 | CI | Baseline tests run against schema 0.7.3 using the `deterministic` engine |
+
 
 ---
 
