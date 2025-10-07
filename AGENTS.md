@@ -1,23 +1,19 @@
-# Synesthetic Labs Agents
+# Synesthetic Labs Agents (v0.3.4)
 
-This document outlines the provenance and behavior of the agents within the Synesthetic Labs `v0.3.4` ecosystem.
+This repository models the Generator and Critic agents defined by the Synesthetic Labs spec.
 
 ## Generator Agent
-
-The Generator agent is responsible for creating Synesthetic assets. Its behavior is governed by the following key aspects:
-
--   **Schema Branching**: The generator dynamically adjusts the asset structure based on the target `schema_version`. For `0.7.3`, it produces a legacy format, while `0.7.4` and later versions generate an enriched structure. This ensures backward compatibility while enabling new features.
--   **External Engines**: The generator can leverage external engines like Gemini and OpenAI. It constructs API requests tailored to each provider, including structured JSON output requests for Gemini.
--   **Normalization**: When integrating with external engines, the generator normalizes the received data, handling unknown keys and out-of-range values to produce a compliant Synesthetic asset.
--   **Error Handling**: The generator enforces request and response size limits and implements a no-retry policy for `4xx` client errors to prevent futile repeat attempts.
+- Branches assets on `schema_version`, emitting the legacy 0.7.3 layout or the enriched ≥0.7.4 structure and injecting the `$schema` URL accordingly.
+- Integrates with external engines (Gemini, OpenAI) using structured JSON requests, strict size limits, and provenance logging that records schema version, trace IDs, and failure reasons.
+- Normalizes external responses by flagging unknown keys as `bad_response` and out-of-range values as `out_of_range` before assembling final assets.
 
 ## Critic Agent
+- Invokes MCP validation in both strict and relaxed modes, downgrading outages only when strict mode is disabled.
+- Persists generator output solely when the associated `mcp_response.ok` flag is true, capturing MCP availability in the review payload.
 
-The Critic agent evaluates the assets produced by the Generator, ensuring they meet the required standards before they are persisted.
+## Transport Defaults
+- When `MCP_ENDPOINT` is unset or invalid, the CLI resolves to TCP transport, guaranteeing a fallback validation channel.
 
--   **Validation Modes**: The critic operates in both `strict` and `relaxed` modes. In `strict` mode, any MCP validation failures are treated as fatal. In `relaxed` mode, they are downgraded to warnings, allowing the workflow to proceed in a degraded state.
--   **MCP Integration**: The critic is responsible for invoking the Master Control Program (MCP) for validation. It correctly handles scenarios where the MCP is unavailable.
-
-## Transport
-
--   **TCP Default**: The system defaults to TCP for MCP communication when the `MCP_ENDPOINT` is not set or is invalid, ensuring a reliable fallback mechanism.
+## Environment Handling
+- CLI startup preloads `.env`, merges keys into `os.environ`, and warns when `GEMINI_API_KEY` or `OPENAI_API_KEY` are missing so that external generators run in mock mode by default.
+- The legacy `LABS_EXTERNAL_LIVE` knob still exists and should be removed or explicitly deprecated to align with current spec guidance.
