@@ -264,6 +264,7 @@ class ExternalGenerator:
                     },
                     "asset": asset,
                     "schema_version": resolved_schema_version,
+                    "taxonomy": f"external.{self.engine}",
                 }
                 return asset, context
             except ExternalRequestError as exc:
@@ -342,6 +343,7 @@ class ExternalGenerator:
             "status": status,
             "schema_version": context.get("schema_version"),
             "$schema": context.get("asset", {}).get("$schema"),
+            "taxonomy": context.get("taxonomy") or f"external.{self.engine}",
         }
 
         failure_payload: Optional[JsonDict]
@@ -638,6 +640,16 @@ class ExternalGenerator:
             response=response,
             timestamp=timestamp,
         )
+
+        sanitized_parameters = {
+            key: deepcopy(value)
+            for key, value in parameters.items()
+            if value is not None
+        }
+        provenance_block["input_parameters"] = {
+            "prompt": prompt,
+            "parameters": sanitized_parameters,
+        }
 
         resolved_schema_version = schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION
         asset: JsonDict = {
@@ -1221,10 +1233,15 @@ class GeminiGenerator(ExternalGenerator):
                         {"text": prompt},
                     ],
                 }
-            ]
+            ],
+            "generationConfig": {"responseMimeType": "application/json"},
         }
 
-        generation_config: JsonDict = {"responseMimeType": "application/json"}
+        model = parameters.get("model") or self.default_model
+        if isinstance(model, str) and model.strip():
+            payload["model"] = model.strip()
+
+        generation_config: JsonDict = payload["generationConfig"]
         temperature = parameters.get("temperature")
         if isinstance(temperature, Real):
             generation_config["temperature"] = float(temperature)
@@ -1236,8 +1253,6 @@ class GeminiGenerator(ExternalGenerator):
         seed = parameters.get("seed")
         if isinstance(seed, int):
             generation_config["seed"] = seed
-
-        payload["generationConfig"] = generation_config
 
         return payload
 

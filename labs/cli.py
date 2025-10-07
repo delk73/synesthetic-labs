@@ -9,39 +9,20 @@ import os
 import sys
 from typing import Any, Callable, Dict, Optional
 
+from dotenv import load_dotenv
 
-def _load_env_file(path: str = ".env", override: bool = False) -> None:
-    if not os.path.exists(path):
-        return
 
-    try:
-        with open(path, "r", encoding="utf-8") as env_file:
-            for raw_line in env_file:
-                line = raw_line.strip()
+def _load_env_file() -> None:
+    """Load environment variables using python-dotenv and enforce required keys."""
 
-                if not line or line.startswith("#"):
-                    continue
+    load_dotenv()
 
-                if line.startswith("export "):
-                    line = line[len("export ") :]
+    logger = logging.getLogger("labs.cli")
+    for required_key in ("GEMINI_API_KEY", "GEMINI_MODEL"):
+        if not os.getenv(required_key):
+            logger.warning("Missing required env var: %s", required_key)
 
-                if "=" not in line:
-                    continue
-
-                key, value = line.split("=", 1)
-                key = key.strip()
-                value = value.strip()
-
-                if value and len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-                    value = value[1:-1]
-
-                if not override and key in os.environ:
-                    continue
-
-                os.environ[key] = value
-    except OSError:
-        # If the file cannot be read, continue without raising to avoid breaking CLI startup.
-        pass
+    os.environ.setdefault("LABS_FAIL_FAST", "false")
 
 
 _load_env_file()
