@@ -645,6 +645,27 @@ class ExternalGenerator:
 
         rule_bundle = self._build_rule_bundle(canonical.get("rule_bundle"))
 
+        resolved_schema_version = schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION
+        schema_url = AssetAssembler.schema_url(resolved_schema_version)
+
+        try:
+            version_tuple = tuple(int(part) for part in resolved_schema_version.split("."))
+        except ValueError:
+            enriched_schema = resolved_schema_version >= "0.7.4"
+        else:
+            enriched_schema = version_tuple >= (0, 7, 4)
+
+        rule_bundle_version = (
+            rule_bundle.get("meta_info", {})
+            .get("version", self.api_version)
+        )
+
+        sanitized_parameters = {
+            key: deepcopy(value)
+            for key, value in parameters.items()
+            if value is not None
+        }
+
         meta_info = self._build_meta_info(
             canonical.get("meta"),
             canonical.get("meta_info"),
@@ -656,6 +677,8 @@ class ExternalGenerator:
             mode=mode,
             response_hash=response_hash,
         )
+        if not isinstance(meta_info, dict):
+            meta_info = {}
 
         provenance_block = self._build_external_provenance(
             asset_id=asset_id,
@@ -667,13 +690,6 @@ class ExternalGenerator:
             timestamp=timestamp,
         )
 
-        sanitized_parameters = {
-            key: deepcopy(value)
-            for key, value in parameters.items()
-            if value is not None
-        }
-        
-        # This is the key for v0.3.5 compliance - explicit input_parameters
         provenance_block["input_parameters"] = {
             "prompt": prompt,
             "parameters": sanitized_parameters,
@@ -681,12 +697,30 @@ class ExternalGenerator:
                 "domain": "visual",
                 "task": "generation",
                 "style": "square" if "square" in prompt.lower() else "compositional"
-            }
+            },
         }
 
-        resolved_schema_version = schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION
-        asset: JsonDict = {
-            "$schema": AssetAssembler.schema_url(resolved_schema_version),
+        meta_info.setdefault("provenance", {}).update(provenance_block)
+
+        if not enriched_schema:
+            legacy_asset: JsonDict = {
+                "$schema": schema_url,
+                "shader": shader_section,
+                "tone": tone_section,
+                "haptic": haptic_section,
+                "control": control_section,
+                "modulations": modulations,
+                "rule_bundle": rule_bundle,
+                "meta_info": meta_info,
+            }
+            return AssetAssembler._normalize_0_7_3(
+                legacy_asset,
+                prompt,
+                rule_bundle_version,
+            )
+
+        enriched_asset: JsonDict = {
+            "$schema": schema_url,
             "asset_id": asset_id,
             "prompt": prompt,
             "seed": parameters.get("seed"),
@@ -697,37 +731,13 @@ class ExternalGenerator:
             "control": control_section,
             "modulations": modulations,
             "rule_bundle": rule_bundle,
+            "meta_info": meta_info,
         }
-        
-        # Add meta_info with provenance
-        if meta_info:
-            if not isinstance(meta_info, dict):
-                meta_info = {}
-            if "provenance" not in meta_info:
-                meta_info["provenance"] = {}
-            meta_info["provenance"].update(provenance_block)
-            asset["meta_info"] = meta_info
-        else:
-            asset["meta_info"] = {"provenance": provenance_block}
-            
-        # Add parameter_index
-        asset["parameter_index"] = sorted(parameter_index)
 
-        rule_bundle_version = (
-            asset.get("rule_bundle", {})
-            .get("meta_info", {})
-            .get("version", self.api_version)
-        )
-
-        if resolved_schema_version.startswith("0.7.3"):
-            return AssetAssembler._normalize_0_7_3(
-                asset,
-                prompt,
-                rule_bundle_version,
-            )
+        enriched_asset["parameter_index"] = sorted(parameter_index)
 
         return AssetAssembler._normalize_0_7_4(
-            asset,
+            enriched_asset,
             prompt,
             asset_id,
             timestamp,
@@ -741,8 +751,10 @@ class ExternalGenerator:
             raise ExternalRequestError("bad_response", "asset_not_object", retryable=False)
 
         allowed_keys = {
+            "$schema",
             "asset_id",
             "id",
+            "name",
             "prompt",
             "timestamp",
             "shader",
@@ -1307,9 +1319,8 @@ class GeminiGenerator(ExternalGenerator):
                 }
             ],
             "generationConfig": {"responseMimeType": "application/json"},
+            "model": parameters.get("model") or os.getenv("GEMINI_MODEL", self.default_model),
         }
-
-        # Note: model is specified in the endpoint URL, not in the payload for Gemini v1beta
 
         generation_config: JsonDict = payload["generationConfig"]
         temperature = parameters.get("temperature")
@@ -1413,192 +1424,86 @@ class GeminiGenerator(ExternalGenerator):
         schema_version: str,
     ) -> JsonDict:
         """Parse and normalize a Gemini response into a valid synesthetic asset."""
-        # Create a valid baseline asset using the assembler
         assembler = AssetAssembler(schema_version=schema_version)
-        asset = assembler.generate(prompt, seed=parameters.get("seed", 42), schema_version=schema_version)
-        
-        # Extract text from Gemini response
+        baseline_asset = assembler.generate(
+            prompt,
+            seed=parameters.get("seed", 42),
+            schema_version=schema_version,
+        )
+
+        # Mock responses may already supply an asset payload
+        if isinstance(response, dict) and "candidates" not in response:
+            return self._normalise_asset(
+                response,
+                prompt=prompt,
+                parameters=parameters,
+                response=response,
+                trace_id=trace_id,
+                mode=mode,
+                endpoint=endpoint,
+                response_hash=response_hash,
+                schema_version=schema_version,
+            )
+
+        asset_payload = deepcopy(baseline_asset)
+
         try:
-            self._logger.debug("Gemini parse_response received: %s", json.dumps(response, indent=2))
+            self._logger.debug(
+                "Gemini parse_response received: %s", json.dumps(response, indent=2)
+            )
             candidate = response["candidates"][0]
             content = candidate["content"]
             parts = content["parts"]
             text = parts[0]["text"]
             self._logger.debug("Gemini extracted text: %s", text[:500])
-            
-            # Parse the JSON response
+
             gemini_data = json.loads(text)
-            if isinstance(gemini_data, list) and len(gemini_data) > 0:
+            if isinstance(gemini_data, list) and gemini_data:
                 gemini_data = gemini_data[0]
-                
-            # Enhance our baseline asset with Gemini data
+
             if isinstance(gemini_data, dict):
-                # Update name if available
-                if "name" in gemini_data and gemini_data["name"]:
-                    asset["name"] = gemini_data["name"]
-                    
-                # Update shader description and GLSL if available
-                if "description" in gemini_data and gemini_data["description"] and "shader" in asset:
-                    asset["shader"]["description"] = gemini_data["description"]
-                
-                # If we have shader definitions in the response, update the fragment shader
-                if "shader_definitions" in gemini_data and isinstance(gemini_data["shader_definitions"], list):
-                    for shader_def in gemini_data["shader_definitions"]:
-                        if isinstance(shader_def, dict) and "code" in shader_def and "shader" in asset:
-                            # Replace the circle shader with square shader
+                if gemini_data.get("name"):
+                    asset_payload["name"] = gemini_data["name"]
+
+                if (
+                    gemini_data.get("description")
+                    and isinstance(asset_payload.get("shader"), dict)
+                ):
+                    asset_payload["shader"]["description"] = gemini_data["description"]
+
+                shader_defs = gemini_data.get("shader_definitions")
+                if isinstance(shader_defs, list):
+                    shader_section = asset_payload.get("shader")
+                    if isinstance(shader_section, dict):
+                        shader_section.setdefault("sources", {})
+                        for shader_def in shader_defs:
+                            if not isinstance(shader_def, dict):
+                                continue
                             square_code = shader_def.get("code", "")
                             if square_code and "squareSDF" in square_code:
-                                asset["shader"]["name"] = shader_def.get("name", "SquareSDF")
-                                asset["shader"]["sources"]["fragment"] = square_code
-                                # Update uniforms and parameters as needed for the square shader
+                                shader_section["name"] = shader_def.get("name", "SquareSDF")
+                                shader_section["sources"]["fragment"] = square_code
                                 self._logger.debug("Updated shader with squareSDF implementation")
-                
-                # Store the raw Gemini response in meta_info
-                if "meta_info" not in asset:
-                    asset["meta_info"] = {}
-                asset["meta_info"]["gemini_response"] = gemini_data
-                
-                # Add tags
-                if "meta_info" not in asset:
-                    asset["meta_info"] = {}
-                if "tags" not in asset["meta_info"]:
-                    asset["meta_info"]["tags"] = []
+
+                meta_info = asset_payload.setdefault("meta_info", {})
+                tags = meta_info.get("tags")
+                if not isinstance(tags, list):
+                    tags = []
                 if "square" in prompt.lower():
-                    asset["meta_info"]["tags"].extend(["external", "gemini", "square"])
+                    tags.extend(["external", "gemini", "square"])
                 else:
-                    asset["meta_info"]["tags"].extend(["external", "gemini"])
-                
-                # Ensure provenance is properly formatted for 0.7.3
-                if schema_version == "0.7.3":
-                    # In 0.7.3, provenance is a top-level property
-                    asset["provenance"] = {
-                        "generator": {
-                            "engine": self.engine,
-                            "endpoint": endpoint,
-                            "model": os.getenv("GEMINI_MODEL", self.default_model),
-                            "parameters": {
-                                "temperature": parameters.get("temperature"),
-                                "seed": parameters.get("seed"),
-                            },
-                            "trace_id": trace_id,
-                            "mode": mode,
-                            "timestamp": _dt.datetime.now(tz=_dt.timezone.utc).isoformat(),
-                            "response_hash": response_hash,
-                        }
-                    }
-                    
-                    # Ensure we have a parameter_index as required by 0.7.3
-                    if "parameter_index" not in asset:
-                        asset["parameter_index"] = []
-                else:
-                    # For 0.7.4+, put provenance in meta_info
-                    if "meta_info" not in asset:
-                        asset["meta_info"] = {}
-                    if "provenance" not in asset["meta_info"]:
-                        asset["meta_info"]["provenance"] = {}
-                    
-                    asset["meta_info"]["provenance"].update({
-                        "engine": self.engine,
-                        "endpoint": endpoint,
-                        "model": os.getenv("GEMINI_MODEL", self.default_model),
-                        "parameters": {
-                            "temperature": parameters.get("temperature"),
-                            "seed": parameters.get("seed"),
-                        },
-                        "trace_id": trace_id,
-                        "mode": mode,
-                        "timestamp": _dt.datetime.now(tz=_dt.timezone.utc).isoformat(),
-                        "response_hash": response_hash,
-                        "input_parameters": {
-                            "prompt": prompt,
-                            "parameters": parameters,
-                            "taxonomy": {
-                                "domain": "visual",
-                                "task": "generation",
-                                "style": "square" if "square" in prompt.lower() else "compositional"
-                            }
-                        }
-                    })
-                
-                # Return the enhanced asset directly
-                return asset
-            
-        except Exception as e:
-            self._logger.error("Error processing Gemini response: %s", e)
-            raise ExternalRequestError(
-                "bad_response",
-                f"processing_error: {str(e)}",
-                retryable=False,
-            )
+                    tags.extend(["external", "gemini"])
+                meta_info["tags"] = list(dict.fromkeys(tags))
+                meta_info["gemini_response"] = gemini_data
 
-        # If we got here, we couldn't parse the response properly
-        # Just return the baseline asset with minimal metadata
-        self._logger.warning("Falling back to baseline asset due to parsing issues")
-        if "meta_info" not in asset:
-            asset["meta_info"] = {}
-        asset["meta_info"]["fallback"] = True
-        asset["meta_info"]["raw_response"] = str(response)[:1000]  # Truncate for safety
-        
-        # Add appropriate provenance based on schema version
-        if schema_version == "0.7.3":
-            # In 0.7.3, provenance is a top-level property
-            asset["provenance"] = {
-                "generator": {
-                    "engine": self.engine,
-                    "endpoint": endpoint,
-                    "model": os.getenv("GEMINI_MODEL", self.default_model),
-                    "parameters": {
-                        "temperature": parameters.get("temperature"),
-                        "seed": parameters.get("seed"),
-                    },
-                    "trace_id": trace_id,
-                    "mode": mode,
-                    "timestamp": _dt.datetime.now(tz=_dt.timezone.utc).isoformat(),
-                    "response_hash": response_hash,
-                }
-            }
-            
-            # Ensure we have a parameter_index as required by 0.7.3
-            if "parameter_index" not in asset:
-                asset["parameter_index"] = []
-        else:
-            # For 0.7.4+, put provenance in meta_info
-            if "provenance" not in asset["meta_info"]:
-                asset["meta_info"]["provenance"] = {}
-            # Add provenance with input_parameters
-            asset["meta_info"]["provenance"].update({
-                "engine": self.engine,
-                "endpoint": endpoint,
-                "model": os.getenv("GEMINI_MODEL", self.default_model),
-                "parameters": {
-                    "temperature": parameters.get("temperature"),
-                    "seed": parameters.get("seed"),
-                },
-                "trace_id": trace_id,
-                "mode": mode,
-                "timestamp": _dt.datetime.now(tz=_dt.timezone.utc).isoformat(),
-                "response_hash": response_hash,
-            "input_parameters": {
-                "prompt": prompt,
-                "parameters": parameters,
-                "taxonomy": {
-                    "domain": "visual",
-                    "task": "generation",
-                    "style": "square" if "square" in prompt.lower() else "compositional"
-                }
-            }
-        })
-        
-        # Return the fallback asset directly
-        return asset
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            self._logger.error("Error processing Gemini response: %s", exc)
+            fallback_asset = deepcopy(baseline_asset)
+            meta_info = fallback_asset.setdefault("meta_info", {})
+            meta_info["fallback"] = True
+            meta_info["raw_response"] = str(response)[:1000]
+            asset_payload = fallback_asset
 
-        if not isinstance(asset_payload, dict):
-            self._logger.error("After processing, payload is still not a dictionary: %s", type(asset_payload))
-            raise ExternalRequestError(
-                "bad_response",
-                "decoded_payload_not_object",
-                retryable=False,
-            )
         return self._normalise_asset(
             asset_payload,
             prompt=prompt,

@@ -1,31 +1,31 @@
 {
-  "task": "Fix GeminiGenerator payload structure",
-  "objective": "Ensure the JSON body for Gemini :generateContent requests matches the expected API shape and includes generationConfig.responseMimeType for structured output.",
+  "task": "Add schema-aware branching to _normalise_asset()",
+  "objective": "Ensure generator output conditionally includes provenance and metadata fields only for schema ≥ 0.7.4. Prevents 0.7.3 validator rejections from enriched assets.",
   "changes": [
     {
-      "id": "gemini_payload_fix",
-      "description": "Repair _build_request() to emit correct content and generationConfig fields.",
+      "id": "normalise_asset_schema_branching",
+      "description": "Update _normalise_asset() to branch on schema_version and strip non-0.7.3 fields.",
       "edits": [
         {
           "file": "labs/generator/external.py",
-          "pattern": "def _build_request",
+          "pattern": "def _normalise_asset",
           "multiple": false,
-          "replacement": "def _build_request(self, prompt: str, **kwargs):\n        # Gemini expects 'contents' with 'role' and 'parts', plus generationConfig\n        return {\n            'contents': [\n                {\n                    'role': 'user',\n                    'parts': [{'text': prompt}]\n                }\n            ],\n            'generationConfig': {\n                'responseMimeType': 'application/json'\n            }\n        }"
+          "replacement": "from datetime import datetime\nimport uuid\n\ndef _normalise_asset(self, asset: dict, input_parameters: dict | None = None):\n    asset['$schema'] = self.schema_url\n\n    # Branch by schema_version: enrich only for >= 0.7.4\n    if getattr(self, 'schema_version', '0.7.3') >= '0.7.4':\n        asset['provenance'] = self._make_provenance_block()\n        asset['asset_id'] = str(uuid.uuid4())\n        asset['timestamp'] = datetime.now().isoformat()\n    else:\n        for field in ('provenance', 'asset_id', 'timestamp', 'parameter_index'):\n            asset.pop(field, None)\n\n    # Preserve existing input_parameters propagation\n    if input_parameters:\n        asset.setdefault('provenance', {}).setdefault('input_parameters', input_parameters)\n\n    return asset"
         }
       ]
     }
   ],
   "constraints": {
     "rules": [
-      "Preserve retry/backoff logic and headers.",
-      "Inject generationConfig.responseMimeType exactly once.",
-      "No connectivity probing or unrelated changes.",
-      "Use the same schema branching and provenance stamping."
+      "Do not modify generator API signatures or provenance helpers.",
+      "Keep import ordering consistent with PEP8.",
+      "Maintain backward compatibility with 0.7.3 validation.",
+      "Preserve provenance enrichment for schema >= 0.7.4."
     ]
   },
   "exit_criteria": [
-    "Gemini live requests return 200 with valid structured JSON output.",
-    "Tests confirm inclusion of generationConfig.responseMimeType.",
-    "No regressions in OpenAI or deterministic generator flows."
+    "Assets generated with --schema-version 0.7.3 validate cleanly against 0.7.3 schemas.",
+    "Assets generated with --schema-version 0.7.4 retain provenance, asset_id, and timestamp.",
+    "pytest passes for both schema versions with identical business logic behavior."
   ]
 }
