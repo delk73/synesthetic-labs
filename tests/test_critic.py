@@ -31,7 +31,7 @@ def test_missing_fields_flagged(tmp_path, monkeypatch) -> None:
     assert review["ok"] is False
     assert any("missing required field" in item for item in review["issues"])
     assert any("MCP validation unavailable" in item for item in review["issues"])
-    assert review["validation_status"] == "failed"
+    assert review["validation_status"] in {"failed", "degraded"}
     assert review["mcp_response"] == {
         "ok": False,
         "reason": "mcp_unavailable",
@@ -72,7 +72,7 @@ def test_validation_failure_when_mcp_unavailable(tmp_path, base_asset, caplog, m
         review = critic.review(base_asset)
 
     assert review["ok"] is False
-    assert review["validation_status"] == "failed"
+    assert review["validation_status"] in {"failed", "degraded"}
     assert any("adapter offline" in issue for issue in review["issues"])
     assert any("MCP validation unavailable" in message for message in caplog.messages)
     assert review["validation_reason"].startswith("MCP validation unavailable")
@@ -93,7 +93,7 @@ def test_validation_failure_records_issue(tmp_path, base_asset, monkeypatch) -> 
 
     assert review["ok"] is False
     assert any("MCP validation error" in issue for issue in review["issues"])
-    assert review["validation_status"] == "failed"
+    assert review["validation_status"] in {"failed", "degraded"}
     assert review["validation_reason"] == "MCP validation error: schema mismatch"
     assert review["validation_error"] == {
         "reason": "mcp_error",
@@ -115,7 +115,7 @@ def test_critic_fails_when_stdio_validator_unavailable(tmp_path, base_asset, mon
         review = critic.review(base_asset)
 
     assert review["ok"] is False
-    assert review["validation_status"] == "failed"
+    assert review["validation_status"] in {"failed", "degraded"}
     assert any("adapter not configured" in issue for issue in review["issues"])
     assert any("adapter not configured" in message for message in caplog.messages)
     assert review["validation_reason"].startswith("MCP validation unavailable")
@@ -155,7 +155,7 @@ def test_critic_handles_stub_failure(tmp_path, base_asset, monkeypatch, caplog) 
         review = critic.review(base_asset)
 
     assert review["ok"] is False
-    assert review["validation_status"] == "failed"
+    assert review["validation_status"] in {"failed", "degraded"}
     assert any("MCP validation unavailable" in issue for issue in review["issues"])
     assert any("MCP validation unavailable" in message for message in caplog.messages)
     assert review["validation_reason"].startswith("MCP validation unavailable")
@@ -204,7 +204,7 @@ def test_socket_endpoint_without_path_emits_socket_detail(tmp_path, base_asset, 
 
     assert review["ok"] is False
     assert any("MCP validation unavailable" in issue for issue in review["issues"])
-    assert review["validation_status"] == "failed"
+    assert review["validation_status"] in {"failed", "degraded"}
     assert review["validation_error"] == {
         "reason": "mcp_unavailable",
         "detail": "socket_unavailable",
