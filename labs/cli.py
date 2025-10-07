@@ -19,12 +19,16 @@ def _load_env_file() -> None:
     env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
     load_dotenv(dotenv_path=env_path)
 
+    # Set up defaults as per v0.3.5 specification
+    os.environ.setdefault("GEMINI_MODEL", "gemini-2.0-flash")
+    os.environ.setdefault("LABS_FAIL_FAST", "false")
+    os.environ.setdefault("LABS_SCHEMA_VERSION", "0.7.3")
+
+    # Log warnings for missing required keys
     logger = logging.getLogger("labs.cli")
-    for required_key in ("GEMINI_API_KEY", "GEMINI_MODEL"):
+    for required_key in ("GEMINI_API_KEY", "LABS_EXTERNAL_LIVE"):
         if not os.getenv(required_key):
             logger.warning("Missing required env var: %s", required_key)
-
-    os.environ.setdefault("LABS_FAIL_FAST", "false")
 
 
 _load_env_file()
@@ -45,7 +49,9 @@ from labs.patches import apply_patch, preview_patch, rate_patch
 _EXPERIMENTS_DIR_ENV = "LABS_EXPERIMENTS_DIR"
 _DEFAULT_EXPERIMENTS_DIR = os.path.join("meta", "output", "labs", "experiments")
 def _configure_logging() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    log_level = os.getenv("LABS_LOG_LEVEL", "INFO")
+    level = getattr(logging, log_level.upper(), logging.INFO)
+    logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
 def _load_asset(value: str) -> Dict[str, Any]:
