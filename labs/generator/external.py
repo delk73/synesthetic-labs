@@ -383,10 +383,11 @@ class ExternalGenerator:
         return {}
 
     def _request_envelope(self, prompt: str, parameters: JsonDict, trace_id: str) -> JsonDict:
+        seed = parameters.get("seed")
+
         envelope: JsonDict = {
             "trace_id": trace_id,
             "prompt": prompt,
-            "seed": parameters.get("seed"),
             "hints": {
                 "need_sections": ["shader", "tone", "haptic", "control", "modulations", "meta_info"],
                 "schema": "nested-synesthetic-asset@>=0.7.3",
@@ -398,8 +399,8 @@ class ExternalGenerator:
                 "max_tokens": parameters.get("max_tokens"),
             },
         }
-        if envelope["seed"] is None:
-            envelope.pop("seed")
+        if seed is not None:
+            envelope["seed"] = seed
         return envelope
 
     def _build_request(
@@ -610,14 +611,6 @@ class ExternalGenerator:
         canonical = self._canonicalize_asset(asset_payload)
         self._validate_bounds(canonical)
 
-        timestamp = canonical.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        asset_id = (
-            canonical.get("asset_id")
-            or canonical.get("id")
-            or canonical.get("meta", {}).get("asset_id")
-            or str(uuid.uuid4())
-        )
-
         shader_section = self._merge_structured_section("shader", canonical.get("shader"))
         tone_section = self._merge_structured_section("tone", canonical.get("tone"))
         haptic_section = self._merge_structured_section("haptic", canonical.get("haptic"))
@@ -654,6 +647,14 @@ class ExternalGenerator:
             enriched_schema = resolved_schema_version >= "0.7.4"
         else:
             enriched_schema = version_tuple >= (0, 7, 4)
+
+        timestamp = canonical.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
+        asset_id = (
+            canonical.get("asset_id")
+            or canonical.get("id")
+            or canonical.get("meta", {}).get("asset_id")
+            or str(uuid.uuid4())
+        )
 
         rule_bundle_version = (
             rule_bundle.get("meta_info", {})
@@ -702,29 +703,8 @@ class ExternalGenerator:
 
         meta_info.setdefault("provenance", {}).update(provenance_block)
 
-        if not enriched_schema:
-            legacy_asset: JsonDict = {
-                "$schema": schema_url,
-                "shader": shader_section,
-                "tone": tone_section,
-                "haptic": haptic_section,
-                "control": control_section,
-                "modulations": modulations,
-                "rule_bundle": rule_bundle,
-                "meta_info": meta_info,
-            }
-            return AssetAssembler._normalize_0_7_3(
-                legacy_asset,
-                prompt,
-                rule_bundle_version,
-            )
-
-        enriched_asset: JsonDict = {
+        base_asset: JsonDict = {
             "$schema": schema_url,
-            "asset_id": asset_id,
-            "prompt": prompt,
-            "seed": parameters.get("seed"),
-            "timestamp": timestamp,
             "shader": shader_section,
             "tone": tone_section,
             "haptic": haptic_section,
@@ -734,14 +714,31 @@ class ExternalGenerator:
             "meta_info": meta_info,
         }
 
-        enriched_asset["parameter_index"] = sorted(parameter_index)
+        if not enriched_schema:
+            return AssetAssembler._normalize_0_7_3(
+                base_asset,
+                prompt,
+                rule_bundle_version,
+            )
+
+        sorted_parameter_index = sorted(parameter_index)
+        enriched_asset: JsonDict = dict(base_asset)
+        enriched_asset.update(
+            {
+                "asset_id": asset_id,
+                "prompt": prompt,
+                "seed": parameters.get("seed"),
+                "timestamp": timestamp,
+                "parameter_index": sorted_parameter_index,
+            }
+        )
 
         return AssetAssembler._normalize_0_7_4(
             enriched_asset,
             prompt,
             asset_id,
             timestamp,
-            parameter_index,
+            sorted_parameter_index,
             provenance_block,
             rule_bundle_version,
         )
@@ -967,32 +964,28 @@ class ExternalGenerator:
             pair = (device, axis, parameter)
             if device and axis:
                 required_pairs.discard((device, axis, parameter))
-            parameters.append(
-                {
-                    "id": mapping.get("id") or parameter.replace(".", "_"),
-                    "parameter": parameter,
-                    "label": self._derive_control_label(device, axis, parameter),
-                    "unit": self._derive_control_unit(parameter),
-                    "sensitivity": mapping.get("sensitivity", 1.0),
-                    "combo": [
-                        {
-                            "device": device,
-                            "control": axis,
-                        }
-                    ],
-                    "mode": mapping.get("mode", "absolute"),
-                    "curve": mapping.get("curve", "linear"),
-                    "range": deepcopy(mapping.get("range")) if isinstance(mapping.get("range"), dict) else None,
-                    "invert": mapping.get("invert"),
-                }
-            )
-
-        # Remove None values for range/invert to keep payload tidy
-        for entry in parameters:
-            if entry.get("range") is None:
-                entry.pop("range", None)
-            if entry.get("invert") is None:
-                entry.pop("invert", None)
+            entry: Dict[str, Any] = {
+                "id": mapping.get("id") or parameter.replace(".", "_"),
+                "parameter": parameter,
+                "label": self._derive_control_label(device, axis, parameter),
+                "unit": self._derive_control_unit(parameter),
+                "sensitivity": mapping.get("sensitivity", 1.0),
+                "combo": [
+                    {
+                        "device": device,
+                        "control": axis,
+                    }
+                ],
+                "mode": mapping.get("mode", "absolute"),
+                "curve": mapping.get("curve", "linear"),
+            }
+            range_payload = mapping.get("range")
+            if isinstance(range_payload, dict):
+                entry["range"] = deepcopy(range_payload)
+            invert_value = mapping.get("invert")
+            if invert_value is not None:
+                entry["invert"] = invert_value
+            parameters.append(entry)
 
         if required_pairs:
             default_lookup = {

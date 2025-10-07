@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, MutableMapping
+from urllib.parse import urlparse
 
 import jsonschema
 from jsonschema import Draft202012Validator, ValidationError
@@ -21,10 +23,18 @@ def _resolve_schema_path(schema_identifier: str) -> Path:
 
     identifier = schema_identifier.strip()
     if identifier.startswith(("http://", "https://")):
-        filename = Path(identifier).name
+        parsed = urlparse(identifier)
+        filename = Path(parsed.path).name
         if not filename:
             raise ValueError(f"unsupported remote schema: {identifier}")
-        identifier = str(Path("meta") / "schemas" / filename)
+        base_dir = _ROOT / "meta" / "schemas"
+        match = re.search(r"/(\d+\.\d+\.\d+)/", parsed.path)
+        if match:
+            version = match.group(1)
+            candidate = base_dir / version / filename
+            if candidate.exists():
+                return candidate
+        identifier = str(base_dir / filename)
 
     path = Path(identifier)
     if not path.is_absolute():
