@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://synesthetic-labs.example/schemas/synesthetic-asset.schema.json",
+  "$id": "https://schemas.synesthetic.dev/0.7.4/synesthetic-asset.schema.json",
   "title": "SynestheticAsset",
   "type": "object",
   "required": [
