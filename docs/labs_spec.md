@@ -1,158 +1,176 @@
 ---
-version: v0.3.4
-lastReviewed: 2025-10-06
+version: v0.3.5
+lastReviewed: 2024-10-07
 owner: labs-core
 ---
 
-# Synesthetic Labs Spec (v0.3.4-core)
+# Synesthetic Labs — Spec v0.3.5
 
-## Purpose
-Define reproducible, schema-aware asset generation for the **Labs** toolchain.  
-Ensure deterministic provenance, environment preload, and structured external-API output.
-
----
-
-## 1 · Historical Scopes
-| Version | Summary |
-|----------|----------|
-| ≤ v0.3.3 | Baseline generator / critic / transport / logging / patch stubs |
-| **v0.3.4** | External API (Gemini / OpenAI), normalization, provenance, error taxonomy, CI matrix |
-| ≥ v0.3.5 | Planned structured-output extension (already partially required here) |
+## Scope
+Defines generator behavior for Labs v0.3.5 using **Gemini 2.0-flash**.  
+All assets target **schema 0.7.3** and must validate via MCP.
 
 ---
 
-## 2 · Schema-Targeting Hardening
-- Generator **must branch** by `schema_version` and inject `$schema` → corpus URL.  
-- 0.7.3 → legacy fields (`name` required; no enrichment).  
-- 0.7.4 + → enriched fields (`asset_id`, `prompt`, `timestamp`, `parameter_index`, `provenance`, `effects`, `input_parameters`).  
-- All generator outputs validated via **MCP** against declared `$schema`.
+## 1 · Defaults
+| Key | Value | Notes |
+|-----|-------|-------|
+| Schema version | 0.7.3 | |
+| Gemini model | `gemini-2.0-flash` | |
+| Endpoint base | `https://generativelanguage.googleapis.com/v1beta/models/` | The full URL is built from this + model name |
+| Configuration precedence | CLI → env → default | Defines override order |
+| Validation precedence | CLI (`--strict`/`--relaxed`) → env (`LABS_FAIL_FAST`) → default (`relaxed`) | |
 
 ---
 
-## 3 · Interfaces
+## 2 · Environment
+`labs` must preload `.env` and merge into `os.environ`.
 
-### Generator Contract
+| Var | Purpose |
+|-----|----------|
+| `LABS_SCHEMA_VERSION` | Target schema corpus (e.g., "0.7.3") |
+| `LABS_FAIL_FAST` | If `true` or `1`, sets validation to strict. Overridden by CLI flags. |
+| `LABS_EXTERNAL_LIVE` | Enable live API calls to external engines. |
+| `GEMINI_MODEL` | Model name (e.g., `gemini-2.0-flash`). |
+| `GEMINI_API_KEY` | Auth key for Google Gemini. |
+| `OPENAI_API_KEY` | Optional auth key for the OpenAI engine. |
+
+---
+
+## 3 · Generator Contract
 ```python
 def generate_asset(
     prompt: str,
     schema_version: str = "0.7.3",
-    seed: Optional[int] = None,
-    params: Optional[dict[str, Any]] = None,
-    trace_id: Optional[str] = None
+    seed: int | None = None,
+    params: dict[str, Any] | None = None,
+    trace_id: str | None = None
 ) -> dict:
-    """Return a normalized SynestheticAsset conforming to schema_version."""
+    """Return SynestheticAsset conforming to schema_version."""
 ```
 
-### CLI Usage
+CLI:
 
 ```
 labs generate --engine=<gemini|openai|deterministic> "prompt"
               [--schema-version <ver>] [--strict|--relaxed]
 ```
 
-Precedence: flag → `LABS_SCHEMA_VERSION` → default `0.7.3`.
+### 3.1 · Engine Behaviors
+*   **gemini:** Calls the configured Gemini model endpoint. Requires `GEMINI_API_KEY`.
+*   **openai:** Calls the configured OpenAI model endpoint. Requires `OPENAI_API_KEY`.
+*   **deterministic:** Bypasses external calls. Returns a static, pre-defined JSON asset for testing purposes. Ignores the prompt.
 
 ---
 
-## 4 · Environment
+## 4 · Request / Response
 
-| Var                   | Purpose                            | Default   |
-| --------------------- | ---------------------------------- | --------- |
-| `LABS_SCHEMA_VERSION` | Target schema corpus version       | `"0.7.3"` |
-| `LABS_FAIL_FAST`      | Validation behaviour (1 = abort)   | `"1"`     |
-| `GEMINI_API_KEY`      | Gemini API key (required for live) | –         |
-| `OPENAI_API_KEY`      | OpenAI API key (required for live) | –         |
+**Request body (Gemini)**
 
-### Preload Rule
+```json
+{
+  "contents": [
+    {"role": "user", "parts": [{"text": "<prompt>"}]}
+  ],
+  "generationConfig": {"responseMimeType": "application/json"}
+}
+```
 
-CLI **must preload** environment variables from a `.env` file —
-either **manually** (for example, `_load_env_file`) **or via** a library such as `python-dotenv`.
-The preload logic must:
-
-1. Merge loaded values with `os.environ`.
-2. Warn when critical keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`) are missing.
-3. Default to **mock mode** when no valid API keys are found.
+**Response parse**
+The raw text from the LLM is parsed directly into a Python dictionary.
+`candidates[0].content.parts[0].text` → `json.loads()`.
 
 ---
 
-## 5 · External Generation (Gemini / OpenAI)
+## 5 · Lifecycle
 
-### 5.1 Structured Output (Gemini)
-
-1. Request body **must** follow Gemini `generateContent` schema:
-
-   ```json
-   {
-     "contents": [
-       {"role": "user", "parts": [{"text": "<prompt>"}]}
-     ],
-     "generationConfig": {"responseMimeType": "application/json"}
-   }
-   ```
-2. Response must be parsed from
-   `candidates[0].content.parts[0].text` → `json.loads()`.
-3. Parsed JSON must form a valid Synesthetic Asset (`$schema` present).
-4. Failure to produce valid JSON → `bad_response` taxonomy.
-
-### 5.2 Headers & Limits
-
-* Gemini: `X-Goog-Api-Key`.
-* OpenAI: `Authorization: Bearer`.
-* Enforce caps → 256 KiB request / 1 MiB response.
-* Implement retry/back-off taxonomy; no-retry on 4xx.
+1.  **Preflight** – Load `.env`, resolve engine/schema/validation mode, and generate `trace_id`.
+2.  **Dispatch** – Call the selected engine (`gemini`, `openai`, or `deterministic`).
+3.  **Normalize** – Augment the raw dictionary from the engine.
+    *   Add top-level `$schema` key.
+    *   Generate and add the `provenance` object.
+4.  **Validate** – Invoke MCP against the normalized asset.
+5.  **Persist** – Save the asset to disk only if validation passes (or generates a warning in relaxed mode).
 
 ---
 
-## 6 · Normalization Contract
+## 6 · Provenance
 
-* Unknown top-level keys → `bad_response`.
-* Wrong type → `bad_response`.
-* Numeric bounds violations → `out_of_range`.
-* Provenance block and `$schema` required in final asset.
+Each asset includes a dynamically generated `provenance` object.
+
+```json
+"provenance": {
+  "engine": "gemini-2.0-flash",
+  "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+  "trace_id": "<uuid>",
+  "timestamp": "<ISO8601>",
+  "input_parameters": {
+    "prompt": "<original_user_prompt>",
+    "schema_version": "<requested_schema_version>",
+    "seed": "<seed_if_provided>",
+    "params": {
+      "<any_extra_params>": "<value>"
+    }
+  }
+}
+```
 
 ---
 
-## 7 · Validation Rules
+## 7 · Error Classes
 
-* Always invoke MCP (strict & relaxed).
-* **Strict:** abort on MCP failure (`mcp_unavailable`).
-* **Relaxed:** log warning + return `ok:false`, no persistence.
-* CLI must never persist assets when `ok:false`.
+| Code | Condition | Action |
+|---|---|---|
+| `auth_error` | 401 / 403 | stop |
+| `bad_request` | 400 (Invalid request from our side) | stop |
+| `network_error` | Timeout / connection error | retry ≤ 3 |
+| `server_error` | 5xx (Remote server issue) | retry ≤ 3 |
+| `bad_response` | LLM response is not parsable JSON | stop |
+| `validation_error` | Asset fails MCP validation | obey `LABS_FAIL_FAST` / CLI flags (abort on strict, warn on relaxed) |
+| `mcp_unavailable` | Validator service is offline | obey `LABS_FAIL_FAST` / CLI flags |
 
 ---
 
 ## 8 · Logging
 
-* Write `generator.jsonl`, `critic.jsonl`, `patches.jsonl`, `external.jsonl`.
-* Each entry includes: `engine`, `endpoint`, `schema_version`, `trace_id`, and `reason/detail` on failure.
+Append structured JSONL entries to the files below. Each line is a discrete JSON object.
+
+*   `meta/output/labs/generator.jsonl`
+*   `meta/output/labs/external.jsonl`
+
+**Log entry fields:** `timestamp`, `engine`, `endpoint`, `schema_version`, `trace_id`, `result`, `taxonomy`.
+
+### 8.1 · Taxonomy
+The `taxonomy` field provides a classification of the generation outcome.
+
+| Value | Meaning |
+|---|---|
+| `success` | Asset was generated and passed validation. |
+| `success_with_warnings` | Asset was generated but only passed relaxed validation. |
+| `failure_auth` | Authentication failed. |
+| `failure_bad_request` | The request was malformed. |
+| `failure_network` | Network-level error after retries. |
+| `failure_server` | Remote server error after retries. |
+| `failure_bad_response` | Could not parse the engine's response. |
+| `failure_validation_strict` | Asset failed strict validation. |
+| `failure_mcp_unavailable` | Validator was offline in strict mode. |
 
 ---
 
-## 9 · Testing Matrix (v0.3.4)
+## 9 · Tests / Exit Criteria
 
-| Category    | Must Pass Checks                                            |
-| ----------- | ----------------------------------------------------------- |
-| Unit        | `$schema` stamped 0.7.3 / 0.7.4 branches                    |
-| Integration | MCP validation strict/relaxed                               |
-| External    | Gemini structured-output (`responseMimeType` + JSON decode) |
-| CLI         | `.env` preload + warnings                                   |
-
----
-
-## 10 · Exit Criteria
-
-* Schema-branching operational and validated.
-* `.env` preload present + warnings functional.
-* MCP strict/relaxed modes verified.
-* Gemini structured-output request/response validated end-to-end.
-* CI baseline schemaVersion = 0.7.3.
+| Area | Requirement |
+|---|---|
+| Schema branching | 0.7.3 / 0.7.4 verified |
+| MCP | `strict` & `relaxed` modes pass and fail correctly |
+| External | Gemini `gemini-2.0-flash` returns 200 OK |
+| CLI | Env preload, flag precedence, and warnings are verified |
+| CI | Baseline tests run against schema 0.7.3 using the `deterministic` engine |
 
 ---
 
-## 11 · Non-Goals
+## 10 · Non-Goals
 
-No schema corpus bump; no new transports or retry policies; no taxonomy changes.
-
-```
-
----
+*   No schema version bump in this release.
+*   No complex fallback logic between engines.
+*   No alternate transports (e.g., gRPC).

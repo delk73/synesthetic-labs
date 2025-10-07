@@ -1,6 +1,6 @@
 {
-  "version": "v0.3.4",
-  "spec_ref": "docs/labs_spec.md#synesthetic-labs-spec-v0.3.4-core",
+  "version": "v0.3.5",
+  "spec_ref": "docs/specs/synesthetic_labs_v0.3.5.md#synesthetic-labs--spec-v0.3.5",
   "output": {
     "paths": ["meta/output/labs_state.md", "AGENTS.md"],
     "format": "markdown",
@@ -8,93 +8,74 @@
   },
   "rules": [
     {
-      "id": "schema-branching",
-      "section": "2 · Schema-Targeting Hardening",
-      "requirement": "Generator MUST branch by schema_version and inject $schema URL.",
+      "id": "env-preload-v0.3.5",
+      "section": "2 · Environment",
+      "requirement": "CLI must preload .env and use GEMINI_MODEL, GEMINI_API_KEY, and LABS_FAIL_FAST variables.",
       "verify": [
-        {"path": "labs/generator/assembler.py", "match": ["$schema", "schema_version"]},
-        {"path": "tests/test_generator_assembler.py", "match": ["0.7.3", "0.7.4"]}
+        {"path": "labs/cli.py", "match": ["dotenv", "load", "GEMINI_MODEL", "GEMINI_API_KEY", "LABS_FAIL_FAST"]},
+        {"path": "requirements.txt", "match": ["python-dotenv"]}
       ]
     },
     {
-      "id": "mcp-validation-modes",
-      "section": "7 · Validation Rules",
-      "requirement": "Strict and relaxed runs MUST both invoke MCP; persistence only if mcp_response.ok is true.",
-      "verify": [
-        {"path": "labs/cli.py", "match": ["mcp_response", "ok"]},
-        {"path": "labs/agents/critic.py", "match": ["mcp_unavailable", "strict"]},
-        {"path": "tests/test_pipeline.py", "match": ["relaxed", "ok", "persist", "False"]}
-      ]
-    },
-    {
-      "id": "env-preload",
-      "section": "4 · Environment — Preload Rule",
-      "requirement": "CLI must preload .env (manual or python-dotenv), merge with os.environ, warn when keys missing, and fall back to mock mode.",
-      "verify": [
-        {"path": "labs/cli.py", "match": ["load_env_file", "os.environ", "GEMINI_API_KEY", "OPENAI_API_KEY"]},
-        {"path": "requirements.txt", "match": ["dotenv"], "optional": true}
-      ]
-    },
-    {
-      "id": "tcp-default",
-      "section": "7 · Validation Rules (transport provenance)",
-      "requirement": "TCP MUST be default transport when MCP_ENDPOINT unset/invalid.",
-      "verify": [
-        {"path": "labs/mcp_stdio.py", "match": ["tcp", "default", "resolve_mcp_endpoint"]},
-        {"path": "tests/test_tcp.py", "match": ["default", "tcp"]}
-      ]
-    },
-    {
-      "id": "gemini-structured-request",
-      "section": "5.1 · Structured Output (Gemini)",
+      "id": "gemini-request-structure-v0.3.5",
+      "section": "4 · Request / Response",
       "requirement": "Gemini request MUST include contents/parts/text and generationConfig.responseMimeType='application/json'.",
       "verify": [
         {"path": "labs/generator/external.py", "match": ["contents", "parts", "text", "generationConfig", "responseMimeType", "application/json"]}
       ]
     },
     {
-      "id": "gemini-structured-response-parse",
-      "section": "5.1 · Structured Output (Gemini)",
-      "requirement": "Response MUST be parsed from candidates[0].content.parts[0].text and json-decoded to asset.",
+      "id": "gemini-response-parse-v0.3.5",
+      "section": "4 · Request / Response",
+      "requirement": "Response MUST be parsed from candidates[0].content.parts[0].text and json-decoded.",
       "verify": [
         {"path": "labs/generator/external.py", "match": ["candidates[0].content.parts[0].text", "json.loads"]},
-        {"path": "tests/test_external_generator.py", "match": ["candidates", "parts", "responseMimeType", "json"]}
+        {"path": "tests/test_external_generator.py", "match": ["candidates", "parts", "json"]}
       ]
     },
     {
-      "id": "external-limits-retry",
-      "section": "5.2 · Headers & Limits",
-      "requirement": "Enforce 256KiB req / 1MiB resp caps; no-retry on 4xx; correct headers.",
+      "id": "normalization-provenance-v0.3.5",
+      "section": "5 · Lifecycle & 6 · Provenance",
+      "requirement": "Post-generation, the asset MUST be normalized with a '$schema' key and a complete, dynamic 'provenance' object including 'input_parameters'.",
       "verify": [
-        {"path": "labs/generator/external.py", "match": ["256 * 1024", "1024 * 1024", "X-Goog-Api-Key", "Authorization"]},
-        {"path": "tests/test_external_generator.py", "match": ["no-retry", "400", "404"]}
+        {"path": "labs/generator.py", "match": ["'$schema'", "'provenance'", "engine", "endpoint", "trace_id", "input_parameters"]},
+        {"path": "tests/test_generator.py", "match": ["assert '$schema' in result", "assert 'provenance' in result"]}
       ]
     },
     {
-      "id": "logging-provenance",
+      "id": "error-handling-retry-v0.3.5",
+      "section": "7 · Error Classes",
+      "requirement": "Network/server errors (5xx) MUST be retried up to 3 times; client errors (4xx) MUST fail immediately.",
+      "verify": [
+        {"path": "labs/generator/external.py", "match": ["retry", "status_code >= 500"]},
+        {"path": "tests/test_external_generator.py", "match": ["retry", "no-retry", "400", "503"]}
+      ]
+    },
+    {
+      "id": "structured-logging-v0.3.5",
       "section": "8 · Logging",
-      "requirement": "external.jsonl MUST record engine, endpoint, schema_version, trace_id, reason/detail on failures.",
+      "requirement": "Events MUST be logged as structured JSON to external.jsonl, including engine, endpoint, trace_id, and taxonomy.",
       "verify": [
-        {"path": "labs/logging.py", "match": ["external.jsonl"]},
-        {"path": "labs/generator/external.py", "match": ["schema_version", "trace_id", "reason", "detail"]}
+        {"path": "labs/logging.py", "match": ["external.jsonl", "json.dumps"]},
+        {"path": "labs/generator/external.py", "match": ["log_event", "taxonomy", "trace_id"]}
       ]
     },
     {
-      "id": "normalization-contract",
-      "section": "6 · Normalization Contract",
-      "requirement": "Unknown keys/wrong types → bad_response; numeric bounds → out_of_range.",
+      "id": "mcp-validation-flow-v0.3.5",
+      "section": "5 · Lifecycle & 7 · Error Classes",
+      "requirement": "The lifecycle MUST invoke MCP validation and obey strict/relaxed modes based on LABS_FAIL_FAST or CLI flags.",
       "verify": [
-        {"path": "labs/generator/external.py", "match": ["bad_response", "out_of_range"]},
-        {"path": "tests/test_external_generator.py", "match": ["bad_response", "out_of_range"]}
+        {"path": "labs/cli.py", "match": ["invoke_mcp", "LABS_FAIL_FAST", "--strict", "--relaxed"]},
+        {"path": "tests/test_cli.py", "match": ["mock_mcp", "strict", "relaxed"]}
       ]
     },
     {
-      "id": "deprecated-knobs",
-      "section": "Docs hygiene",
-      "requirement": "LABS_EXTERNAL_LIVE removed or explicitly deprecated in code/docs.",
+      "id": "external-live-toggle-v0.3.5",
+      "section": "2 · Environment",
+      "requirement": "The LABS_EXTERNAL_LIVE environment variable MUST be checked to enable/disable live API calls.",
       "verify": [
-        {"path": "README.md", "match": ["LABS_EXTERNAL_LIVE"], "absent": true},
-        {"path": ".example.env", "match": ["LABS_EXTERNAL_LIVE"], "absent": true}
+        {"path": "labs/cli.py", "match": ["LABS_EXTERNAL_LIVE"]},
+        {"path": ".env.example", "match": ["LABS_EXTERNAL_LIVE"], "absent": false}
       ]
     }
   ],
