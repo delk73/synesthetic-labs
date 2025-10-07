@@ -8,7 +8,8 @@ owner: labs-core
 
 ## Scope
 Defines generator behavior for Labs v0.3.5 using **Gemini 2.0-flash**.  
-All assets target **schema 0.7.3** and must validate via MCP.
+All assets target **schema 0.7.3** and must validate through **MCP**.  
+Schema retrieval is performed **programmatically via MCP core** (`get_schema`, `list_schemas`).
 
 ---
 
@@ -28,12 +29,13 @@ All assets target **schema 0.7.3** and must validate via MCP.
 
 | Var | Purpose |
 |-----|----------|
-| `LABS_SCHEMA_VERSION` | Target schema corpus (e.g., `"0.7.3"`) |
-| `LABS_FAIL_FAST` | If `true` or `1`, set validation = strict (override by CLI) |
+| `LABS_SCHEMA_VERSION` | Target schema corpus (e.g. `"0.7.3"`) |
+| `LABS_FAIL_FAST` | If `true` or `1`, enforce strict validation (overrides CLI) |
 | `LABS_EXTERNAL_LIVE` | Enable live external engine calls |
-| `GEMINI_MODEL` | Gemini model name (e.g., `gemini-2.0-flash`) |
+| `GEMINI_MODEL` | Gemini model name (e.g. `gemini-2.0-flash`) |
 | `GEMINI_API_KEY` | Auth key for Gemini |
 | `OPENAI_API_KEY` | Optional key for OpenAI engine |
+| `SYN_SCHEMAS_DIR` | Filesystem path to MCP schema corpus (fallback to backend `meta/schemas`) |
 
 ---
 
@@ -46,8 +48,8 @@ def generate_asset(
     params: dict[str, Any] | None = None,
     trace_id: str | None = None
 ) -> dict:
-    """Return SynestheticAsset conforming to schema_version."""
-```
+    """Return a SynestheticAsset conforming to schema_version."""
+````
 
 CLI:
 
@@ -60,13 +62,33 @@ labs generate --engine=<gemini|openai|deterministic> "prompt"
 
 * **gemini** — calls Gemini 2.0-flash endpoint; requires `GEMINI_API_KEY`.
 * **openai** — calls OpenAI endpoint; requires `OPENAI_API_KEY`.
-* **deterministic** — bypasses external calls; returns static, schema-valid asset.
+* **deterministic** — bypasses external calls; returns static schema-valid asset.
 
 ---
 
-## 4 · Request / Response
+## 4 · Schema Retrieval · (Required)
 
-**Request (Gemini)**
+Labs must load schema definitions from MCP before normalization.
+
+```python
+from mcp.core import get_schema
+
+schema_resp = get_schema("synesthetic-asset")
+schema = schema_resp["schema"]
+```
+
+If the call fails:
+
+* log `failure_mcp_unavailable`
+* fallback to local stub under `schemas/` only in **deterministic** mode
+
+The loaded schema drives all normalization defaults, validation, and `$schema` URL resolution.
+
+---
+
+## 5 · Request / Response
+
+**Request (Gemini):**
 
 ```json
 {
@@ -77,32 +99,33 @@ labs generate --engine=<gemini|openai|deterministic> "prompt"
 }
 ```
 
-**Response parse**
+**Response parse:**
 `candidates[0].content.parts[0].text → json.loads()`
 
 ---
 
-## 5 · Lifecycle
+## 6 · Lifecycle
 
 1. **Preflight** — Load `.env`, resolve engine/schema/mode, generate `trace_id`.
-2. **Dispatch** — Call engine (`gemini` / `openai` / `deterministic`).
-3. **Normalize** — Prepare asset for validation:
+2. **Schema Pull** — Call `mcp.core.get_schema(LABS_SCHEMA_VERSION)` to load canonical schema dict.
+3. **Dispatch** — Call engine (`gemini` / `openai` / `deterministic`).
+4. **Normalize** — Construct asset scaffold directly from the pulled schema:
 
-   * Add top-level `$schema` → `https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json`.
-   * For schema 0.7.3, **omit provenance and enrichment**.
-   * For 0.7.4 and higher, include extended metadata (per future specs).
-4. **Validate** — Run MCP on the normalized asset.
+   * Apply `default` or first `examples` values for missing fields.
+   * Add `$schema` → URL from schema `$id`.
+   * Omit `provenance` / `enrichment` for 0.7.3.
+5. **Validate** — Send to MCP validator (same schema object).
 
-   * Resolver selects schema folder by URL (e.g., …/0.7.3/…).
-   * Fallback to 0.7.3 if version dir missing.
-5. **Persist** — Save to disk only if validation passes (or warns in relaxed mode).
+   * On strict mode → fail if invalid.
+   * On relaxed mode → warn and persist with flag.
+6. **Persist** — Write only if validation passed or relaxed.
 
 ---
 
-## 6 · Meta Info (0.7.3 Baseline)
+## 7 · Meta Info (0.7.3 Baseline)
 
 Schema 0.7.3 defines no `provenance`.
-The optional `meta_info` object may include:
+Optional `meta_info` object may include:
 
 ```json
 {
@@ -112,69 +135,107 @@ The optional `meta_info` object may include:
 }
 ```
 
-All additional metadata or trace fields are reserved for ≥ 0.7.4.
+---
+
+## 8 · Error Classes
+
+| Code               | Condition                            | Action              |
+| ------------------ | ------------------------------------ | ------------------- |
+| `auth_error`       | 401 / 403                            | stop                |
+| `bad_request`      | 400 invalid body                     | stop                |
+| `network_error`    | timeout / connection error           | retry ≤ 3           |
+| `server_error`     | 5xx remote issue                     | retry ≤ 3           |
+| `bad_response`     | un-parsable LLM output               | stop                |
+| `validation_error` | MCP validation failure               | obey strict/relaxed |
+| `mcp_unavailable`  | MCP schema pull or validator offline | obey strict/relaxed |
 
 ---
 
-## 7 · Error Classes
+## 9 · Logging
 
-| Code               | Condition                  | Action                   |
-| ------------------ | -------------------------- | ------------------------ |
-| `auth_error`       | 401 / 403                  | stop                     |
-| `bad_request`      | 400 invalid body           | stop                     |
-| `network_error`    | timeout / connection error | retry ≤ 3                |
-| `server_error`     | 5xx remote issue           | retry ≤ 3                |
-| `bad_response`     | un-parsable LLM output     | stop                     |
-| `validation_error` | MCP failure                | obey strict/relaxed mode |
-| `mcp_unavailable`  | validator offline          | obey strict/relaxed mode |
-
----
-
-## 8 · Logging
-
-Append structured JSONL entries to:
+Write structured JSONL entries to:
 
 * `meta/output/labs/generator.jsonl`
 * `meta/output/labs/external.jsonl`
 
-Each line is a JSON object with:
+Each entry includes:
 `timestamp`, `engine`, `endpoint`, `schema_version`, `trace_id`, `result`, `taxonomy`.
 
-### 8.1 · Taxonomy
+### 9.1 · Taxonomy
 
-| Value                       | Meaning                         |
-| --------------------------- | ------------------------------- |
-| `success`                   | Generated and validated OK      |
-| `success_with_warnings`     | Validated in relaxed mode       |
-| `failure_auth`              | Authentication failed           |
-| `failure_bad_request`       | Malformed request               |
-| `failure_network`           | Network error after retries     |
-| `failure_server`            | Server error after retries      |
-| `failure_bad_response`      | Could not parse LLM output      |
-| `failure_validation_strict` | Failed strict MCP validation    |
-| `failure_mcp_unavailable`   | Validator offline (strict mode) |
+| Value                       | Meaning                          |
+| --------------------------- | -------------------------------- |
+| `success`                   | Generated and validated OK       |
+| `success_with_warnings`     | Validated in relaxed mode        |
+| `failure_auth`              | Authentication failed            |
+| `failure_bad_request`       | Malformed request                |
+| `failure_network`           | Network error after retries      |
+| `failure_server`            | Server error after retries       |
+| `failure_bad_response`      | Could not parse LLM output       |
+| `failure_validation_strict` | Failed strict MCP validation     |
+| `failure_mcp_unavailable`   | Schema pull or validator offline |
 
 ---
 
-## 9 · Tests / Exit Criteria
+## 10 · Tests / Exit Criteria
 
 | Area                  | Requirement                                                       |
 | --------------------- | ----------------------------------------------------------------- |
+| Schema retrieval      | `mcp.core.get_schema()` succeeds and returns valid dict           |
 | Schema branching      | 0.7.3 and 0.7.4 paths branch cleanly                              |
-| MCP schema resolution | Versioned `$schema` URLs load matching folders                    |
-| MCP validation        | 0.7.3 assets pass without provenance fields                       |
+| MCP schema resolution | Versioned `$schema` URLs map to matching folders                  |
+| MCP validation        | 0.7.3 assets pass without provenance                              |
 | External              | Gemini `gemini-2.0-flash` returns 200 OK                          |
-| CLI                   | Env preload, flag precedence, and warnings verified               |
+| CLI                   | Env preload, flag precedence, warnings verified                   |
 | CI                    | Baseline tests run with schema 0.7.3 using `deterministic` engine |
 
 ---
 
-## 10 · Non-Goals
+## 11 · Non-Goals
 
 * No schema version bump in this release.
 * No cross-engine fallback logic.
-* No alternate transports (e.g., gRPC).
+* No alternate transports (e.g. gRPC).
 * No enrichment or provenance for 0.7.3 assets.
+
+---
+
+## 12 · Reference Implementation Snippet
+
+```python
+from mcp.core import get_schema
+
+def _normalize_asset(asset, schema_version="0.7.3"):
+    schema_resp = get_schema("synesthetic-asset")
+    if not schema_resp["ok"]:
+        raise RuntimeError("Schema pull failed")
+    schema = schema_resp["schema"]
+    normalized = {}
+
+    for key, spec in schema["properties"].items():
+        if "default" in spec:
+            normalized[key] = spec["default"]
+        elif "examples" in spec and spec["examples"]:
+            normalized[key] = spec["examples"][0]
+        else:
+            normalized[key] = None
+
+    normalized.update({
+        "$schema": schema.get("$id"),
+        "name": asset.get("name"),
+        "description": asset.get("description"),
+        "meta_info": {"category": "autogenerated"}
+    })
+    return normalized
+```
+
+---
+
+### ✅ Summary
+
+v0.3.5 makes the MCP schema pull **mandatory** for all generators.
+No more local schema copies or fallback defaults (except deterministic mock mode).
+Generator normalization and validation must use the same schema object returned by MCP.
 
 ```
 
