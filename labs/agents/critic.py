@@ -136,15 +136,18 @@ class CriticAgent:
                     self._validator = validator
                 except MCPUnavailableError as exc:
                     message = f"MCP validation unavailable: {exc}"
+                    issues.append(str(exc))
+                    issues.append(message)
                     if fail_fast:
                         validation_error = _build_error_payload(str(exc))
                         mcp_response = {"ok": False, **validation_error}
-                        issues.append(message)
                         validation_status = "failed"
                         validation_reason = message
                         self._logger.error(message)
                         should_attempt_validation = False
                     else:
+                        issues.pop()
+                        issues.pop()
                         validation_status = "degraded"
                         validation_reason = message
                         validation_error = _build_error_payload(str(exc))
@@ -165,14 +168,17 @@ class CriticAgent:
                     validation_status = "passed"
             except MCPUnavailableError as exc:
                 message = f"MCP validation unavailable: {exc}"
+                issues.append(str(exc))
+                issues.append(message)
                 if fail_fast:
                     validation_error = _build_error_payload(str(exc))
                     mcp_response = {"ok": False, **validation_error}
-                    issues.append(message)
                     validation_status = "failed"
                     validation_reason = message
                     self._logger.error(message)
                 else:
+                    issues.pop()
+                    issues.pop()
                     validation_status = "degraded"
                     validation_reason = message
                     validation_error = _build_error_payload(str(exc))
