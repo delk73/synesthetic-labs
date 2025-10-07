@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, MutableMapping
 
@@ -23,24 +24,36 @@ def _resolve_schema_path(schema_identifier: str) -> Path:
     identifier = schema_identifier.strip()
     parsed = urlparse(identifier)
     if parsed.scheme in {"http", "https"}:
-        segments = [part for part in Path(parsed.path).parts if part]
-        if not segments:
+        path_segments = [part for part in Path(parsed.path).parts if part]
+        if not path_segments:
             raise ValueError(f"unsupported remote schema: {identifier}")
-        filename = segments[-1]
+
+        filename = Path(path_segments[-1]).name
+        if not filename or re.fullmatch(r"\d+\.\d+\.\d+", filename):
+            raise ValueError(f"schema filename required: {identifier}")
+
         candidates = []
-        if len(segments) >= 2:
-            version = segments[-2]
+        version_match = re.search(r"(\d+\.\d+\.\d+)", parsed.path)
+        if version_match:
+            version = version_match.group(1)
             candidates.append(Path("meta") / "schemas" / version / filename)
+
         candidates.append(Path("meta") / "schemas" / filename)
+        root = _ROOT.resolve()
         for candidate in candidates:
-            path = (_ROOT / candidate).resolve()
-            if path.exists():
-                return path
+            candidate_path = (root / candidate).resolve()
+            if candidate_path.exists():
+                return candidate_path
         raise ValueError(f"schema_not_found:{identifier}")
 
     path = Path(identifier)
+    if not path.name or re.fullmatch(r"\d+\.\d+\.\d+", path.name):
+        raise ValueError(f"schema filename required: {identifier}")
+
     if not path.is_absolute():
         path = (_ROOT / path).resolve()
+    else:
+        path = path.resolve()
     return path
 
 
