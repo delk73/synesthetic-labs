@@ -1,27 +1,29 @@
-# Synesthetic Labs Audit Report (v0.3.4)
+# Synesthetic Labs Audit Report (v0.3.5)
 
 ## Summary of Repo State
-- Codebase targets Synesthetic Labs spec v0.3.4 with schema-branching, MCP validation paths, transport fallbacks, and external generator integrations already implemented.
-- Environment handling preloads `.env` files, merges into `os.environ`, and warns for missing API credentials before defaulting to mock external runs.
-- Remaining divergence is the lingering `LABS_EXTERNAL_LIVE` knob across documentation and configuration samples.
+- External integrations, schema branching, and MCP coordination remain intact, but environment bootstrapping still relies on handwritten helpers that predate the v0.3.5 dotenv mandate.
+- Gemini request/response handling meets the new structured JSON requirements, and retry logic keeps 5xx attempts bounded while stopping immediately on 4xx failures.
+- Logging and provenance metadata need another iteration to surface the richer taxonomy/input-parameter traces expected by the refreshed spec, and sample configuration files have not been brought forward.
 
 ## Alignment
 | Rule | Status | Evidence |
 | --- | --- | --- |
-| **schema-branching** | Present | `labs/generator/assembler.py` switches between legacy (0.7.3) and enriched assets while injecting `$schema`; `tests/test_generator_assembler.py` exercises schema versions 0.7.3 and 0.7.4. |
-| **mcp-validation-modes** | Present | `labs/agents/critic.py` records MCP availability for strict vs relaxed runs; `labs/cli.py` only persists when `review['mcp_response']['ok']` is true; `tests/test_pipeline.py` covers relaxed validation behavior. |
-| **env-preload** | Present | `labs/cli.py` loads `.env`, merges into `os.environ`, and warns when `GEMINI_API_KEY`/`OPENAI_API_KEY` are absent, triggering mock external mode defaults. |
-| **tcp-default** | Present | `labs/mcp_stdio.py` resolves invalid or missing endpoints to TCP transport and `tests/test_tcp.py` confirms TCP is the default path. |
-| **gemini-structured-request** | Present | `labs/generator/external.py` builds Gemini payloads with `contents/parts/text` and sets `generationConfig.responseMimeType` to `application/json`. |
-| **gemini-structured-response-parse** | Present | `labs/generator/external.py` parses `candidates[0].content.parts[0].text` via `json.loads`; `tests/test_external_generator.py` validates structured response handling. |
-| **external-limits-retry** | Present | `labs/generator/external.py` enforces 256KiB/1MiB size caps, sets `X-Goog-Api-Key`/`Authorization` headers, and stops retries on 4xx errors as verified by `tests/test_external_generator.py`. |
-| **logging-provenance** | Present | `labs/logging.py` writes to `external.jsonl`; `labs/generator/external.py` records `schema_version`, `trace_id`, and failure `reason`/`detail` for provenance. |
-| **normalization-contract** | Present | `labs/generator/external.py` flags unknown keys as `bad_response` and numeric violations as `out_of_range`, with regression tests in `tests/test_external_generator.py`. |
-| **deprecated-knobs** | Divergent | `LABS_EXTERNAL_LIVE` still appears in `.example.env`, runtime warnings, and docs rather than being removed or explicitly deprecated. |
+| **env-preload-v0.3.5** | Divergent | `labs/cli.py`: custom `_load_env_file()` parses `.env` without `dotenv.load_dotenv` and never touches `GEMINI_MODEL`/`GEMINI_API_KEY`/`LABS_FAIL_FAST` during startup.<br>`requirements.txt`: omits the required `python-dotenv` dependency entirely. |
+| **gemini-request-structure-v0.3.5** | Present | `labs/generator/external.py` (`GeminiGenerator._build_request`): builds `contents → parts → text` and sets `generationConfig` with `responseMimeType='application/json'` plus temperature/max token overrides. |
+| **gemini-response-parse-v0.3.5** | Present | `labs/generator/external.py` (`GeminiGenerator._parse_response`): reads `candidates[0].content.parts[0].text` and `json.loads` the payload; `tests/test_external_generator.py::test_gemini_generator_normalises_asset` exercises the flow. |
+| **normalization-provenance-v0.3.5** | Divergent | `labs/generator/external.py` (`_normalise_asset`): assembles `$schema` and `provenance` but never records any `input_parameters` inside the provenance block.<br>`tests/test_generator.py`: asserts `$schema`/`provenance` exist yet does not cover the missing `input_parameters`, leaving the gap untested. |
+| **error-handling-retry-v0.3.5** | Present | `labs/generator/external.py` (`_classify_http_error`): flags 500–599 as `retryable=True` while 4xx (`auth_error`, `bad_response`) stay non-retryable.<br>`tests/test_external_generator.py`: `test_rate_limited_retries` shows repeated attempts, and `test_no_retry_on_auth_error` halts immediately on a 4xx. |
+| **structured-logging-v0.3.5** | Divergent | `labs/generator/external.py` (`record_run`): writes to `external.jsonl` with engine/endpoint/trace_id but omits any `taxonomy` field required by the spec.<br>`tests/test_external_generator.py::test_gemini_generator_normalises_asset`: captured log lacks taxonomy coverage, so the omission persists. |
+| **mcp-validation-flow-v0.3.5** | Present | `labs/cli.py`: `generate`/`critique` call `_build_validator_optional()` and toggle `LABS_FAIL_FAST` via `--strict/--relaxed` before invoking `CriticAgent`.<br>`tests/test_pipeline.py::test_cli_generate_flags_precedence`: verifies CLI flags flip `LABS_FAIL_FAST` and still drive MCP checks. |
+| **external-live-toggle-v0.3.5** | Divergent | Repository has no `.env.example`, so `LABS_EXTERNAL_LIVE` is undocumented for operators.<br>`labs/generator/external.py`: constructor inspects `LABS_EXTERNAL_LIVE` to enable/disable live calls, but the CLI only warns on missing keys and never guides users toward the toggle. |
 
 ## Top Gaps & Fixes
-1. Deprecate or remove `LABS_EXTERNAL_LIVE` from `.example.env`, runtime warnings, and documentation to satisfy the knob retirement requirement.
+1. Replace the handcrafted env loader with `python-dotenv`, wire in GEMINI model/API defaults, and add the dependency to `requirements.txt`.
+2. Extend normalization output so `asset['provenance']` (or its generator sub-block) lists the resolved `input_parameters`, then memorialize the behavior in generator/external tests.
+3. Enrich external logging records with a `taxonomy` field and update tests to assert its presence, mirroring the new spec vocabulary.
+4. Ship a `.env.example` (or update docs) that documents `LABS_EXTERNAL_LIVE` and aligns the CLI guidance with the toggle behavior.
 
 ## Recommendations
-1. Update CLI warnings and docs to describe the mock-mode default without referencing `LABS_EXTERNAL_LIVE`.
-2. Strip or clearly mark `LABS_EXTERNAL_LIVE` as deprecated in configuration samples and tests.
+1. After adopting `python-dotenv`, centralize environment validation (API keys, models, fail-fast) in a shared helper so CLI commands stay consistent.
+2. Introduce regression tests around provenance payloads to lock in input-parameter coverage for both deterministic and external generators.
+3. Add a logging schema definition (JSON Schema or dataclass) to keep taxonomy and provenance fields from regressing in future releases.
