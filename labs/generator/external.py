@@ -1155,6 +1155,24 @@ class GeminiGenerator(ExternalGenerator):
         model = os.getenv("GEMINI_MODEL", self.default_model)
         return f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
+    @staticmethod
+    def _redact_endpoint(endpoint: str) -> str:
+        if not endpoint:
+            return endpoint
+        parsed = urlparse(endpoint)
+        redacted = False
+        redacted_query = []
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+            if key.lower() == "key":
+                redacted = True
+                redacted_query.append((key, "***redacted***"))
+            else:
+                redacted_query.append((key, value))
+        if redacted:
+            parsed = parsed._replace(query=urlencode(redacted_query))
+            return urlunparse(parsed)
+        return endpoint
+
     def _build_live_headers(self, api_key: str) -> Tuple[Dict[str, str], Dict[str, str]]:
         headers = {
             "Content-Type": "application/json",
@@ -1260,7 +1278,8 @@ class GeminiGenerator(ExternalGenerator):
         parameters: JsonDict,
     ) -> Tuple[JsonDict, bytes]:
         request_endpoint = getattr(self, "_gemini_request_endpoint", endpoint)
-        self._logger.debug("Gemini actual generation endpoint: %s", request_endpoint)
+        sanitized_endpoint = self._redact_endpoint(request_endpoint)
+        self._logger.debug("Gemini actual generation endpoint: %s", sanitized_endpoint)
         self._logger.debug("Gemini actual generation payload: %s", json.dumps(payload, indent=2))
         return super()._dispatch(
             request_endpoint,
