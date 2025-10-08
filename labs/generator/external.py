@@ -15,11 +15,13 @@ import urllib.request
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import uuid
 from copy import deepcopy
+from functools import lru_cache
 from numbers import Real
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 
+from mcp.core import get_schema
 from labs.generator.assembler import AssetAssembler
 from labs.logging import log_external_generation
 
@@ -34,19 +36,117 @@ _JITTER_FRACTION = 0.2
 
 SENSITIVE_HEADERS = {"authorization", "x-goog-api-key"}
 
-_BASELINE_SCHEMA_VERSION = "0.7.3"
-_BASELINE_ASSET = AssetAssembler(schema_version=_BASELINE_SCHEMA_VERSION).generate(
-    "external-normalization-baseline", seed=0, schema_version=_BASELINE_SCHEMA_VERSION
-)
 _DEFAULT_SECTIONS = {
-    key: deepcopy(_BASELINE_ASSET[key])
-    for key in ("shader", "tone", "haptic", "control", "meta_info", "rule_bundle")
+    "shader": {"input_parameters": []},
+    "tone": {"input_parameters": []},
+    "haptic": {"input_parameters": []},
+    "control": {"control_parameters": []},
+    "meta_info": {},
+    "rule_bundle": {"rules": [], "meta_info": {}},
 }
-_DEFAULT_MODULATIONS = deepcopy(_BASELINE_ASSET.get("modulations", []))
-_DEFAULT_CONTROL_PARAMETERS = deepcopy(
-    _BASELINE_ASSET.get("control", {}).get("control_parameters", [])
-)
-_DEFAULT_PARAMETER_INDEX = list(_BASELINE_ASSET.get("parameter_index", []))
+_DEFAULT_MODULATIONS: List[Dict[str, Any]] = []
+_DEFAULT_CONTROL_PARAMETERS: List[Dict[str, Any]] = [
+    {
+        "id": "mouse_x_shader_px",
+        "parameter": "shader.u_px",
+        "label": "mouse.x",
+        "unit": "normalized",
+        "sensitivity": 1.0,
+        "combo": [
+            {
+                "device": "mouse",
+                "control": "x",
+            }
+        ],
+        "mode": "absolute",
+        "curve": "linear",
+        "range": {"minimum": -1.0, "maximum": 1.0},
+    },
+    {
+        "id": "mouse_y_shader_py",
+        "parameter": "shader.u_py",
+        "label": "mouse.y",
+        "unit": "normalized",
+        "sensitivity": 1.0,
+        "combo": [
+            {
+                "device": "mouse",
+                "control": "y",
+            }
+        ],
+        "mode": "absolute",
+        "curve": "linear",
+        "invert": True,
+        "range": {"minimum": -1.0, "maximum": 1.0},
+    },
+]
+_DEFAULT_PARAMETER_INDEX: List[str] = ["shader.u_px", "shader.u_py"]
+
+
+def _normalize_schema_version(value: Optional[str]) -> str:
+    if value is None:
+        return AssetAssembler.DEFAULT_SCHEMA_VERSION
+    normalized = str(value).strip()
+    return normalized or AssetAssembler.DEFAULT_SCHEMA_VERSION
+
+
+@lru_cache(maxsize=8)
+def _cached_schema_descriptor(version: str) -> Tuple[str, str, Dict[str, Any]]:
+    response = get_schema("synesthetic-asset", version=version)
+    if not response.get("ok"):
+        raise RuntimeError(f"Failed to load schema: {response}")
+
+    schema = response.get("schema")
+    if not isinstance(schema, dict):
+        raise RuntimeError(f"Schema payload missing 'schema': {response}")
+
+    schema_id = schema.get("$id") or AssetAssembler.schema_url(version)
+    resolved_version = response.get("version") or version
+    return schema_id, resolved_version, schema
+
+
+def _schema_descriptor(version: Optional[str]) -> Tuple[str, str, Dict[str, Any]]:
+    normalized = _normalize_schema_version(version)
+    return _cached_schema_descriptor(normalized)
+
+
+def _schema_default_for_property(spec: Any) -> Any:
+    if isinstance(spec, dict):
+        if "default" in spec:
+            return deepcopy(spec["default"])
+        if "$ref" in spec:
+            return {}
+        type_info = spec.get("type")
+        if isinstance(type_info, list):
+            if "object" in type_info:
+                type_info = "object"
+            elif "array" in type_info:
+                type_info = "array"
+            else:
+                type_info = type_info[0]
+        if type_info == "object":
+            return {}
+        if type_info == "array":
+            return []
+    return None
+
+
+def _build_schema_skeleton(schema: Dict[str, Any]) -> JsonDict:
+    skeleton: JsonDict = {}
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        for key, descriptor in properties.items():
+            skeleton[key] = _schema_default_for_property(descriptor)
+
+    skeleton.setdefault("shader", {})
+    skeleton.setdefault("tone", {})
+    skeleton.setdefault("haptic", {})
+    skeleton.setdefault("control", {})
+    skeleton.setdefault("meta_info", {})
+    skeleton.setdefault("rule_bundle", {})
+    skeleton.setdefault("modulations", [])
+    skeleton.setdefault("meta", {})
+    return skeleton
 
 
 def _strict_mode_enabled() -> bool:
@@ -595,30 +695,24 @@ class ExternalGenerator:
             raise ExternalRequestError("bad_response", "asset_not_object", retryable=False)
 
         for section in ("shader", "tone", "haptic"):
-            if section in asset_payload:
-                continue
-            self._logger.debug("Adding missing '%s' section", section)
-            if section == "shader":
-                asset_payload[section] = {
-                    "prompt": prompt,
-                    "style": "geometric" if "square" in prompt.lower() else "dynamic",
-                }
-            elif section == "tone":
-                asset_payload[section] = {"mood": "balanced"}
-            else:
-                asset_payload[section] = {"pattern": "balanced"}
+            if not isinstance(asset_payload.get(section), dict):
+                self._logger.debug("Adding missing '%s' section", section)
+                asset_payload[section] = {}
 
-        asset_payload.setdefault("control", {})
+        if not isinstance(asset_payload.get("control"), dict):
+            asset_payload["control"] = {}
 
         canonical = self._canonicalize_asset(asset_payload)
         self._validate_bounds(canonical)
 
-        resolved_schema_version = (
+        requested_schema_version = (
             schema_version
             or self.schema_version
             or AssetAssembler.DEFAULT_SCHEMA_VERSION
         )
-        schema_url = AssetAssembler.schema_url(resolved_schema_version)
+        schema_url, resolved_schema_version, _schema_spec = _schema_descriptor(
+            requested_schema_version
+        )
         enriched_schema = self._supports_enriched_schema(resolved_schema_version)
 
         shader_section = self._merge_structured_section("shader", canonical.get("shader"))
@@ -1084,8 +1178,18 @@ class ExternalGenerator:
         base = deepcopy(_DEFAULT_SECTIONS["rule_bundle"])
         if isinstance(payload, dict):
             base = self._deep_merge_dicts(base, payload)
-        base.setdefault("meta_info", {})
-        base["meta_info"].setdefault("version", self.api_version)
+        if not isinstance(base.get("rules"), list):
+            base["rules"] = []
+
+        meta_info = base.get("meta_info")
+        if not isinstance(meta_info, dict):
+            meta_info = {}
+        meta_info.setdefault("version", self.api_version)
+        base["meta_info"] = meta_info
+
+        name = base.get("name")
+        if not isinstance(name, str) or not name.strip():
+            base["name"] = f"{self.engine.title()} Rule Bundle"
         return base
 
     def _build_meta_info(
@@ -1465,12 +1569,7 @@ class GeminiGenerator(ExternalGenerator):
         schema_version: str,
     ) -> JsonDict:
         """Parse and normalize a Gemini response into a valid synesthetic asset."""
-        assembler = AssetAssembler(schema_version=schema_version)
-        baseline_asset = assembler.generate(
-            prompt,
-            seed=parameters.get("seed", 42),
-            schema_version=schema_version,
-        )
+        _, resolved_schema_version, schema_spec = _schema_descriptor(schema_version)
 
         # Mock responses may already supply an asset payload
         if isinstance(response, dict) and "candidates" not in response:
@@ -1483,10 +1582,10 @@ class GeminiGenerator(ExternalGenerator):
                 mode=mode,
                 endpoint=endpoint,
                 response_hash=response_hash,
-                schema_version=schema_version,
+                schema_version=resolved_schema_version,
             )
 
-        asset_payload = deepcopy(baseline_asset)
+        asset_payload = _build_schema_skeleton(schema_spec)
 
         try:
             self._logger.debug(
@@ -1539,7 +1638,7 @@ class GeminiGenerator(ExternalGenerator):
 
         except Exception as exc:  # pragma: no cover - defensive fallback
             self._logger.error("Error processing Gemini response: %s", exc)
-            fallback_asset = deepcopy(baseline_asset)
+            fallback_asset = _build_schema_skeleton(schema_spec)
             meta_info = fallback_asset.setdefault("meta_info", {})
             meta_info["fallback"] = True
             meta_info["raw_response"] = str(response)[:1000]
@@ -1554,7 +1653,7 @@ class GeminiGenerator(ExternalGenerator):
             mode=mode,
             endpoint=endpoint,
             response_hash=response_hash,
-            schema_version=schema_version,
+            schema_version=resolved_schema_version,
         )
 
 
