@@ -103,7 +103,10 @@ def _build_validator_optional() -> Optional[Callable[[Dict[str, Any]], Dict[str,
 
 
 def _review_mcp_ok(review: Dict[str, Any]) -> bool:
-    return bool(review.get("mcp_response", {}).get("ok", False))
+    mcp_response = review.get("mcp_response")
+    if isinstance(mcp_response, dict) and "ok" in mcp_response:
+        return bool(mcp_response.get("ok"))
+    return bool(review.get("ok"))
 
 
 def _is_relaxed_mode(review: Dict[str, Any]) -> bool:
@@ -204,12 +207,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         if mcp_ok:
             _LOGGER.info("MCP validation passed in %s mode", review.get("mode", "strict"))
         elif relaxed_mode:
-            _LOGGER.warning("MCP validation failed in relaxed mode; continuing")
+            _LOGGER.warning("MCP validation failed in relaxed mode; emitting degraded result")
         else:
             _LOGGER.error("MCP validation failed in strict mode; asset not persisted")
 
         experiment_path: Optional[str] = None
-        if mcp_ok or relaxed_mode:
+        if mcp_ok:
             if "asset_id" in asset:
                 persisted_path = _persist_asset(asset)
                 experiment_path = _relativize(persisted_path)
@@ -242,7 +245,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             output_payload["engine"] = engine
 
         print(json.dumps(output_payload, indent=2))
-        return 0 if (mcp_ok or relaxed_mode) else 1
+        return 0 if mcp_ok else 1
 
     if args.command == "critique":
         asset = _load_asset(args.asset)
@@ -261,7 +264,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 _LOGGER.warning("Critique completed in relaxed mode despite MCP failure")
             else:
                 _LOGGER.error("Critique failed: MCP validation did not pass")
-                return 1
+            return 1
 
         return 0
 
@@ -290,8 +293,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         if _review_mcp_ok(review_payload):
             return 0
         if _is_relaxed_mode(review_payload):
-            _LOGGER.warning("Patch applied in relaxed mode despite MCP failure")
-            return 0
+            _LOGGER.warning("Patch applied in relaxed mode; emitting degraded result")
+            return 1
         return 1
 
     if args.command == "rate":
