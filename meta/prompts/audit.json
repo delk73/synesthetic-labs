@@ -17,6 +17,25 @@
       ]
     },
     {
+      "id": "external-live-toggle-v0.3.5",
+      "section": "2 · Environment",
+      "requirement": "The LABS_EXTERNAL_LIVE environment variable MUST be checked to enable/disable live API calls.",
+      "verify": [
+        {"path": "labs/cli.py", "match": ["LABS_EXTERNAL_LIVE"]},
+        {"path": ".env.example", "match": ["LABS_EXTERNAL_LIVE"], "absent": false}
+      ]
+    },
+    {
+      "id": "mcp-schema-pull-v0.3.5",
+      "section": "4 · Schema Retrieval",
+      "requirement": "Labs MUST call mcp.core.get_schema('synesthetic-asset') and use returned schema for normalization defaults and $schema URL.",
+      "verify": [
+        {"path": "labs/generator/external.py", "match": ["from mcp.core import get_schema", "get_schema(", "\"synesthetic-asset\""]},
+        {"path": "labs/generator.py", "match": ["schema_resp", "schema = schema_resp", "$schema", "default", "examples"]},
+        {"path": "tests/test_mcp_schema_pull.py", "match": ["get_schema", "list_schemas", "assert", "ok"]}
+      ]
+    },
+    {
       "id": "gemini-request-structure-v0.3.5",
       "section": "4 · Request / Response",
       "requirement": "Gemini request MUST include contents/parts/text and generationConfig.responseMimeType='application/json'.",
@@ -85,15 +104,6 @@
       "verify": [
         {"path": "labs/mcp/validate.py", "match": ["_resolve_schema_path", "re.search", "version", "meta/schemas", "candidate.exists", "return candidate"]},
         {"path": "tests/test_mcp_validate.py", "match": ["0.7.3", "0.7.4", "validate_asset"]}
-      ]
-    },
-    {
-      "id": "external-live-toggle-v0.3.5",
-      "section": "2 · Environment",
-      "requirement": "The LABS_EXTERNAL_LIVE environment variable MUST be checked to enable/disable live API calls.",
-      "verify": [
-        {"path": "labs/cli.py", "match": ["LABS_EXTERNAL_LIVE"]},
-        {"path": ".env.example", "match": ["LABS_EXTERNAL_LIVE"], "absent": false}
       ]
     }
   ],

@@ -1,7 +1,25 @@
 {
-  "task": "Cleanup schema-branching and validator logic (v0.3.5 alignment)",
-  "objective": "Remove redundant enrichment stripping from _normalise_asset() and make _resolve_schema_path() version-aware to load correct schema files under meta/schemas/<version>/.",
+  "task": "Implement MCP schema integration and cleanup validator logic (v0.3.5 full alignment)",
+  "objective": "Integrate live schema retrieval via mcp.core.get_schema(), make _resolve_schema_path() version-aware, and standardize structured logging and MCP validation invocation.",
   "changes": [
+    {
+      "id": "mcp_schema_pull",
+      "description": "Add live schema retrieval using mcp.core.get_schema('synesthetic-asset') before normalization; fallback to local schema for deterministic mode.",
+      "edits": [
+        {
+          "file": "labs/generator/external.py",
+          "pattern": "class GeminiGenerator",
+          "multiple": false,
+          "replacement": "from mcp.core import get_schema\n\nclass GeminiGenerator"
+        },
+        {
+          "file": "labs/generator/external.py",
+          "pattern": "def generate_asset",
+          "multiple": false,
+          "replacement": "def generate_asset(self, prompt: str, schema_version: str = '0.7.3', **kwargs):\n        # Pull schema from MCP to drive normalization defaults\n        schema_resp = get_schema('synesthetic-asset')\n        if not schema_resp.get('ok'):\n            self.logger.warning('MCP schema pull failed; using local fallback')\n            self.schema = {}\n        else:\n            self.schema = schema_resp['schema']\n            self.schema_url = self.schema.get('$id')\n        return self._generate_with_schema(prompt, schema_version=schema_version, **kwargs)"
+        }
+      ]
+    },
     {
       "id": "normalise_asset_cleanup",
       "description": "Simplify schema branching; remove manual .pop() stripping; enrich only for >=0.7.4.",
@@ -10,7 +28,7 @@
           "file": "labs/generator/external.py",
           "pattern": "def _normalise_asset",
           "multiple": false,
-          "replacement": "from datetime import datetime\nimport uuid\n\ndef _normalise_asset(self, asset: dict, input_parameters: dict | None = None):\n    asset['$schema'] = self.schema_url\n\n    # Enrich only for schema >= 0.7.4; legacy versions remain lean\n    if getattr(self, 'schema_version', '0.7.3') >= '0.7.4':\n        asset['provenance'] = self._make_provenance_block()\n        asset['asset_id'] = str(uuid.uuid4())\n        asset['timestamp'] = datetime.now().isoformat()\n    else:\n        # Legacy path: no enrichment or stripping\n        asset.setdefault('meta_info', {})\n\n    if input_parameters:\n        asset.setdefault('provenance', {}).setdefault('input_parameters', input_parameters)\n\n    return asset"
+          "replacement": "from datetime import datetime\nimport uuid\n\ndef _normalise_asset(self, asset: dict, input_parameters: dict | None = None):\n    asset['$schema'] = getattr(self, 'schema_url', 'https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json')\n\n    if getattr(self, 'schema_version', '0.7.3') >= '0.7.4':\n        asset['provenance'] = self._make_provenance_block()\n        asset['asset_id'] = str(uuid.uuid4())\n        asset['timestamp'] = datetime.now().isoformat()\n    else:\n        asset.setdefault('meta_info', {})\n\n    if input_parameters:\n        asset.setdefault('provenance', {}).setdefault('input_parameters', input_parameters)\n\n    return asset"
         }
       ]
     },
@@ -25,21 +43,54 @@
           "replacement": "def _resolve_schema_path(schema_identifier: str) -> Path:\n    import re\n    if not isinstance(schema_identifier, str) or not schema_identifier.strip():\n        raise ValueError('schema identifier must be a non-empty string')\n\n    identifier = schema_identifier.strip()\n    if identifier.startswith(('http://', 'https://')):\n        match = re.search(r'/(\\d+\\.\\d+\\.\\d+)/', identifier)\n        version = match.group(1) if match else None\n        filename = Path(identifier).name\n        base_dir = _ROOT / 'meta' / 'schemas'\n        if version:\n            candidate = base_dir / version / filename\n            if candidate.exists():\n                return candidate\n        identifier = str(base_dir / filename)\n\n    path = Path(identifier)\n    if not path.is_absolute():\n        path = (_ROOT / path).resolve()\n    return path"
         }
       ]
+    },
+    {
+      "id": "structured_logging_standardization",
+      "description": "Unify structured logging; use log_event consistently instead of log_external_generation.",
+      "edits": [
+        {
+          "file": "labs/generator/external.py",
+          "pattern": "log_external_generation",
+          "multiple": true,
+          "replacement": "log_event"
+        },
+        {
+          "file": "labs/logging.py",
+          "pattern": "def log_event",
+          "multiple": false,
+          "replacement": "def log_event(payload: dict, taxonomy: str):\n    import json, os\n    from datetime import datetime\n    path = os.path.join('meta', 'output', 'labs', 'external.jsonl')\n    os.makedirs(os.path.dirname(path), exist_ok=True)\n    payload = dict(payload)\n    payload['timestamp'] = datetime.now().isoformat()\n    payload['taxonomy'] = taxonomy\n    with open(path, 'a', encoding='utf-8') as f:\n        f.write(json.dumps(payload) + '\\n')"
+        }
+      ]
+    },
+    {
+      "id": "mcp_validation_invoke",
+      "description": "Add invoke_mcp() wrapper in labs/cli.py to call MCP validation with strict/relaxed mode selection.",
+      "edits": [
+        {
+          "file": "labs/cli.py",
+          "pattern": "if __name__ == '__main__':",
+          "multiple": false,
+          "replacement": "def invoke_mcp(asset: dict, strict: bool = False):\n    from labs.mcp.validate import validate_asset\n    try:\n        ok = validate_asset(asset)\n        if not ok:\n            if strict:\n                raise SystemExit('MCP validation failed (strict)')\n            else:\n                print('Warning: MCP validation failed (relaxed)')\n    except Exception as e:\n        if strict:\n            raise\n        print(f'MCP validation unavailable: {e}')\n\nif __name__ == '__main__':"
+        }
+      ]
     }
   ],
   "constraints": {
     "style": "deterministic, minimal, PEP8-compliant",
     "rules": [
-      "Remove all redundant .pop() field deletions.",
-      "Ensure backward compatibility for 0.7.3.",
-      "Validator must cleanly resolve versioned schema URLs.",
+      "Backward compatible for schema 0.7.3.",
+      "Schema pulled via MCP for all live engines.",
+      "Version-aware path resolution in validator.",
+      "Unified structured logging interface.",
+      "MCP validation callable from CLI (--strict/--relaxed).",
       "No new dependencies or side effects."
     ]
   },
   "exit_criteria": [
-    "Assets generated with --schema-version 0.7.3 validate cleanly using meta/schemas/0.7.3/*.json.",
-    "Assets generated with --schema-version 0.7.4 validate cleanly using meta/schemas/0.7.4/*.json.",
-    "pytest passes for both schema branches with deterministic provenance behavior.",
-    "No legacy .pop() stripping remains anywhere in codebase."
+    "Assets generated with --schema-version 0.7.3 validate cleanly via MCP using meta/schemas/0.7.3/.",
+    "Assets generated with --schema-version 0.7.4 validate cleanly via MCP using meta/schemas/0.7.4/.",
+    "pytest passes for all lifecycle and CLI tests.",
+    "Structured logging uses log_event exclusively.",
+    "MCP schema pull confirmed via audit rule mcp-schema-pull-v0.3.5 = Present."
   ]
 }
