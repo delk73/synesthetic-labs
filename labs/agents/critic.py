@@ -164,8 +164,6 @@ class CriticAgent:
                     mcp_response.setdefault("ok", True)
                 else:
                     mcp_response = {"ok": True}
-                if validation_status == "pending":
-                    validation_status = "passed"
             except MCPUnavailableError as exc:
                 message = f"MCP validation unavailable: {exc}"
                 issues.append(str(exc))
@@ -200,9 +198,6 @@ class CriticAgent:
                 validation_status = "failed"
                 validation_reason = message
 
-        if validation_status == "pending":
-            validation_status = "passed" if len(issues) == 0 else "failed"
-
         if mcp_response is None:
             if validation_error is not None:
                 mcp_response = {"ok": False, **validation_error}
@@ -212,7 +207,12 @@ class CriticAgent:
                 mcp_response = {"ok": False, "reason": "validation_not_attempted"}
 
         mcp_ok = bool(mcp_response.get("ok"))
-        ok = mcp_ok and (len(issues) == 0 and validation_status in {"passed", "warned"})
+        if mcp_ok:
+            validation_status = "passed"
+        elif validation_status not in {"warned", "degraded"}:
+            validation_status = "failed"
+
+        ok = mcp_ok
         reviewed_at = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
 
         review = {

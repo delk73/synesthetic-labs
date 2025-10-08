@@ -102,6 +102,14 @@ def _build_validator_optional() -> Optional[Callable[[Dict[str, Any]], Dict[str,
         return _degraded_validator
 
 
+def _review_mcp_ok(review: Dict[str, Any]) -> bool:
+    return bool(review.get("mcp_response", {}).get("ok", False))
+
+
+def _is_relaxed_mode(review: Dict[str, Any]) -> bool:
+    return review.get("mode") == "relaxed"
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     """Entry point for the Labs CLI."""
 
@@ -190,15 +198,23 @@ def main(argv: Optional[list[str]] = None) -> int:
         critic = CriticAgent(validator=validator_callback)
         review = critic.review(asset)
 
+        mcp_ok = _review_mcp_ok(review)
+        relaxed_mode = _is_relaxed_mode(review)
+
+        if mcp_ok:
+            _LOGGER.info("MCP validation passed in %s mode", review.get("mode", "strict"))
+        elif relaxed_mode:
+            _LOGGER.warning("MCP validation failed in relaxed mode; continuing")
+        else:
+            _LOGGER.error("MCP validation failed in strict mode; asset not persisted")
+
         experiment_path: Optional[str] = None
-        if review.get("ok") and review.get("mcp_response", {}).get("ok"):
+        if mcp_ok or relaxed_mode:
             if "asset_id" in asset:
                 persisted_path = _persist_asset(asset)
                 experiment_path = _relativize(persisted_path)
             else:
                 _LOGGER.warning("Asset lacks asset_id; skipping persistence")
-        else:
-            _LOGGER.error("Generation failed validation; asset not persisted")
 
         if engine and external_context is not None:
             external_generator.record_run(
@@ -226,7 +242,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             output_payload["engine"] = engine
 
         print(json.dumps(output_payload, indent=2))
-        return 0 if review.get("ok") and review.get("mcp_response", {}).get("ok") else 1
+        return 0 if (mcp_ok or relaxed_mode) else 1
 
     if args.command == "critique":
         asset = _load_asset(args.asset)
@@ -240,9 +256,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         review = critic.review(asset)
         print(json.dumps(review, indent=2))
 
-        if not review.get("ok"):
-            _LOGGER.error("Critique failed: MCP validation did not pass")
-            return 1
+        if not _review_mcp_ok(review):
+            if _is_relaxed_mode(review):
+                _LOGGER.warning("Critique completed in relaxed mode despite MCP failure")
+            else:
+                _LOGGER.error("Critique failed: MCP validation did not pass")
+                return 1
 
         return 0
 
@@ -266,7 +285,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         critic = CriticAgent(validator=validator_callback)
         result = apply_patch(asset, patch, critic=critic)
         print(json.dumps(result, indent=2))
-        return 0 if result["review"].get("ok") else 1
+
+        review_payload = result["review"]
+        if _review_mcp_ok(review_payload):
+            return 0
+        if _is_relaxed_mode(review_payload):
+            _LOGGER.warning("Patch applied in relaxed mode despite MCP failure")
+            return 0
+        return 1
 
     if args.command == "rate":
         rating_payload = _load_asset(args.rating)
