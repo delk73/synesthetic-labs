@@ -1,5 +1,5 @@
 {
-  "version": "v0.3.5",
+  "version": "v0.3.5a",
   "spec_ref": "docs/specs/synesthetic_labs_v0.3.5.md#synesthetic-labs--spec-v0.3.5",
   "output": {
     "paths": ["meta/output/labs_state.md", "AGENTS.md"],
@@ -8,7 +8,7 @@
   },
   "rules": [
     {
-      "id": "env-preload-v0.3.5",
+      "id": "env-preload-v0.3.5a",
       "section": "2 · Environment",
       "requirement": "CLI must preload .env and use GEMINI_MODEL, GEMINI_API_KEY, and LABS_FAIL_FAST variables.",
       "verify": [
@@ -17,7 +17,7 @@
       ]
     },
     {
-      "id": "external-live-toggle-v0.3.5",
+      "id": "external-live-toggle-v0.3.5a",
       "section": "2 · Environment",
       "requirement": "The LABS_EXTERNAL_LIVE environment variable MUST be checked to enable/disable live API calls.",
       "verify": [
@@ -26,9 +26,9 @@
       ]
     },
     {
-      "id": "mcp-schema-pull-v0.3.5",
+      "id": "mcp-schema-pull-v0.3.5a",
       "section": "4 · Schema Retrieval",
-      "requirement": "Labs MUST call mcp.core.get_schema('synesthetic-asset') and use returned schema for normalization defaults and $schema URL.",
+      "requirement": "Labs MUST call mcp.core.get_schema('synesthetic-asset') and use the returned schema for normalization defaults and $schema URL resolution.",
       "verify": [
         {"path": "labs/generator/external.py", "match": ["from mcp.core import get_schema", "get_schema(", "\"synesthetic-asset\""]},
         {"path": "labs/generator.py", "match": ["schema_resp", "schema = schema_resp", "$schema", "default", "examples"]},
@@ -36,16 +36,25 @@
       ]
     },
     {
-      "id": "gemini-request-structure-v0.3.5",
-      "section": "4 · Request / Response",
+      "id": "gemini-schema-binding-v0.3.5a",
+      "section": "5.1 · Schema-Bound Generation",
+      "requirement": "Gemini requests MUST include generationConfig.responseSchema referencing the live MCP schema $id, and log 'schema_binding': true in external.jsonl.",
+      "verify": [
+        {"path": "labs/generator/external.py", "match": ["responseSchema", "$ref", "schema.get(\"$id\")", "schema_binding", "external.jsonl"]},
+        {"path": "tests/test_external_generator.py", "match": ["responseSchema", "assert", "schema_binding", "ok"]}
+      ]
+    },
+    {
+      "id": "gemini-request-structure-v0.3.5a",
+      "section": "5 · Request / Response",
       "requirement": "Gemini request MUST include contents/parts/text and generationConfig.responseMimeType='application/json'.",
       "verify": [
         {"path": "labs/generator/external.py", "match": ["contents", "parts", "text", "generationConfig", "responseMimeType", "application/json"]}
       ]
     },
     {
-      "id": "gemini-response-parse-v0.3.5",
-      "section": "4 · Request / Response",
+      "id": "gemini-response-parse-v0.3.5a",
+      "section": "5 · Request / Response",
       "requirement": "Response MUST be parsed from candidates[0].content.parts[0].text and json-decoded.",
       "verify": [
         {"path": "labs/generator/external.py", "match": ["candidates[0].content.parts[0].text", "json.loads"]},
@@ -53,8 +62,8 @@
       ]
     },
     {
-      "id": "normalization-schema-0.7.3-v0.3.5",
-      "section": "5 · Lifecycle",
+      "id": "normalization-schema-0.7.3-v0.3.5a",
+      "section": "6 · Lifecycle",
       "requirement": "When schema_version == '0.7.3', asset MUST include a top-level '$schema' and omit provenance, parameters, and enrichment fields.",
       "verify": [
         {"path": "labs/generator.py", "match": ["if schema_version == '0.7.3'", "asset['$schema']", "pop('provenance')", "normalize_0_7_3"]},
@@ -62,8 +71,8 @@
       ]
     },
     {
-      "id": "normalization-enriched-schema-v0.3.5",
-      "section": "5 · Lifecycle & 6 · Provenance",
+      "id": "normalization-enriched-schema-v0.3.5a",
+      "section": "6 · Lifecycle",
       "requirement": "For schema_version >= '0.7.4', asset MUST include a '$schema' key and full provenance object with engine, endpoint, trace_id, and input_parameters.",
       "verify": [
         {"path": "labs/generator.py", "match": ["if schema_version >= '0.7.4'", "build_provenance", "engine", "endpoint", "trace_id", "input_parameters"]},
@@ -71,8 +80,8 @@
       ]
     },
     {
-      "id": "error-handling-retry-v0.3.5",
-      "section": "7 · Error Classes",
+      "id": "error-handling-retry-v0.3.5a",
+      "section": "8 · Error Classes",
       "requirement": "Network/server errors (5xx) MUST be retried up to 3 times; client errors (4xx) MUST fail immediately.",
       "verify": [
         {"path": "labs/generator/external.py", "match": ["retry", "status_code >= 500"]},
@@ -80,17 +89,17 @@
       ]
     },
     {
-      "id": "structured-logging-v0.3.5",
-      "section": "8 · Logging",
-      "requirement": "Events MUST be logged as structured JSON to external.jsonl, including engine, endpoint, trace_id, and taxonomy.",
+      "id": "structured-logging-v0.3.5a",
+      "section": "9 · Logging",
+      "requirement": "Events MUST be logged as structured JSON to external.jsonl, including engine, endpoint, trace_id, taxonomy, and schema_binding fields.",
       "verify": [
         {"path": "labs/logging.py", "match": ["external.jsonl", "json.dumps"]},
-        {"path": "labs/generator/external.py", "match": ["log_event", "taxonomy", "trace_id"]}
+        {"path": "labs/generator/external.py", "match": ["log_event", "taxonomy", "trace_id", "schema_binding"]}
       ]
     },
     {
-      "id": "mcp-validation-flow-v0.3.5",
-      "section": "5 · Lifecycle & 7 · Error Classes",
+      "id": "mcp-validation-flow-v0.3.5a",
+      "section": "6 · Lifecycle & 8 · Error Classes",
       "requirement": "The lifecycle MUST invoke MCP validation and obey strict/relaxed modes based on LABS_FAIL_FAST or CLI flags.",
       "verify": [
         {"path": "labs/cli.py", "match": ["invoke_mcp", "LABS_FAIL_FAST", "--strict", "--relaxed"]},
@@ -98,8 +107,8 @@
       ]
     },
     {
-      "id": "mcp-version-aware-validator-v0.3.5",
-      "section": "5 · Lifecycle",
+      "id": "mcp-version-aware-validator-v0.3.5a",
+      "section": "6 · Lifecycle",
       "requirement": "_resolve_schema_path() MUST extract version (e.g., 0.7.3 / 0.7.4) from $schema and resolve to meta/schemas/<version>/<filename>, falling back when missing.",
       "verify": [
         {"path": "labs/mcp/validate.py", "match": ["_resolve_schema_path", "re.search", "version", "meta/schemas", "candidate.exists", "return candidate"]},
