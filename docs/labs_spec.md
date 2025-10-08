@@ -1,6 +1,6 @@
 ---
 version: v0.3.5
-lastReviewed: 2025-10-07
+lastReviewed: 2025-10-08
 owner: labs-core
 ---
 
@@ -49,7 +49,7 @@ def generate_asset(
     trace_id: str | None = None
 ) -> dict:
     """Return a SynestheticAsset conforming to schema_version."""
-````
+```
 
 CLI:
 
@@ -101,6 +101,89 @@ The loaded schema drives all normalization defaults, validation, and `$schema` U
 
 **Response parse:**
 `candidates[0].content.parts[0].text → json.loads()`
+
+---
+
+## 5.1 · Schema-Bound Generation (New)
+
+When using the **Gemini** engine, Labs must **bind the live MCP schema** to the Gemini request to ensure the model produces JSON conforming to the canonical Synesthetic schema.
+
+### Behavior
+
+1. **Schema Retrieval**
+
+   ```python
+   schema_resp = get_schema("synesthetic-asset")
+   schema = schema_resp["schema"]
+   schema_url = schema.get("$id")
+   ```
+
+   If schema retrieval fails, log `failure_mcp_unavailable` and abort in live mode.
+   Only deterministic mode may use local schema stubs.
+
+2. **Request Construction**
+
+   The Gemini request **must include** a `responseSchema` entry in `generationConfig`:
+
+   ```json
+   {
+     "contents": [
+       {"role": "user", "parts": [{"text": "<prompt>"}]}
+     ],
+     "generationConfig": {
+       "responseMimeType": "application/json",
+       "responseSchema": {"$ref": "<schema_url>"}
+     },
+     "model": "gemini-2.0-flash"
+   }
+   ```
+
+   `<schema_url>` must be the `$id` of the live MCP schema, e.g.
+   `https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json`.
+
+3. **Response Parsing**
+
+   Gemini output must already match this schema.
+   `_normalize_asset()` is limited to:
+
+   * stamping `$schema` with the resolved URL
+   * injecting or adjusting `meta_info`
+   * leaving structural fields (`shader`, `tone`, `haptic`, `control`, `rule_bundle`) untouched.
+
+4. **Validation**
+
+   Because generator and MCP validator share the same schema object, strict validation should pass with zero diffs.
+
+5. **Telemetry**
+
+   Every Gemini request must log `"schema_binding": true` in
+   `meta/output/labs/external.jsonl`.
+
+6. **Failure Modes**
+
+   | Condition                        | Code                        | Action                 |
+   | -------------------------------- | --------------------------- | ---------------------- |
+   | Schema pull failed               | `failure_mcp_unavailable`   | stop                   |
+   | Gemini rejected schema binding   | `failure_bad_request`       | stop                   |
+   | Output invalid under strict mode | `failure_validation_strict` | stop or relax per mode |
+
+### Example Implementation
+
+```python
+def _build_gemini_request(prompt: str, schema_version="0.7.3"):
+    schema_resp = get_schema("synesthetic-asset")
+    if not schema_resp.get("ok"):
+        raise RuntimeError("MCP schema unavailable")
+    schema = schema_resp["schema"]
+    return {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseSchema": {"$ref": schema.get("$id")}
+        },
+        "model": "gemini-2.0-flash"
+    }
+```
 
 ---
 
@@ -211,7 +294,6 @@ def _normalize_asset(asset, schema_version="0.7.3"):
         raise RuntimeError("Schema pull failed")
     schema = schema_resp["schema"]
     normalized = {}
-
     for key, spec in schema["properties"].items():
         if "default" in spec:
             normalized[key] = spec["default"]
@@ -219,7 +301,6 @@ def _normalize_asset(asset, schema_version="0.7.3"):
             normalized[key] = spec["examples"][0]
         else:
             normalized[key] = None
-
     normalized.update({
         "$schema": schema.get("$id"),
         "name": asset.get("name"),
@@ -233,10 +314,7 @@ def _normalize_asset(asset, schema_version="0.7.3"):
 
 ### ✅ Summary
 
-v0.3.5 makes the MCP schema pull **mandatory** for all generators.
-No more local schema copies or fallback defaults (except deterministic mock mode).
-Generator normalization and validation must use the same schema object returned by MCP.
-
-```
-
----
+v0.3.5 formalizes MCP schema pull **and** schema-bound Gemini generation.
+All Gemini requests must embed the `$id` of the retrieved schema in `generationConfig.responseSchema`.
+Normalization is reduced to metadata stamping; structural compliance is guaranteed at generation.
+Strict MCP validation is expected to pass without manual correction.
