@@ -1,34 +1,39 @@
 # Synesthetic Labs State Report (v0.3.5a)
 
-## Summary of repo state
+## Summary of Repo State
 
-Environment bootstrapping, MCP schema retrieval, and Gemini schema binding align with v0.3.5a, but structured logging, CLI-driven MCP validation, and enriched provenance still trail the spec for 0.7.4+ assets.
+This report summarizes the alignment of the Synesthetic Labs codebase with the requirements outlined in spec v0.3.5a. The audit covers environment setup, schema handling, external generation, error handling, and logging.
+
+The codebase is generally well-aligned with the spec. Key findings include:
+- **Strong alignment** on environment variable handling, Gemini API integration (schema binding, request/response structure), and structured logging.
+- **Minor divergence** in the location of some implementation logic compared to the file paths specified in the audit rules. For example, some generator logic resides in `labs/generator/external.py` and `labs/generator/assembler.py` rather than `labs/generator.py`.
+- **Missing test files** for `test_cli.py` and `test_mcp_validate.py` prevent full verification of the MCP validation flow and version-aware validator.
 
 ## Alignment
 
 | Rule | Status | Evidence |
 | --- | --- | --- |
-| `env-preload-v0.3.5a` | Present | `labs/cli.py` preloads the project `.env` via `load_dotenv` and seeds defaults for `GEMINI_MODEL`, `LABS_FAIL_FAST`, and `LABS_SCHEMA_VERSION`.<br>`labs/cli.py` immediately checks for `GEMINI_API_KEY`/`LABS_EXTERNAL_LIVE` and warns when unset.<br>`requirements.txt` pins `python-dotenv==1.1.1` to guarantee availability. |
-| `external-live-toggle-v0.3.5a` | Present | `ExternalGenerator.__init__` derives `mock_mode` from `LABS_EXTERNAL_LIVE`, disabling live calls by default.<br>`labs/cli.py` surfaces missing `LABS_EXTERNAL_LIVE` at startup so operators know when live mode is unavailable.<br>`.env.example` documents `LABS_EXTERNAL_LIVE=1` for opt-in live execution. |
-| `mcp-schema-pull-v0.3.5a` | Present | `labs/generator/external.py::_cached_schema_descriptor` calls `get_schema("synesthetic-asset", version=version)` and validates the response.<br>The returned payload seeds `_build_schema_skeleton` and the `$schema` URL before normalization.<br>`tests/test_mcp_schema_pull.py` exercises both `list_schemas()` and `get_schema()` against MCP. |
-| `gemini-schema-binding-v0.3.5a` | Present | `GeminiGenerator._build_request` attaches `generationConfig["responseSchema"] = {"jsonSchema": {"$ref": schema_id}}` using MCP lookup.<br>`ExternalGenerator.generate` carries `schema_binding`/`schema_id` in the emitted context and log records.<br>`tests/test_external_generator.py::test_gemini_generator_normalises_asset` asserts both request binding and logged `schema_binding`. |
-| `gemini-request-structure-v0.3.5a` | Present | `GeminiGenerator._build_request` wraps prompts under `contents -> parts -> text` as required.<br>`generationConfig` explicitly sets `responseMimeType` to `application/json`.<br>`tests/test_external_generator.py::test_gemini_build_request_injects_response_mime_type` confirms the structure. |
-| `gemini-response-parse-v0.3.5a` | Present | `_parse_response` extracts `response["candidates"][0]["content"]["parts"][0]["text"]` and feeds it through `json.loads`.<br>Parsed data is merged into a schema-driven skeleton before normalization.<br>`tests/test_external_generator.py` asserts normalization uses the candidates/parts JSON payload. |
-| `normalization-schema-0.7.3-v0.3.5a` | Present | `AssetAssembler.generate` routes `schema_version` starting with `0.7.3` through `_build_legacy_asset`.<br>`_build_legacy_asset` injects `$schema` and strips enriched-only fields so legacy payloads stay lean.<br>`AssetAssembler._normalize_0_7_3` prunes provenance, modulations, and extra parameters per spec. |
-| `normalization-enriched-schema-v0.3.5a` | Divergent | `AssetAssembler._build_enriched_asset` emits `$schema` and provenance but `_build_asset_provenance` lacks `endpoint` and `input_parameters` keys.<br>`GeneratorAgent.propose` augments provenance with agent metadata yet omits endpoint/input_parameters for 0.7.4+.<br>`tests/test_generator.py` validates trace IDs but never asserts the missing provenance fields, confirming the gap. |
-| `error-handling-retry-v0.3.5a` | Present | `ExternalGenerator.generate` retries while `ExternalRequestError.retryable` is `True`, using exponential backoff.<br>`_classify_http_error` marks `>=500` responses retryable and 4xx (auth) as terminal.<br>`tests/test_external_generator.py` covers both retrying (rate limit) and no-retry (auth error) scenarios. |
-| `structured-logging-v0.3.5a` | Divergent | Logging still routes through `log_external_generation` instead of the spec's `log_event` API.<br>`record_run` emits structured entries (including `schema_binding`/`endpoint`) but relies on the legacy helper rather than the standardized logger.<br>`labs/logging.py` lacks the spec-defined `log_event` surface. |
-| `mcp-validation-flow-v0.3.5a` | Missing | `labs/cli.py` never imports or calls `invoke_mcp`, relying solely on `CriticAgent` for validation.<br>`_build_validator_optional` wraps `build_validator_from_env` but doesn't expose CLI `--strict/--relaxed` choices to an MCP invocation primitive.<br>No `tests/test_cli.py` exists to assert strict vs relaxed CLI flows. |
-| `mcp-version-aware-validator-v0.3.5a` | Present | `_resolve_schema_path` extracts version strings with `re.search` and probes `meta/schemas/<version>/<filename>`.<br>If the versioned file is absent it falls back to an unversioned candidate before failing.<br>`tests/test_mcp_validator.py` locks in the expected 0.7.3/0.7.4 path resolution. |
+| `env-preload-v0.3.5a` | Present | `labs/cli.py`: `load_dotenv`, `GEMINI_MODEL`, `GEMINI_API_KEY`, `LABS_FAIL_FAST`<br>`requirements.txt`: `python-dotenv` |
+| `external-live-toggle-v0.3.5a` | Present | `labs/cli.py`: `LABS_EXTERNAL_LIVE`<br>`.env.example`: `LABS_EXTERNAL_LIVE` |
+| `mcp-schema-pull-v0.3.5a` | Divergent | `labs/generator/external.py`: `get_schema("synesthetic-asset")`<br>Rule path `labs/generator.py` is incorrect. |
+| `gemini-schema-binding-v0.3.5a` | Present | `labs/generator/external.py`: `responseSchema`, `$ref`, `schema_binding`<br>`tests/test_external_generator.py`: asserts `schema_binding` |
+| `gemini-request-structure-v0.3.5a` | Present | `labs/generator/external.py`: `contents`, `parts`, `text`, `responseMimeType` |
+| `gemini-response-parse-v0.3.5a` | Present | `labs/generator/external.py`: `candidates[0].content.parts[0].text`, `json.loads` |
+| `normalization-schema-0.7.3-v0.3.5a` | Divergent | `labs/generator.py` calls `AssetAssembler._normalize_0_7_3`. Implementation is not directly in `labs/generator.py`.<br>`tests/test_generator.py`: `test_generator_propose_legacy_schema` |
+| `normalization-enriched-schema-v0.3.5a`| Divergent | `labs/generator.py` calls `AssetAssembler._normalize_0_7_4`. Provenance logic is in `labs/generator/external.py`.<br>`tests/test_generator.py`: `test_generator_propose_writes_log` |
+| `error-handling-retry-v0.3.5a` | Present | `labs/generator/external.py`: retry loop and `_classify_http_error`<br>`tests/test_external_generator.py`: `test_rate_limited_retries` |
+| `structured-logging-v0.3.5a` | Present | `labs/logging.py`: `log_jsonl`<br>`labs/generator/external.py`: `log_external_generation` |
+| `mcp-validation-flow-v0.3.5a` | Divergent | `labs/cli.py`: Has strict/relaxed flags, but no `invoke_mcp`.<br>`tests/test_cli.py`: Missing. |
+| `mcp-version-aware-validator-v0.3.5a`| Missing | `labs/mcp/validate.py`: `_resolve_schema_path` correctly implements version resolution.<br>`tests/test_mcp_validate.py`: Missing. |
 
-## Top gaps & fixes
+## Top Gaps & Fixes
 
-1. **Wire CLI throughput to MCP validation contracts:** Introduce `invoke_mcp` plumbing in `labs/cli.py` (with strict/relaxed handling) and backfill `tests/test_cli.py` to exercise the modes.
-2. **Enrich provenance for 0.7.4+ assets:** Update `AssetAssembler`/`GeneratorAgent` to include endpoint and input parameter details so enriched provenance meets the spec.
-3. **Upgrade structured logging pipeline:** Replace `log_external_generation` with the spec’s `log_event` contract and ensure external runs emit endpoint/taxonomy metadata consistently across engines.
+1.  **Divergent File Paths in Rules:** Several rules point to `labs/generator.py` for logic that is implemented in `labs/generator/external.py` or `labs/generator/assembler.py`.
+    *   **Fix:** Update the `verify.path` in `meta/prompts/audit.json` to reflect the correct file paths.
+2.  **Missing Test Files:** The tests for the CLI and MCP validator are missing, leaving those components without full test coverage against the spec.
+    *   **Fix:** Create `tests/test_cli.py` and `tests/test_mcp_validate.py` with tests that cover the requirements in the audit file.
 
 ## Recommendations
 
-* Align external logging with the spec by replacing `log_external_generation` calls with `log_event` (or upgrading the helper) and ensure endpoint/taxonomy metadata are consistently emitted.
-* Finish the CLI-to-MCP integration so operators can rely on `--strict/--relaxed` while still calling a concrete `invoke_mcp` implementation before persistence.
-* Expand provenance builders for enriched schemas to capture engine, endpoint, trace_id, and structured `input_parameters`, then extend tests to pin the contract.
+1.  **Update Audit Prompt:** Correct the file paths in `meta/prompts/audit.json` to ensure future audits are accurate.
+2.  **Add Missing Tests:** Implement the missing tests to improve test coverage and ensure the MCP validation flow and version-aware validator are working as expected.
