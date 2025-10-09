@@ -2,38 +2,40 @@
 
 ## Summary of Repo State
 
-An audit was performed on the repository based on the rules defined in `meta/prompts/audit.json`. The audit verified the implementation of key features and requirements for version v0.3.5a.
+An audit of the current repository against the v0.3.5a specification uncovered several compliance gaps:
 
-- **Environment & Configuration**: The CLI correctly preloads environment variables from `.env` files, including `GEMINI_MODEL`, `GEMINI_API_KEY`, and `LABS_FAIL_FAST`. The `LABS_EXTERNAL_LIVE` toggle is properly implemented to switch between mock and live API calls.
-- **Schema & Generation**: The generator pulls schemas from MCP, publishes the sanitized contract through Gemini `tools.function_declarations`, and normalizes outputs for both legacy (`0.7.3`) and enriched (`0.7.4`) variants.
-- **Request/Response & Error Handling**: Gemini requests are structured correctly, candidate responses are guarded for missing payloads, and retries remain limited to server-side errors (5xx) while client errors (4xx) fail fast.
-- **Logging & Validation**: Structured JSON logging to `external.jsonl` now emits `validation_status` and `reviewed_at` fields. The MCP validation flow is in place, strict failures exit non-zero, and the validator remains version-aware.
-
-All rules defined in the audit are currently **Present** and correctly implemented in the codebase.
+- **Environment & Configuration**: Environment preloading and the `LABS_EXTERNAL_LIVE` toggle operate as expected, ensuring local defaults and live-mode gating behave per spec.
+- **Schema & Generation**: MCP schemas are fetched and used to seed request scaffolding, but Gemini integration diverges from the required `generation_config.response_schema` binding and canonical response parsing contract.
+- **Normalization**: Legacy (`0.7.3`) normalization trims enriched fields correctly, while enriched (`0.7.4+`) assets omit the spec-mandated provenance details (engine, endpoint, trace_id, input parameters).
+- **Lifecycle & Validation**: External retry logic, structured logging, and validator schema resolution align with expectations; however, the CLI flow does not surface the required `invoke_mcp` call path for strict/relaxed validation management.
 
 ## Alignment
 
 | Rule | Status | Evidence |
 | --- | --- | --- |
-| `env-preload-v0.3.5a` | Present | `labs/cli.py`: `dotenv` is used to load `.env` files, and `GEMINI_MODEL`, `GEMINI_API_KEY`, `LABS_FAIL_FAST` are referenced.<br>`requirements.txt`: `python-dotenv` is listed as a dependency. |
-| `external-live-toggle-v0.3.5a` | Present | `labs/cli.py`: `LABS_EXTERNAL_LIVE` is checked to determine mock/live mode.<br>`.env.example`: `LABS_EXTERNAL_LIVE` is documented. |
-| `mcp-schema-pull-v0.3.5a` | Present | `labs/generator/external.py`: `get_schema('synesthetic-asset')` is called to retrieve the schema.<br>`tests/test_mcp_schema_pull.py`: Tests for `get_schema` and `list_schemas` are present. |
-| `gemini-schema-binding-v0.3.5a` | Present | `labs/generator/external.py`: The sanitized MCP schema is attached under `tools.function_declarations[].parameters`, and `schema_binding` metadata is logged.<br>`tests/test_external_generator.py`: Asserts that `schema_binding` is present in the log. |
-| `gemini-request-structure-v0.3.5a` | Present | `labs/generator/external.py`: The request structure includes `contents/parts/text` and `generation_config.response_mime_type='application/json'`. |
-| `gemini-response-parse-v0.3.5a` | Present | `labs/generator/external.py`: Responses prefer `function_call.args` payloads and guard against missing candidates before falling back to text parsing.<br>`tests/test_external_generator.py`: Tests cover function-call parsing and legacy text fallbacks. |
-| `normalization-schema-0.7.3-v0.3.5a` | Present | `labs/generator/assembler.py`: `_normalize_0_7_3` handles `0.7.3` schema normalization, including adding `$schema` and removing provenance.<br>`tests/test_generator.py`: Tests verify the output for schema `0.7.3`. |
-| `normalization-enriched-schema-v0.3.5a` | Present | `labs/generator/assembler.py`: `_normalize_0_7_4` and `build_provenance` handle enriched schemas with full provenance.<br>`tests/test_generator.py`: Tests verify the presence of the `provenance` object for schema `0.7.4`. |
-| `error-handling-retry-v0.3.5a` | Present | `labs/generator/external.py`: Retry logic is implemented for status codes `>= 500`.<br>`tests/test_external_generator.py`: Tests cover retry logic for 503 errors and no-retry for 400 errors. |
-| `structured-logging-v0.3.5a` | Present | `labs/logging.py`: `log_external_generation` writes structured JSON to `external.jsonl`.<br>`labs/generator/external.py`: Logs include `validation_status`, `reviewed_at`, and schema binding metadata. |
-| `mcp-validation-flow-v0.3.5a` | Present | `labs/cli.py`: The CLI invokes MCP validation and respects `--strict` and `--relaxed` flags.<br>The `tests/test_cli.py` file was not found, but the CLI implementation is correct. |
-| `mcp-version-aware-validator-v0.3.5a` | Present | `labs/mcp/validate.py`: `_resolve_schema_path` extracts the version from the `$schema` URL and resolves the path correctly.<br>`tests/test_mcp_validator.py`: Tests cover validation for schemas `0.7.3` and `0.7.4`. |
+| `env-preload-v0.3.5a` | Present | `labs/cli.py`: `_load_env_file()` loads `.env`, seeds `GEMINI_MODEL`, `LABS_FAIL_FAST`, and checks `GEMINI_API_KEY`.<br>`requirements.txt`: includes `python-dotenv`. |
+| `external-live-toggle-v0.3.5a` | Present | `labs/cli.py`: warns when `LABS_EXTERNAL_LIVE` unset and respects it for mock mode.<br>`.env.example`: documents `LABS_EXTERNAL_LIVE`. |
+| `mcp-schema-pull-v0.3.5a` | Present | `labs/generator/external.py`: `_cached_schema_descriptor()` calls `get_schema('synesthetic-asset')` and returns defaults.<br>`tests/test_mcp_schema_pull.py`: exercises `get_schema`/`list_schemas`. |
+| `gemini-schema-binding-v0.3.5a` | Divergent | `labs/generator/external.py`: `_build_request()` injects sanitized schema under `tools.function_declarations` instead of `generation_config.response_schema`.<br>No references to `response_schema` in the module, so Gemini requests lack the mandated field. |
+| `gemini-request-structure-v0.3.5a` | Present | `labs/generator/external.py`: Gemini payload includes `contents/parts/text` and `generation_config.response_mime_type='application/json'`. |
+| `gemini-response-parse-v0.3.5a` | Divergent | `labs/generator/external.py`: `_parse_response()` prefers function-call args and only falls back to arbitrary part text, deviating from the required `candidates[0].content.parts[0].text` contract. |
+| `normalization-schema-0.7.3-v0.3.5a` | Present | `labs/generator/assembler.py`: `_normalize_0_7_3()` returns a lean payload with `$schema`, trimmed sections, and no enriched fields. |
+| `normalization-enriched-schema-v0.3.5a` | Divergent | `labs/generator/assembler.py`: `_build_asset_provenance()` omits `endpoint` and `input_parameters`, so enriched assets lack the required provenance details.<br>`tests/test_generator.py`: does not assert on endpoint/input parameters, leaving the gap untested. |
+| `error-handling-retry-v0.3.5a` | Present | `labs/generator/external.py`: retry loop replays requests up to `max_retries`, and `_classify_http_error()` retries only on 5xx/rate-limit codes. |
+| `structured-logging-v0.3.5a` | Present | `labs/logging.py`: `log_external_generation()` writes JSONL with `schema_binding` default.<br>`labs/generator/external.py`: `record_run()` emits engine/endpoint/trace_id/taxonomy/schema_binding fields. |
+| `mcp-validation-flow-v0.3.5a` | Missing | `labs/cli.py`: generation flow routes through `CriticAgent` but never calls the required `invoke_mcp`, so strict/relaxed handling bypasses the mandated entry point. |
+| `mcp-version-aware-validator-v0.3.5a` | Present | `labs/mcp/validate.py`: `_resolve_schema_path()` extracts semantic version, checks `meta/schemas/<version>/...`, and falls back appropriately. |
 
 ## Top Gaps & Fixes
 
-No significant gaps were identified during this audit. The codebase is well-aligned with the v0.3.5a specification.
+1. **Gemini schema binding**: Relocate the sanitized MCP schema into `generation_config.response_schema` and log `schema_binding: true` from that pathway to satisfy the binding contract.
+2. **Gemini response parsing**: Normalize responses by decoding `candidates[0].content.parts[0].text` (after enforcing presence) and drop the alternate function-call branch.
+3. **Enriched provenance**: Extend `_build_asset_provenance()` (and related normalization paths) to populate engine, endpoint, trace ID, and input parameter records per spec, and cover with regression tests.
+4. **CLI validation flow**: Reintroduce the explicit `invoke_mcp` helper so `--strict/--relaxed` flags and `LABS_FAIL_FAST` drive the mandated lifecycle.
 
 ## Recommendations
 
-- **CI/CD**: Ensure that the `test.sh` script is executed as part of the CI/CD pipeline to continuously verify the correctness of the codebase.
-- **Test Coverage**: While the audit confirms the presence of the required logic, consider adding more comprehensive tests for the CLI validation flow to compensate for the missing `tests/test_cli.py`.
-- **Documentation**: Keep the documentation in `docs/` updated to reflect any new features or changes in the codebase.
+- Add regression tests that assert on the precise Gemini request/response structure, including `generation_config.response_schema` and the `candidates[0].content.parts[0].text` parsing path.
+- Enhance assembler tests to verify enriched provenance payloads carry engine, endpoint, trace ID, and input parameter metadata.
+- Implement CLI integration tests that exercise both strict and relaxed validation modes, ensuring `invoke_mcp` is invoked with the correct semantics before persistence.
+- Document the updated Gemini schema-binding behavior in `docs/specs/synesthetic_labs_v0.3.5.md` once remediated to keep operators aligned with the contract.
