@@ -149,6 +149,137 @@ def _build_schema_skeleton(schema: Dict[str, Any]) -> JsonDict:
     return skeleton
 
 
+_GEMINI_ALLOWED_SCHEMA_KEYS = {"type", "format", "description", "properties", "items", "required", "enum"}
+
+
+def _sanitize_schema_for_gemini(spec: Dict[str, Any]) -> JsonDict:
+    def _resolve_type(value: Any, has_properties: bool, has_items: bool) -> Optional[str]:
+        resolved: Optional[str] = None
+        if isinstance(value, str):
+            resolved = value.lower()
+        elif isinstance(value, list):
+            for candidate in value:
+                if isinstance(candidate, str):
+                    lowered = candidate.lower()
+                    if lowered != "null":
+                        resolved = lowered
+                        break
+        if not resolved:
+            if has_properties:
+                resolved = "object"
+            elif has_items:
+                resolved = "array"
+        return resolved
+
+    def _sanitize(node: Any) -> JsonDict:
+        if not isinstance(node, dict):
+            return {"type": "object"}
+
+        sanitized: JsonDict = {}
+
+        description = node.get("description")
+        if isinstance(description, str):
+            sanitized["description"] = description
+
+        format_value = node.get("format")
+        if isinstance(format_value, str):
+            sanitized["format"] = format_value
+
+        properties = node.get("properties")
+        sanitized_properties: Optional[JsonDict] = None
+        if isinstance(properties, dict):
+            sanitized_properties = {}
+            for key, value in properties.items():
+                if not isinstance(key, str):
+                    continue
+                if key.startswith("$"):
+                    continue
+                if not isinstance(value, dict):
+                    continue
+                child = _sanitize(value)
+                if child:
+                    sanitized_properties[key] = child
+            if sanitized_properties:
+                sanitized["properties"] = sanitized_properties
+
+        items = node.get("items")
+        sanitized_items: Optional[Any] = None
+        if isinstance(items, dict):
+            sanitized_items = _sanitize(items)
+        elif isinstance(items, list):
+            sanitized_list = []
+            for entry in items:
+                if isinstance(entry, dict):
+                    child = _sanitize(entry)
+                    if child:
+                        sanitized_list.append(child)
+            if sanitized_list:
+                sanitized_items = sanitized_list
+        if sanitized_items:
+            sanitized["items"] = sanitized_items
+
+        required = node.get("required")
+        if isinstance(required, list):
+            valid_required: List[str] = []
+            for item in required:
+                if not isinstance(item, str):
+                    continue
+                if item.startswith("$"):
+                    continue
+                if sanitized_properties and item not in sanitized_properties:
+                    continue
+                valid_required.append(item)
+            req = valid_required
+            if req:
+                sanitized["required"] = req
+
+        enum_values = node.get("enum")
+        if isinstance(enum_values, list):
+            allowed_enum = []
+            for entry in enum_values:
+                if isinstance(entry, (str, int, float)) or entry is None:
+                    allowed_enum.append(entry)
+            if allowed_enum:
+                sanitized["enum"] = allowed_enum
+
+        resolved_type = _resolve_type(node.get("type"), "properties" in sanitized, "items" in sanitized)
+        if resolved_type:
+            sanitized["type"] = resolved_type
+
+        if not sanitized:
+            return {"type": "object"}
+
+        # Ensure only allowed keys are present
+        for key in list(sanitized.keys()):
+            if key not in _GEMINI_ALLOWED_SCHEMA_KEYS:
+                sanitized.pop(key, None)
+
+        if "type" not in sanitized:
+            sanitized["type"] = "object"
+
+        node_type = sanitized.get("type")
+        if node_type == "array" and "items" not in sanitized:
+            sanitized["items"] = {"type": "object"}
+        if node_type == "object":
+            if "properties" not in sanitized:
+                sanitized["properties"] = {}
+            if "required" in sanitized:
+                required_fields = [
+                    field for field in sanitized.get("required", []) if field in sanitized["properties"]
+                ]
+                if required_fields:
+                    sanitized["required"] = required_fields
+                else:
+                    sanitized.pop("required", None)
+
+        return sanitized
+
+    sanitized_root = _sanitize(spec)
+    if "type" not in sanitized_root:
+        sanitized_root["type"] = "object"
+    return sanitized_root
+
+
 def _strict_mode_enabled() -> bool:
     raw = os.getenv("LABS_FAIL_FAST")
     if raw is None:
@@ -1493,14 +1624,16 @@ class GeminiGenerator(ExternalGenerator):
         target_version = schema_version or parameters.get("schema_version")
         schema_id: Optional[str] = None
         resolved_version: Optional[str] = target_version
+        schema_spec: Optional[Dict[str, Any]] = None
 
         try:
             if target_version:
-                descriptor_id, descriptor_version, _ = _schema_descriptor(target_version)
+                descriptor_id, descriptor_version, descriptor_spec = _schema_descriptor(target_version)
             else:
-                descriptor_id, descriptor_version, _ = _schema_descriptor(None)
+                descriptor_id, descriptor_version, descriptor_spec = _schema_descriptor(None)
             schema_id = descriptor_id
             resolved_version = descriptor_version
+            schema_spec = descriptor_spec
         except Exception as exc:  # pragma: no cover - defensive
             self._logger.warning("Gemini schema binding unavailable: %s", exc)
 
@@ -1531,11 +1664,23 @@ class GeminiGenerator(ExternalGenerator):
             generation_config["seed"] = seed
 
         bound = False
-        if schema_id:
-            generation_config["response_schema"] = {"schema": {"$ref": schema_id}}
+        if schema_id and schema_spec:
+            sanitized_schema = _sanitize_schema_for_gemini(schema_spec)
+            payload["tools"] = [
+                {
+                    "function_declarations": [
+                        {
+                            "name": "output",
+                            "description": "Synesthetic asset JSON response",
+                            "parameters": sanitized_schema,
+                        }
+                    ]
+                }
+            ]
+            payload["tool_config"] = {"function_calling_config": {"mode": "AUTO"}}
             bound = True
             self._logger.debug(
-                "Gemini request schema bound to %s (version=%s)",
+                "Gemini request schema bound to %s (version=%s) via function declaration",
                 schema_id,
                 resolved_version,
             )
@@ -1660,10 +1805,44 @@ class GeminiGenerator(ExternalGenerator):
             candidate = response["candidates"][0]
             content = candidate["content"]
             parts = content["parts"]
-            text = parts[0]["text"]
-            self._logger.debug("Gemini extracted text: %s", text[:500])
+            gemini_data: Any = None
 
-            gemini_data = json.loads(text)
+            function_call: Optional[Dict[str, Any]] = None
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                if "function_call" in part and isinstance(part["function_call"], dict):
+                    function_call = part["function_call"]
+                    break
+                if "functionCall" in part and isinstance(part["functionCall"], dict):
+                    function_call = part["functionCall"]
+                    break
+
+            if function_call:
+                args = function_call.get("args")
+                if isinstance(args, dict):
+                    gemini_data = args
+                elif isinstance(args, str):
+                    try:
+                        gemini_data = json.loads(args)
+                    except json.JSONDecodeError:
+                        self._logger.warning("Gemini function_call args not valid JSON: %s", args[:200])
+                        gemini_data = {}
+                self._logger.debug(
+                    "Gemini extracted function_call '%s' with keys: %s",
+                    function_call.get("name"),
+                    sorted(gemini_data.keys()) if isinstance(gemini_data, dict) else type(gemini_data),
+                )
+            else:
+                text_payload: Optional[str] = None
+                for part in parts:
+                    if isinstance(part, dict) and isinstance(part.get("text"), str):
+                        text_payload = part["text"]
+                        break
+                if text_payload:
+                    self._logger.debug("Gemini extracted text: %s", text_payload[:500])
+                    gemini_data = json.loads(text_payload)
+
             if isinstance(gemini_data, list) and gemini_data:
                 gemini_data = gemini_data[0]
 

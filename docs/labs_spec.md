@@ -123,13 +123,13 @@ When using the **Gemini** engine, Labs must **bind the live MCP schema** to the 
 
 2. **Request Construction**
 
-   The Gemini request **must include** a `response_schema` entry in `generation_config`.
-   Because Gemini's structured output API only accepts a **subset** of OpenAPI Schema
-   keywords, the MCP payload must be sanitized before sending. Labs keeps only the
-   fields Gemini documents (`type`, `format`, `description`, `properties`, `items`,
-   `required`) and recursively drops everything else (`$schema`, `$id`, `title`,
-   `definitions`, `additionalProperties`, etc.). Any object without an explicit type is
-   defaulted to `"object"` so Gemini receives a valid schema.
+   The Gemini 2.0 API requires structured output schemas to be declared via
+   `tools.function_declarations[].parameters`. Labs sanitizes the MCP schema before
+   embedding it: the sanitizer keeps only the Gemini-supported fields (`type`,
+   `format`, `description`, `properties`, `items`, `required`, `enum`) and recursively
+   drops everything else (`$schema`, `$id`, `title`, `definitions`,
+   `additionalProperties`, etc.). Any object without an explicit type defaults to
+   `"object"` so Gemini receives a valid contract.
 
    ```json
    {
@@ -137,25 +137,41 @@ When using the **Gemini** engine, Labs must **bind the live MCP schema** to the 
        {"role": "user", "parts": [{"text": "<prompt>"}]}
      ],
      "generation_config": {
-       "response_mime_type": "application/json",
-       "response_schema": {
-         "type": "object",
-         "properties": {
-           "name": {"type": "string"},
-           "shader": {"type": "object"},
-           "tone": {"type": "object"},
-           "haptic": {"type": "object"},
-           "control": {"type": "object"},
-           "modulations": {
-             "type": "array",
-             "items": {"type": "object"}
-           },
-           "rule_bundle": {"type": "object"},
-           "meta_info": {"type": "object"},
-           "provenance": {"type": "object"}
-         }
-       }
+       "response_mime_type": "application/json"
      },
+     "tools": [
+       {
+         "function_declarations": [
+           {
+             "name": "output",
+             "description": "Synesthetic asset JSON response",
+             "parameters": {
+               "type": "object",
+               "properties": {
+                 "name": {"type": "string"},
+                 "shader": {"type": "object"},
+                 "tone": {"type": "object"},
+                 "haptic": {"type": "object"},
+                 "control": {"type": "object"},
+                 "meta_info": {"type": "object"},
+                 "modulations": {
+                   "type": "array",
+                   "items": {"type": "object"}
+                 },
+                 "rule_bundle": {"type": "object"},
+                 "provenance": {"type": "object"}
+               },
+               "required": ["name", "shader", "tone", "haptic", "control", "meta_info"]
+             }
+           }
+         ]
+       }
+    ],
+    "tool_config": {
+      "function_calling_config": {
+        "mode": "AUTO"
+      }
+    },
      "model": "gemini-2.0-flash"
    }
    ```
@@ -197,14 +213,19 @@ def _build_gemini_request(prompt: str, schema_version="0.7.3"):
     schema_resp = get_schema("synesthetic-asset")
     if not schema_resp.get("ok"):
         raise RuntimeError("MCP schema unavailable")
-  schema = sanitize_for_gemini(schema)
+    schema = sanitize_for_gemini(schema_resp["schema"])
     return {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-    "generation_config": {
-      "response_mime_type": "application/json",
-      "response_schema": schema
-    },
-        "model": "gemini-2.0-flash"
+        "generation_config": {"response_mime_type": "application/json"},
+        "tools": [{
+            "function_declarations": [{
+                "name": "output",
+                "description": "Synesthetic asset JSON response",
+                "parameters": schema,
+            }]
+        }],
+        "tool_config": {"function_calling_config": {"mode": "AUTO"}},
+        "model": "gemini-2.0-flash",
     }
 ```
 
@@ -338,6 +359,6 @@ def _normalize_asset(asset, schema_version="0.7.3"):
 ### ✅ Summary
 
 v0.3.5 formalizes MCP schema pull **and** schema-bound Gemini generation.
-All Gemini requests must embed the `$id` of the retrieved schema in `generation_config.response_schema`.
+All Gemini requests must embed the sanitized MCP schema in `tools.function_declarations[0].parameters` and log the `$id` within the `schema_binding` metadata.
 Normalization is reduced to metadata stamping; structural compliance is guaranteed at generation.
 Strict MCP validation is expected to pass without manual correction.
