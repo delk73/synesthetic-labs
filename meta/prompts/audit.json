@@ -37,11 +37,11 @@
     {
       "id": "gemini-schema-binding-v0.3.5a",
       "section": "5.1 · Schema-Bound Generation",
-      "requirement": "Gemini requests MUST include generation_config.response_schema referencing the live MCP schema $id, and log 'schema_binding': true in external.jsonl.",
-      "verify": [
-        {"path": "labs/generator/external.py", "match": ["generation_config", "response_schema", "$ref", "schema_binding", "external.jsonl"]},
-        {"path": "tests/test_external_generator.py", "match": ["generation_config", "response_schema", "assert", "schema_binding"]}
-      ]
+        "requirement": "Gemini requests MUST embed the sanitized MCP schema document (no $schema/$id meta, snake_case keywords) under generation_config.response_schema and log 'schema_binding': true in external.jsonl.",
+        "verify": [
+          {"path": "labs/generator/external.py", "match": ["generation_config", "response_schema", "_sanitize_schema_for_gemini", "schema_binding", "external.jsonl"]},
+          {"path": "tests/test_external_generator.py", "match": ["generation_config", "response_schema", "assert", "schema_binding"]}
+        ]
     },
     {
       "id": "gemini-request-structure-v0.3.5a",

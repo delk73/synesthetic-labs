@@ -123,7 +123,13 @@ When using the **Gemini** engine, Labs must **bind the live MCP schema** to the 
 
 2. **Request Construction**
 
-   The Gemini request **must include** a `response_schema` entry in `generation_config`:
+   The Gemini request **must include** a `response_schema` entry in `generation_config`.
+   Because Gemini's structured output API only accepts a **subset** of OpenAPI Schema
+   keywords, the MCP payload must be sanitized before sending. Labs keeps only the
+   fields Gemini documents (`type`, `format`, `description`, `properties`, `items`,
+   `required`) and recursively drops everything else (`$schema`, `$id`, `title`,
+   `definitions`, `additionalProperties`, etc.). Any object without an explicit type is
+   defaulted to `"object"` so Gemini receives a valid schema.
 
    ```json
    {
@@ -132,14 +138,31 @@ When using the **Gemini** engine, Labs must **bind the live MCP schema** to the 
      ],
      "generation_config": {
        "response_mime_type": "application/json",
-       "response_schema": {"schema": {"$ref": "<schema_url>"}}
+       "response_schema": {
+         "type": "object",
+         "properties": {
+           "name": {"type": "string"},
+           "shader": {"type": "object"},
+           "tone": {"type": "object"},
+           "haptic": {"type": "object"},
+           "control": {"type": "object"},
+           "modulations": {
+             "type": "array",
+             "items": {"type": "object"}
+           },
+           "rule_bundle": {"type": "object"},
+           "meta_info": {"type": "object"},
+           "provenance": {"type": "object"}
+         }
+       }
      },
      "model": "gemini-2.0-flash"
    }
    ```
 
-   `<schema_url>` must be the `$id` of the live MCP schema, e.g.
-   `https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json`.
+   The schema content is sourced from the MCP service (e.g.
+   `https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json`) and then
+   sanitized using this whitelist before being sent to Gemini.
 
 3. **Response Parsing**
 
@@ -174,13 +197,13 @@ def _build_gemini_request(prompt: str, schema_version="0.7.3"):
     schema_resp = get_schema("synesthetic-asset")
     if not schema_resp.get("ok"):
         raise RuntimeError("MCP schema unavailable")
-    schema = schema_resp["schema"]
+  schema = sanitize_for_gemini(schema)
     return {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
     "generation_config": {
       "response_mime_type": "application/json",
-      "response_schema": {"schema": {"$ref": schema.get("$id")}}
-        },
+      "response_schema": schema
+    },
         "model": "gemini-2.0-flash"
     }
 ```
