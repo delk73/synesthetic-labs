@@ -1,6 +1,6 @@
 {
   "task": "Implement Gemini schema binding (v0.3.5a §5.1)",
-  "objective": "Inject MCP schema $id into Gemini generationConfig.responseSchema and mark schema_binding in logs.",
+  "objective": "Inject MCP schema $id into Gemini generation_config.response_schema and mark schema_binding in logs.",
   "changes": [
     {
       "id": "gemini_request_schema_binding",
@@ -10,7 +10,7 @@
           "file": "labs/generator/external.py",
           "pattern": "def _build_request",
           "multiple": false,
-          "replacement": "from mcp.core import get_schema\n\ndef _build_request(self, prompt: str, schema_version: str = '0.7.3'):\n    schema_resp = get_schema('synesthetic-asset')\n    if not schema_resp.get('ok'):\n        self.logger.warning('MCP schema unavailable; proceeding without schema binding')\n        schema_id = None\n    else:\n        schema_id = schema_resp['schema'].get('$id')\n\n    req = {\n        'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],\n        'generationConfig': {\n            'responseMimeType': 'application/json'\n        },\n        'model': self.model\n    }\n    if schema_id:\n        req['generationConfig']['responseSchema'] = {'$ref': schema_id}\n        self.logger.debug(f'Gemini request schema bound to {schema_id}')\n    return req"
+    "replacement": "from mcp.core import get_schema\n\ndef _build_request(self, prompt: str, schema_version: str = '0.7.3'):\n    schema_resp = get_schema('synesthetic-asset')\n    if not schema_resp.get('ok'):\n        self.logger.warning('MCP schema unavailable; proceeding without schema binding')\n        schema_id = None\n    else:\n        schema_id = schema_resp['schema'].get('$id')\n\n    req = {\n        'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],\n        'generation_config': {\n            'response_mime_type': 'application/json'\n        },\n        'model': self.model\n    }\n    if schema_id:\n        req['generation_config']['response_schema'] = {'schema': {'$ref': schema_id}}\n        self.logger.debug(f'Gemini request schema bound to {schema_id}')\n    return req"
         }
       ]
     },

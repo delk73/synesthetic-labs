@@ -37,18 +37,18 @@
     {
       "id": "gemini-schema-binding-v0.3.5a",
       "section": "5.1 · Schema-Bound Generation",
-      "requirement": "Gemini requests MUST include generationConfig.responseSchema referencing the live MCP schema $id, and log 'schema_binding': true in external.jsonl.",
+      "requirement": "Gemini requests MUST include generation_config.response_schema referencing the live MCP schema $id, and log 'schema_binding': true in external.jsonl.",
       "verify": [
-        {"path": "labs/generator/external.py", "match": ["responseSchema", "$ref", "schema_id", "schema_binding", "external.jsonl"]},
-        {"path": "tests/test_external_generator.py", "match": ["responseSchema", "assert", "schema_binding", "ok"]}
+        {"path": "labs/generator/external.py", "match": ["generation_config", "response_schema", "$ref", "schema_binding", "external.jsonl"]},
+        {"path": "tests/test_external_generator.py", "match": ["generation_config", "response_schema", "assert", "schema_binding"]}
       ]
     },
     {
       "id": "gemini-request-structure-v0.3.5a",
       "section": "5 · Request / Response",
-      "requirement": "Gemini request MUST include contents/parts/text and generationConfig.responseMimeType='application/json'.",
+      "requirement": "Gemini request MUST include contents/parts/text and generation_config.response_mime_type='application/json'.",
       "verify": [
-        {"path": "labs/generator/external.py", "match": ["contents", "parts", "text", "generationConfig", "responseMimeType", "application/json"]}
+        {"path": "labs/generator/external.py", "match": ["contents", "parts", "text", "generation_config", "response_mime_type", "application/json"]}
       ]
     },
     {

@@ -95,7 +95,7 @@ The loaded schema drives all normalization defaults, validation, and `$schema` U
   "contents": [
     {"role": "user", "parts": [{"text": "<prompt>"}]}
   ],
-  "generationConfig": {"responseMimeType": "application/json"}
+  "generation_config": {"response_mime_type": "application/json"}
 }
 ```
 
@@ -123,16 +123,16 @@ When using the **Gemini** engine, Labs must **bind the live MCP schema** to the 
 
 2. **Request Construction**
 
-   The Gemini request **must include** a `responseSchema` entry in `generationConfig`:
+   The Gemini request **must include** a `response_schema` entry in `generation_config`:
 
    ```json
    {
      "contents": [
        {"role": "user", "parts": [{"text": "<prompt>"}]}
      ],
-     "generationConfig": {
-       "responseMimeType": "application/json",
-       "responseSchema": {"$ref": "<schema_url>"}
+     "generation_config": {
+       "response_mime_type": "application/json",
+       "response_schema": {"schema": {"$ref": "<schema_url>"}}
      },
      "model": "gemini-2.0-flash"
    }
@@ -177,9 +177,9 @@ def _build_gemini_request(prompt: str, schema_version="0.7.3"):
     schema = schema_resp["schema"]
     return {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseSchema": {"$ref": schema.get("$id")}
+    "generation_config": {
+      "response_mime_type": "application/json",
+      "response_schema": {"schema": {"$ref": schema.get("$id")}}
         },
         "model": "gemini-2.0-flash"
     }
@@ -315,6 +315,6 @@ def _normalize_asset(asset, schema_version="0.7.3"):
 ### ✅ Summary
 
 v0.3.5 formalizes MCP schema pull **and** schema-bound Gemini generation.
-All Gemini requests must embed the `$id` of the retrieved schema in `generationConfig.responseSchema`.
+All Gemini requests must embed the `$id` of the retrieved schema in `generation_config.response_schema`.
 Normalization is reduced to metadata stamping; structural compliance is guaranteed at generation.
 Strict MCP validation is expected to pass without manual correction.

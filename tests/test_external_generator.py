@@ -156,11 +156,11 @@ def test_gemini_build_request_injects_response_mime_type() -> None:
     payload = generator._build_request({}, "structured", {})
 
     assert payload["contents"][0]["parts"][0]["text"] == "structured"
-    generation_config = payload["generationConfig"]
-    assert generation_config["responseMimeType"] == "application/json"
-    response_schema = generation_config.get("responseSchema")
+    generation_config = payload["generation_config"]
+    assert generation_config["response_mime_type"] == "application/json"
+    response_schema = generation_config.get("response_schema")
     assert isinstance(response_schema, dict)
-    assert response_schema.get("jsonSchema", {}).get("$ref")
+    assert response_schema.get("schema", {}).get("$ref")
     assert payload["model"] == generator.default_model
 
 
@@ -173,11 +173,11 @@ def test_gemini_build_request_merges_generation_config_parameters() -> None:
         {"temperature": 0.25, "max_tokens": 128, "seed": 42},
     )
 
-    generation_config = payload["generationConfig"]
-    assert generation_config["responseMimeType"] == "application/json"
-    assert generation_config.get("responseSchema", {}).get("jsonSchema", {}).get("$ref")
+    generation_config = payload["generation_config"]
+    assert generation_config["response_mime_type"] == "application/json"
+    assert generation_config.get("response_schema", {}).get("schema", {}).get("$ref")
     assert generation_config["temperature"] == 0.25
-    assert generation_config["maxOutputTokens"] == 128
+    assert generation_config["max_output_tokens"] == 128
     assert generation_config["seed"] == 42
     assert payload["model"] == generator.default_model
 

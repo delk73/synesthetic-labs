@@ -1513,18 +1513,18 @@ class GeminiGenerator(ExternalGenerator):
                     ],
                 }
             ],
-            "generationConfig": {"responseMimeType": "application/json"},
+            "generation_config": {"response_mime_type": "application/json"},
             "model": parameters.get("model") or os.getenv("GEMINI_MODEL", self.default_model),
         }
 
-        generation_config: JsonDict = payload["generationConfig"]
+        generation_config: JsonDict = payload["generation_config"]
         temperature = parameters.get("temperature")
         if isinstance(temperature, Real):
             generation_config["temperature"] = float(temperature)
 
         max_tokens = parameters.get("max_tokens")
         if isinstance(max_tokens, int) and max_tokens > 0:
-            generation_config["maxOutputTokens"] = max_tokens
+            generation_config["max_output_tokens"] = max_tokens
 
         seed = parameters.get("seed")
         if isinstance(seed, int):
@@ -1532,7 +1532,7 @@ class GeminiGenerator(ExternalGenerator):
 
         bound = False
         if schema_id:
-            generation_config["responseSchema"] = {"jsonSchema": {"$ref": schema_id}}
+            generation_config["response_schema"] = {"schema": {"$ref": schema_id}}
             bound = True
             self._logger.debug(
                 "Gemini request schema bound to %s (version=%s)",
