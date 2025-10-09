@@ -32,4 +32,5 @@ def log_external_generation(record: Dict[str, Any], *, path: Optional[str] = Non
 
     payload = dict(record)
     payload.setdefault("timestamp", _dt.datetime.now(tz=_dt.timezone.utc).isoformat())
+    payload.setdefault("schema_binding", False)
     log_jsonl(path or _EXTERNAL_LOG_PATH, payload)

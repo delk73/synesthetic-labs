@@ -80,6 +80,9 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     assert record["schema_version"] == "0.7.4"
     assert record["$schema"] == asset["$schema"]
     assert record["failure"] is None
+    assert record["schema_binding"] is True
+    assert record["schema_id"] == context["schema_id"]
+    assert record["endpoint"] == context["endpoint"]
 
 
 def test_gemini_generator_legacy_schema_keeps_payload_lean() -> None:
@@ -153,7 +156,11 @@ def test_gemini_build_request_injects_response_mime_type() -> None:
     payload = generator._build_request({}, "structured", {})
 
     assert payload["contents"][0]["parts"][0]["text"] == "structured"
-    assert payload["generationConfig"] == {"responseMimeType": "application/json"}
+    generation_config = payload["generationConfig"]
+    assert generation_config["responseMimeType"] == "application/json"
+    response_schema = generation_config.get("responseSchema")
+    assert isinstance(response_schema, dict)
+    assert response_schema.get("jsonSchema", {}).get("$ref")
     assert payload["model"] == generator.default_model
 
 
@@ -168,6 +175,7 @@ def test_gemini_build_request_merges_generation_config_parameters() -> None:
 
     generation_config = payload["generationConfig"]
     assert generation_config["responseMimeType"] == "application/json"
+    assert generation_config.get("responseSchema", {}).get("jsonSchema", {}).get("$ref")
     assert generation_config["temperature"] == 0.25
     assert generation_config["maxOutputTokens"] == 128
     assert generation_config["seed"] == 42
@@ -246,7 +254,7 @@ def test_request_body_size_cap(monkeypatch) -> None:
 
     generator = GeminiGenerator(mock_mode=False, sleeper=lambda _: None, max_retries=1)
 
-    def oversized_request(self, envelope, prompt, parameters):
+    def oversized_request(self, envelope, prompt, parameters, **_):
         return {"payload": "x" * (256 * 1024 + 1)}
 
     monkeypatch.setattr(GeminiGenerator, "_build_request", oversized_request, raising=False)

@@ -240,6 +240,11 @@ class ExternalGenerator:
         self._sleep = sleeper
         self._logger = logging.getLogger(self.__class__.__name__)
         self.schema_version = schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION
+        self._latest_schema_binding: Dict[str, Any] = {
+            "schema_id": None,
+            "schema_version": self.schema_version,
+            "bound": False,
+        }
 
     # Public API -----------------------------------------------------------------
     def generate(
@@ -269,6 +274,13 @@ class ExternalGenerator:
             or os.getenv("LABS_SCHEMA_VERSION", AssetAssembler.DEFAULT_SCHEMA_VERSION)
         )
 
+        parameters.setdefault("schema_version", resolved_schema_version)
+        self._latest_schema_binding = {
+            "schema_id": None,
+            "schema_version": resolved_schema_version,
+            "bound": False,
+        }
+
         attempts: List[JsonDict] = []
         strict_mode = _strict_mode_enabled()
         run_trace_id = trace_id or str(uuid.uuid4())
@@ -279,7 +291,12 @@ class ExternalGenerator:
 
         for attempt in range(1, self.max_retries + 1):
             request_envelope = self._request_envelope(prompt, parameters, run_trace_id)
-            request_payload = self._build_request(request_envelope, prompt, parameters)
+            request_payload = self._build_request(
+                request_envelope,
+                prompt,
+                parameters,
+                schema_version=resolved_schema_version,
+            )
             request_bytes = self._encode_payload(request_payload)
             if len(request_bytes) > MAX_REQUEST_BYTES:
                 final_error = ExternalRequestError(
@@ -293,6 +310,10 @@ class ExternalGenerator:
                 "attempt": attempt,
                 "request": request_payload,
             }
+
+            binding_meta = getattr(self, "_latest_schema_binding", {})
+            if binding_meta:
+                attempt_record["schema_binding"] = dict(binding_meta)
 
             if not self.mock_mode:
                 try:
@@ -368,6 +389,9 @@ class ExternalGenerator:
                     "schema_version": resolved_schema_version,
                     "taxonomy": f"external.{self.engine}",
                 }
+                context["schema_binding"] = bool(binding_meta.get("bound"))
+                context["schema_id"] = binding_meta.get("schema_id")
+                context["schema_binding_version"] = binding_meta.get("schema_version")
                 return asset, context
             except ExternalRequestError as exc:
                 attempts.append(
@@ -446,6 +470,9 @@ class ExternalGenerator:
             "schema_version": context.get("schema_version"),
             "$schema": context.get("asset", {}).get("$schema"),
             "taxonomy": context.get("taxonomy") or f"external.{self.engine}",
+            "schema_binding": context.get("schema_binding", False),
+            "schema_id": context.get("schema_id"),
+            "endpoint": context.get("endpoint"),
         }
 
         failure_payload: Optional[JsonDict]
@@ -509,6 +536,8 @@ class ExternalGenerator:
         envelope: JsonDict,
         prompt: str,
         parameters: JsonDict,
+        *,
+        schema_version: Optional[str] = None,
     ) -> JsonDict:
         return envelope
 
@@ -1453,7 +1482,28 @@ class GeminiGenerator(ExternalGenerator):
             "temperature": None,
         }
 
-    def _build_request(self, envelope: JsonDict, prompt: str, parameters: JsonDict) -> JsonDict:
+    def _build_request(
+        self,
+        envelope: JsonDict,
+        prompt: str,
+        parameters: JsonDict,
+        *,
+        schema_version: Optional[str] = None,
+    ) -> JsonDict:
+        target_version = schema_version or parameters.get("schema_version")
+        schema_id: Optional[str] = None
+        resolved_version: Optional[str] = target_version
+
+        try:
+            if target_version:
+                descriptor_id, descriptor_version, _ = _schema_descriptor(target_version)
+            else:
+                descriptor_id, descriptor_version, _ = _schema_descriptor(None)
+            schema_id = descriptor_id
+            resolved_version = descriptor_version
+        except Exception as exc:  # pragma: no cover - defensive
+            self._logger.warning("Gemini schema binding unavailable: %s", exc)
+
         payload: JsonDict = {
             "contents": [
                 {
@@ -1479,6 +1529,22 @@ class GeminiGenerator(ExternalGenerator):
         seed = parameters.get("seed")
         if isinstance(seed, int):
             generation_config["seed"] = seed
+
+        bound = False
+        if schema_id:
+            generation_config["responseSchema"] = {"jsonSchema": {"$ref": schema_id}}
+            bound = True
+            self._logger.debug(
+                "Gemini request schema bound to %s (version=%s)",
+                schema_id,
+                resolved_version,
+            )
+
+        self._latest_schema_binding = {
+            "schema_id": schema_id,
+            "schema_version": resolved_version,
+            "bound": bound,
+        }
 
         return payload
 
@@ -1671,7 +1737,14 @@ class OpenAIGenerator(ExternalGenerator):
             "temperature": float(os.getenv("OPENAI_TEMPERATURE", "0.4")),
         }
 
-    def _build_request(self, envelope: JsonDict, prompt: str, parameters: JsonDict) -> JsonDict:
+    def _build_request(
+        self,
+        envelope: JsonDict,
+        prompt: str,
+        parameters: JsonDict,
+        *,
+        schema_version: Optional[str] = None,
+    ) -> JsonDict:
         return {
             "trace_id": envelope["trace_id"],
             "model": parameters.get("model"),

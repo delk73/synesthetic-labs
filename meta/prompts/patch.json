@@ -1,69 +1,30 @@
 {
-  "task": "Unify validation flow and remove redundant review flags",
-  "objective": "Make MCP validation the single source of truth. Remove conflicting local validation flags and ensure all review and CLI reporting reflects only MCP results.",
+  "task": "Implement Gemini schema binding (v0.3.5a §5.1)",
+  "objective": "Inject MCP schema $id into Gemini generationConfig.responseSchema and mark schema_binding in logs.",
   "changes": [
     {
-      "id": "validation_flag_cleanup",
-      "description": "Stop assigning validation_status='passed' before MCP runs; tie all validation outcomes to MCP response only.",
+      "id": "gemini_request_schema_binding",
+      "description": "Attach MCP schema $id to Gemini generation requests to enforce structured JSON output.",
       "edits": [
         {
-          "file": "labs/critic.py",
-          "pattern": "validation_status",
-          "multiple": true,
-          "replacement": "# Unified validation logic\nif 'mcp_response' in review:\n    review['ok'] = review['mcp_response'].get('ok', False)\n    review['validation_status'] = 'passed' if review['ok'] else 'failed'\nelse:\n    review['ok'] = False\n    review['validation_status'] = 'failed'"
-        }
-      ]
-    },
-    {
-      "id": "remove_soft_validation",
-      "description": "Remove local soft validation pass/fail states; rely entirely on MCP for final verdict.",
-      "edits": [
-        {
-          "file": "labs/critic.py",
-          "pattern": "review\\['validation_status'\\] = 'passed'",
-          "multiple": true,
-          "replacement": "# Local validation removed — will be set after MCP"
-        },
-        {
-          "file": "labs/critic.py",
-          "pattern": "review\\['ok'\\] = True",
-          "multiple": true,
-          "replacement": "# 'ok' set by MCP only"
-        }
-      ]
-    },
-    {
-      "id": "cli_validation_simplify",
-      "description": "Simplify CLI reporting to show MCP validation only, with explicit strict/relaxed behavior.",
-      "edits": [
-        {
-          "file": "labs/cli.py",
-          "pattern": "if result\\['ok'\\]:",
+          "file": "labs/generator/external.py",
+          "pattern": "def _build_request",
           "multiple": false,
-          "replacement": "if result.get('mcp_response', {}).get('ok', False):"
-        },
+          "replacement": "from mcp.core import get_schema\n\ndef _build_request(self, prompt: str, schema_version: str = '0.7.3'):\n    schema_resp = get_schema('synesthetic-asset')\n    if not schema_resp.get('ok'):\n        self.logger.warning('MCP schema unavailable; proceeding without schema binding')\n        schema_id = None\n    else:\n        schema_id = schema_resp['schema'].get('$id')\n\n    req = {\n        'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],\n        'generationConfig': {\n            'responseMimeType': 'application/json'\n        },\n        'model': self.model\n    }\n    if schema_id:\n        req['generationConfig']['responseSchema'] = {'$ref': schema_id}\n        self.logger.debug(f'Gemini request schema bound to {schema_id}')\n    return req"
+        }
+      ]
+    },
+    {
+      "id": "gemini_log_schema_binding",
+      "description": "Extend external logging to include schema_binding flag and schema_id reference.",
+      "edits": [
         {
-          "file": "labs/cli.py",
-          "pattern": "Validation (passed|failed)",
-          "multiple": true,
-          "replacement": "MCP validation (passed|failed)"
+          "file": "labs/logging.py",
+          "pattern": "def log_external_generation",
+          "multiple": false,
+          "replacement": "def log_external_generation(event, *, schema_binding=False, schema_id=None):\n    data = {\n        'timestamp': datetime.utcnow().isoformat(),\n        'engine': event.get('engine'),\n        'endpoint': event.get('endpoint'),\n        'trace_id': event.get('trace_id'),\n        'schema_binding': schema_binding,\n        'schema_id': schema_id,\n        'taxonomy': event.get('taxonomy'),\n    }\n    with open('meta/output/labs/external.jsonl', 'a') as f:\n        f.write(json.dumps(data) + '\\n')"
         }
       ]
     }
-  ],
-  "constraints": {
-    "style": "explicit, deterministic, PEP8-clean",
-    "rules": [
-      "No duplicate validation verdicts.",
-      "All validation_status and ok flags must reflect MCP response.",
-      "Relaxed mode may log warnings but never fake 'passed'.",
-      "No new dependencies or side effects."
-    ]
-  },
-  "exit_criteria": [
-    "Assets show only one validation verdict (ok/failed) from MCP.",
-    "No code assigns validation_status='passed' before MCP.",
-    "Strict mode stops immediately on MCP failure; relaxed mode logs warning but saves asset.",
-    "Audit rule mcp-validation-flow-v0.3.5 = Present."
   ]
 }
