@@ -606,6 +606,13 @@ class ExternalGenerator:
             "endpoint": context.get("endpoint"),
         }
 
+        record["validation_status"] = (
+            review.get("validation_status") or ("passed" if review.get("ok") else "failed")
+        )
+        record["reviewed_at"] = review.get("reviewed_at") or _dt.datetime.now(
+            tz=_dt.timezone.utc
+        ).isoformat()
+
         failure_payload: Optional[JsonDict]
         if review.get("ok"):
             failure_payload = None
@@ -873,6 +880,13 @@ class ExternalGenerator:
         schema_url, resolved_schema_version, _schema_spec = _schema_descriptor(
             requested_schema_version
         )
+        env_schema_version = os.getenv("LABS_SCHEMA_VERSION")
+        if env_schema_version and env_schema_version != resolved_schema_version:
+            self._logger.warning(
+                "Schema version mismatch: env=%s resolved=%s",
+                env_schema_version,
+                resolved_schema_version,
+            )
         enriched_schema = self._supports_enriched_schema(resolved_schema_version)
 
         shader_section = self._merge_structured_section("shader", canonical.get("shader"))
@@ -1802,6 +1816,9 @@ class GeminiGenerator(ExternalGenerator):
             self._logger.debug(
                 "Gemini parse_response received: %s", json.dumps(response, indent=2)
             )
+            if not isinstance(response.get("candidates"), list) or not response["candidates"]:
+                raise ExternalRequestError("bad_response", "missing_candidates", retryable=False)
+
             candidate = response["candidates"][0]
             content = candidate["content"]
             parts = content["parts"]

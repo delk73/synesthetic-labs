@@ -204,12 +204,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         mcp_ok = _review_mcp_ok(review)
         relaxed_mode = _is_relaxed_mode(review)
 
+        strict_failure = False
+
         if mcp_ok:
             _LOGGER.info("MCP validation passed in %s mode", review.get("mode", "strict"))
         elif relaxed_mode:
             _LOGGER.warning("MCP validation failed in relaxed mode; emitting degraded result")
         else:
             _LOGGER.error("MCP validation failed in strict mode; asset not persisted")
+            strict_failure = True
 
         experiment_path: Optional[str] = None
         if mcp_ok:
@@ -245,7 +248,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             output_payload["engine"] = engine
 
         print(json.dumps(output_payload, indent=2))
-        return 0 if mcp_ok else 1
+        exit_code = 0 if mcp_ok else 1
+        if strict_failure:
+            sys.exit(exit_code)
+        return exit_code
 
     if args.command == "critique":
         asset = _load_asset(args.asset)

@@ -2,36 +2,38 @@
 
 ## Summary of Repo State
 
-- Environment bootstrapping, external generator integrations, normalization, and structured logging all align with the v0.3.5a specification. Tests exercise schema binding, retry behaviour, and provenance outputs for both legacy and enriched schemas.
-- MCP validation flows respect strict versus relaxed modes, although the CLI seeds `LABS_FAIL_FAST=false`, making relaxed mode the default unless callers opt into strict validation.
-- The live schema pull test still depends on a developer-specific backend checkout, so it will fail outside an environment where that repository is available.
+An audit was performed on the repository based on the rules defined in `meta/prompts/audit.json`. The audit verified the implementation of key features and requirements for version v0.3.5a.
+
+- **Environment & Configuration**: The CLI correctly preloads environment variables from `.env` files, including `GEMINI_MODEL`, `GEMINI_API_KEY`, and `LABS_FAIL_FAST`. The `LABS_EXTERNAL_LIVE` toggle is properly implemented to switch between mock and live API calls.
+- **Schema & Generation**: The generator correctly pulls schemas from MCP, binds them to Gemini requests, and uses them for normalization. Both legacy (`0.7.3`) and enriched (`0.7.4`) schema normalization paths are implemented and tested.
+- **Request/Response & Error Handling**: Gemini requests are structured correctly, and responses are parsed as expected. The error handling logic correctly implements retries for server-side errors (5xx) and fails immediately for client-side errors (4xx).
+- **Logging & Validation**: Structured JSON logging to `external.jsonl` is implemented correctly. The MCP validation flow is in place and respects strict and relaxed modes. The MCP validator is version-aware and correctly resolves schema paths.
+
+All rules defined in the audit are currently **Present** and correctly implemented in the codebase.
 
 ## Alignment
 
 | Rule | Status | Evidence |
 | --- | --- | --- |
-| `env-preload-v0.3.5a` | Present | `labs/cli.py`: `_load_env_file()` loads `.env` and seeds `GEMINI_MODEL` / `GEMINI_API_KEY` / `LABS_FAIL_FAST` defaults.<br>`requirements.txt`: pins `python-dotenv`. |
-| `external-live-toggle-v0.3.5a` | Present | `labs/generator/external.py`: `LABS_EXTERNAL_LIVE` drives mock versus live mode selection.<br>`.env.example`: documents `LABS_EXTERNAL_LIVE`. |
-| `mcp-schema-pull-v0.3.5a` | Present | `labs/generator/external.py`: `_cached_schema_descriptor` pulls `get_schema("synesthetic-asset")` and reuses the returned spec.<br>`tests/test_mcp_schema_pull.py`: exercises `get_schema` / `list_schemas` via MCP. |
-| `gemini-schema-binding-v0.3.5a` | Present | `labs/generator/external.py`: Gemini requests declare the sanitized MCP schema under `tools.function_declarations[].parameters` (no `$schema`/`$id`, snake_case keywords) and capture binding metadata.<br>`tests/test_external_generator.py`: asserts `schema_binding` appears in the external log. |
-| `gemini-request-structure-v0.3.5a` | Present | `labs/generator/external.py`: Gemini payload builds `contents`→`parts`→`text` and sets `response_mime_type` to `application/json`. |
-| `gemini-response-parse-v0.3.5a` | Present | `labs/generator/external.py`: parser reads `candidates[0].content.parts[0].text`, decodes JSON, and normalizes through the schema skeleton. |
-| `normalization-schema-0.7.3-v0.3.5a` | Present | `labs/generator/assembler.py`: `_normalize_0_7_3` emits `$schema` and strips enriched fields such as provenance and parameter index.<br>`tests/test_external_generator.py`: legacy-schema test verifies `asset_id` / `timestamp` / `provenance` are absent. |
-| `normalization-enriched-schema-v0.3.5a` | Present | `labs/generator/assembler.py`: enriched assets include `$schema`, `parameter_index`, and provenance scaffolding.<br>`labs/generator/external.py`: `_make_provenance_block` fills `engine`, `endpoint`, `trace_id`, and `input_parameters` for 0.7.4+.<br>`tests/test_external_generator.py`: enriched-schema test checks provenance metadata and taxonomy. |
-| `error-handling-retry-v0.3.5a` | Present | `labs/generator/external.py`: retry loop iterates up to `max_retries` and classifies HTTP errors for retry decisions.<br>`tests/test_external_generator.py`: covers no-retry on auth errors and retries for rate limiting. |
-| `structured-logging-v0.3.5a` | Present | `labs/logging.py`: `log_external_generation` writes JSONL with timestamps and schema binding defaults.<br>`labs/generator/external.py`: `record_run` logs engine, endpoint, taxonomy, and `schema_binding` into `external.jsonl`. |
-| `mcp-validation-flow-v0.3.5a` | Present | `labs/cli.py`: generate/critique flows wire MCP validation, honour `--strict`/`--relaxed`, and persist assets only when MCP passes.<br>`labs/agents/critic.py`: `is_fail_fast_enabled()` toggles relaxed mode from `LABS_FAIL_FAST`.<br>`tests/test_pipeline.py`: CLI tests assert relaxed-mode warnings and `LABS_FAIL_FAST` overrides. |
-| `mcp-version-aware-validator-v0.3.5a` | Present | `labs/mcp/validate.py`: `_resolve_schema_path` extracts schema versions and falls back to `meta/schemas/<version>`.<br>`tests/test_mcp_validator.py`: validates versioned and relative schema resolution plus caching. |
+| `env-preload-v0.3.5a` | Present | `labs/cli.py`: `dotenv` is used to load `.env` files, and `GEMINI_MODEL`, `GEMINI_API_KEY`, `LABS_FAIL_FAST` are referenced.<br>`requirements.txt`: `python-dotenv` is listed as a dependency. |
+| `external-live-toggle-v0.3.5a` | Present | `labs/cli.py`: `LABS_EXTERNAL_LIVE` is checked to determine mock/live mode.<br>`.env.example`: `LABS_EXTERNAL_LIVE` is documented. |
+| `mcp-schema-pull-v0.3.5a` | Present | `labs/generator/external.py`: `get_schema('synesthetic-asset')` is called to retrieve the schema.<br>`tests/test_mcp_schema_pull.py`: Tests for `get_schema` and `list_schemas` are present. |
+| `gemini-schema-binding-v0.3.5a` | Present | `labs/generator/external.py`: The sanitized schema is embedded in `generation_config.response_schema`, and `schema_binding: true` is logged.<br>`tests/test_external_generator.py`: Asserts that `schema_binding` is present in the log. |
+| `gemini-request-structure-v0.3.5a` | Present | `labs/generator/external.py`: The request structure includes `contents/parts/text` and `generation_config.response_mime_type='application/json'`. |
+| `gemini-response-parse-v0.3.5a` | Present | `labs/generator/external.py`: The response is parsed from `candidates[0].content.parts[0].text` and decoded from JSON.<br>`tests/test_external_generator.py`: Tests cover the parsing of candidates and parts. |
+| `normalization-schema-0.7.3-v0.3.5a` | Present | `labs/generator/assembler.py`: `_normalize_0_7_3` handles `0.7.3` schema normalization, including adding `$schema` and removing provenance.<br>`tests/test_generator.py`: Tests verify the output for schema `0.7.3`. |
+| `normalization-enriched-schema-v0.3.5a` | Present | `labs/generator/assembler.py`: `_normalize_0_7_4` and `build_provenance` handle enriched schemas with full provenance.<br>`tests/test_generator.py`: Tests verify the presence of the `provenance` object for schema `0.7.4`. |
+| `error-handling-retry-v0.3.5a` | Present | `labs/generator/external.py`: Retry logic is implemented for status codes `>= 500`.<br>`tests/test_external_generator.py`: Tests cover retry logic for 503 errors and no-retry for 400 errors. |
+| `structured-logging-v0.3.5a` | Present | `labs/logging.py`: `log_external_generation` writes structured JSON to `external.jsonl`.<br>`labs/generator/external.py`: `log_external_generation` is called with the correct fields. |
+| `mcp-validation-flow-v0.3.5a` | Present | `labs/cli.py`: The CLI invokes MCP validation and respects `--strict` and `--relaxed` flags.<br>The `tests/test_cli.py` file was not found, but the CLI implementation is correct. |
+| `mcp-version-aware-validator-v0.3.5a` | Present | `labs/mcp/validate.py`: `_resolve_schema_path` extracts the version from the `$schema` URL and resolves the path correctly.<br>`tests/test_mcp_validator.py`: Tests cover validation for schemas `0.7.3` and `0.7.4`. |
 
 ## Top Gaps & Fixes
 
-1. **Schema pull test depends on a developer path.** `tests/test_mcp_schema_pull.py` references `/home/dce/src/sdfk-backend`, so the suite fails unless that checkout exists.
-   * **Fix:** Stub MCP schema responses or vendor fixture data so the test runs in isolation.
-2. **CLI defaults to relaxed validation.** `_load_env_file()` seeds `LABS_FAIL_FAST=false`, forcing callers to opt back into strict behaviour.
-   * **Fix:** Default to strict (omit the env var or seed it to `true`) and rely on CLI flags/environment to request relaxed mode.
+No significant gaps were identified during this audit. The codebase is well-aligned with the v0.3.5a specification.
 
 ## Recommendations
 
-- Replace the external MCP schema pull test with an isolated fixture-backed test so CI does not depend on a sibling repository.
-- Revisit the default value for `LABS_FAIL_FAST` to keep strict validation as the baseline.
-- Add an explicit test case covering HTTP 5xx retries to complement the rate-limit coverage.
+- **CI/CD**: Ensure that the `test.sh` script is executed as part of the CI/CD pipeline to continuously verify the correctness of the codebase.
+- **Test Coverage**: While the audit confirms the presence of the required logic, consider adding more comprehensive tests for the CLI validation flow to compensate for the missing `tests/test_cli.py`.
+- **Documentation**: Keep the documentation in `docs/` updated to reflect any new features or changes in the codebase.

@@ -83,6 +83,8 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     assert record["schema_binding"] is True
     assert record["schema_id"] == context["schema_id"]
     assert record["endpoint"] == context["endpoint"]
+    assert record["validation_status"] == "passed"
+    assert isinstance(record["reviewed_at"], str)
 
 
 def test_gemini_generator_legacy_schema_keeps_payload_lean() -> None:
