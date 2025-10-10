@@ -81,6 +81,18 @@
           "replacement": "class AssetAssembler:\n    @staticmethod\n    def default_shader():\n        return {'type': 'fragment', 'code': '// default shader'}\n\n    @staticmethod\n    def default_tone():\n        return {'type': 'sine', 'frequency': 440.0}\n\n    @staticmethod\n    def default_haptic():\n        return {'pattern': 'pulse', 'duration_ms': 120}\n\n    @staticmethod\n    def default_control():\n        return {'sensitivity': 1.0, 'range': [0, 1]}\n\n    @staticmethod\n    def fill_empty_sections(asset: dict) -> dict:\n        for field, fn in {\n            'shader': AssetAssembler.default_shader,\n            'tone': AssetAssembler.default_tone,\n            'haptic': AssetAssembler.default_haptic,\n            'control': AssetAssembler.default_control\n        }.items():\n            if not asset.get(field):\n                asset[field] = fn()\n        return asset"
         }
       ]
+    },
+    {
+      "id": "gemini-placeholder-v0.3.6a",
+      "description": "Demote GeminiGenerator to placeholder until Vertex structured output API is supported.",
+      "edits": [
+        {
+          "file": "labs/generator/external.py",
+          "pattern": "class GeminiGenerator",
+          "multiple": false,
+          "replacement": "class GeminiGenerator(BaseGenerator):\n    engine = 'gemini'\n\n    def generate(self, prompt: str, **kwargs):\n        raise NotImplementedError('Gemini structured-output not supported; use Azure engine until Vertex AI v1 schema API is public.')"
+        }
+      ]
     }
   ],
   "exit_criteria": [
