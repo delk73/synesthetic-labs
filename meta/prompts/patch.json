@@ -1,10 +1,12 @@
 {
+  "version": "v0.3.6",
+  "spec_ref": "docs/specs/synesthetic_labs_v0.3.6.md#gemini-schema-binding",
   "task": "Fix Gemini structured-output schema binding (v0.3.6 §5.1)",
   "objective": "Ensure Gemini requests use generationConfig.responseSchema with a flattened MCP schema $id binding and proper schema_binding flag for logs.",
   "changes": [
     {
-      "id": "gemini-structured-output-payload",
-      "description": "Replace legacy function_declarations and nested schema payload with proper generationConfig.responseSchema = { \"$ref\": schema_id } binding.",
+      "id": "gemini_request_schema_binding",
+      "description": "Attach MCP schema $id to Gemini generation requests to enforce structured JSON output for schema 0.7.3.",
       "edits": [
         {
           "file": "labs/generator/external.py",
@@ -15,8 +17,8 @@
       ]
     },
     {
-      "id": "gemini-schema-binding-log",
-      "description": "Propagate schema_binding flag and schema_id to structured log context for downstream validation of binding state.",
+      "id": "gemini_log_schema_binding",
+      "description": "Extend structured logging to include schema_binding flag and schema_id reference for validation traceability.",
       "edits": [
         {
           "file": "labs/generator/external.py",
@@ -26,5 +28,11 @@
         }
       ]
     }
+  ],
+  "exit_criteria": [
+    "Running `labs.cli generate` with `--engine gemini --schema-version 0.7.3` produces a valid 200 OK response from Gemini.",
+    "Payload includes generation_config.response_schema with direct $ref URL to MCP schema.",
+    "Structured logs under meta/output/labs/external.jsonl show schema_binding=true and correct schema_id.",
+    "MCP validator passes strict mode for generated asset."
   ]
 }
