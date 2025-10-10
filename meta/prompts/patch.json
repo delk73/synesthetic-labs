@@ -1,38 +1,94 @@
 {
-  "version": "v0.3.6",
-  "spec_ref": "docs/specs/synesthetic_labs_v0.3.6.md#gemini-schema-binding",
-  "task": "Fix Gemini structured-output schema binding (v0.3.6 §5.1)",
-  "objective": "Ensure Gemini requests use generationConfig.responseSchema with a flattened MCP schema $id binding and proper schema_binding flag for logs.",
+  "version": "v0.3.6a",
+  "spec_ref": "docs/specs/synesthetic_labs_v0.3.6a.md#synesthetic-labs--spec-v0.3.6a",
+  "task": "Remediate v0.3.6a audit gaps (Azure + Gemini alignment)",
+  "objective": "Implement environment surfacing, Azure request support, deterministic parsing, enriched provenance, CLI validation routing, and fallback section filling to satisfy full spec compliance.",
   "changes": [
     {
-      "id": "gemini_request_schema_binding",
-      "description": "Attach MCP schema $id to Gemini generation requests to enforce structured JSON output for schema 0.7.3.",
+      "id": "env-preload-azure-v0.3.6a",
+      "description": "Expose Azure OpenAI and LABS_EXTERNAL_ENGINE variables in .env preloading, with warnings for missing credentials.",
       "edits": [
         {
-          "file": "labs/generator/external.py",
-          "pattern": "def _build_request",
+          "file": "labs/cli.py",
+          "pattern": "def _load_env_file",
           "multiple": false,
-          "replacement": "def _build_request(\n        self,\n        envelope: JsonDict,\n        prompt: str,\n        parameters: JsonDict,\n        *,\n        schema_version: Optional[str] = None,\n    ) -> JsonDict:\n        target_version = schema_version or parameters.get('schema_version')\n        schema_id = None\n        resolved_version = target_version\n\n        try:\n            if target_version:\n                descriptor_id, descriptor_version, _ = _schema_descriptor(target_version)\n            else:\n                descriptor_id, descriptor_version, _ = _schema_descriptor(None)\n            schema_id = descriptor_id\n            resolved_version = descriptor_version\n        except Exception as exc:\n            self._logger.warning('Gemini schema binding unavailable: %s', exc)\n\n        # Gemini 2.0 structured-output payload (snake_case)\n        payload: JsonDict = {\n            'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],\n            'generation_config': {\n                'response_mime_type': 'application/json'\n            },\n            'model': parameters.get('model') or os.getenv('GEMINI_MODEL', self.default_model)\n        }\n\n        generation_config: JsonDict = payload['generation_config']\n        if isinstance(parameters.get('temperature'), Real):\n            generation_config['temperature'] = float(parameters['temperature'])\n        if isinstance(parameters.get('max_tokens'), int) and parameters['max_tokens'] > 0:\n            generation_config['max_output_tokens'] = parameters['max_tokens']\n        if isinstance(parameters.get('seed'), int):\n            generation_config['seed'] = parameters['seed']\n\n        bound = False\n        if schema_id:\n            generation_config['response_schema'] = { '$ref': schema_id }\n            bound = True\n            self._logger.debug('Gemini request schema bound to %s (version=%s)', schema_id, resolved_version)\n\n        self._latest_schema_binding = {\n            'schema_id': schema_id,\n            'schema_version': resolved_version,\n            'bound': bound\n        }\n        return payload"
+          "replacement": "def _load_env_file(path: str = '.env') -> None:\n    from dotenv import load_dotenv\n    if os.path.exists(path):\n        load_dotenv(path)\n    defaults = {\n        'LABS_SCHEMA_VERSION': '0.7.3',\n        'LABS_FAIL_FAST': '1',\n        'LABS_EXTERNAL_ENGINE': os.getenv('LABS_EXTERNAL_ENGINE', 'gemini'),\n        'GEMINI_MODEL': os.getenv('GEMINI_MODEL', 'gemini-2.0-flash'),\n        'AZURE_OPENAI_API_VERSION': os.getenv('AZURE_OPENAI_API_VERSION', '2025-01-01-preview')\n    }\n    for k, v in defaults.items():\n        os.environ.setdefault(k, v)\n    required = ['GEMINI_API_KEY', 'LABS_EXTERNAL_LIVE', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_DEPLOYMENT']\n    for key in required:\n        if not os.getenv(key):\n            print(f'[WARN] Missing env variable: {key}')"
         }
       ]
     },
     {
-      "id": "gemini_log_schema_binding",
-      "description": "Extend structured logging to include schema_binding flag and schema_id reference for validation traceability.",
+      "id": "azure-generator-v0.3.6a",
+      "description": "Add AzureOpenAIGenerator with structured JSON response_format and chat.completions endpoint using AZURE_OPENAI_* vars.",
       "edits": [
         {
           "file": "labs/generator/external.py",
-          "pattern": "def record_run",
+          "pattern": "class OpenAIGenerator",
           "multiple": false,
-          "replacement": "def record_run(\n        self,\n        *,\n        context: JsonDict,\n        review: JsonDict,\n        experiment_path: Optional[str],\n    ) -> None:\n        status = 'validation_passed' if review.get('ok') else 'validation_failed'\n        record: JsonDict = {\n            'ts': _dt.datetime.now(tz=_dt.timezone.utc).isoformat(),\n            'trace_id': context.get('trace_id'),\n            'prompt': context.get('prompt'),\n            'engine': self.engine,\n            'mode': context.get('mode'),\n            'strict': context.get('strict'),\n            'parameters': context.get('parameters'),\n            'schema_binding': context.get('schema_binding', False),\n            'schema_id': context.get('schema_id'),\n            'schema_binding_version': context.get('schema_binding_version'),\n            'endpoint': context.get('endpoint'),\n            'taxonomy': context.get('taxonomy') or f'external.{self.engine}',\n            'status': status\n        }\n        log_external_generation(record, path=self.log_path)"
+          "replacement": "class AzureOpenAIGenerator(BaseGenerator):\n    engine = 'azure'\n\n    def __init__(self):\n        super().__init__()\n        from openai import AzureOpenAI\n        self.client = AzureOpenAI(\n            api_key=os.getenv('AZURE_OPENAI_API_KEY'),\n            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT'),\n            api_version=os.getenv('AZURE_OPENAI_API_VERSION', '2025-01-01-preview')\n        )\n        self.deployment = os.getenv('AZURE_OPENAI_DEPLOYMENT', 'gpt-4o-mini')\n\n    def generate(self, prompt: str, **kwargs) -> dict:\n        try:\n            response = self.client.chat.completions.create(\n                model=self.deployment,\n                messages=[{\"role\": \"user\", \"content\": prompt}],\n                response_format={\"type\": \"json_object\"}\n            )\n            text = response.choices[0].message.content\n            return json.loads(text)\n        except Exception as e:\n            self._logger.error(f'Azure generation failed: {e}')\n            raise"
+        }
+      ]
+    },
+    {
+      "id": "response-parse-unify-v0.3.6a",
+      "description": "Enforce deterministic parsing for Gemini and Azure/OpenAI structured responses.",
+      "edits": [
+        {
+          "file": "labs/generator/external.py",
+          "pattern": "def _parse_response",
+          "multiple": false,
+          "replacement": "def _parse_response(self, resp: dict, engine: str = 'gemini') -> dict:\n    try:\n        if engine == 'gemini':\n            text = resp['candidates'][0]['content']['parts'][0]['text']\n        elif engine in ('azure', 'openai'):\n            text = resp['choices'][0]['message']['content']\n        else:\n            raise ValueError(f'Unknown engine: {engine}')\n        return json.loads(text)\n    except Exception as e:\n        self._logger.error(f'Parse error for {engine} response: {e}')\n        raise"
+        }
+      ]
+    },
+    {
+      "id": "provenance-enrich-v0.3.6a",
+      "description": "Extend _build_asset_provenance() to include endpoint, deployment, api_version, and input_parameters for ≥0.7.4 schemas.",
+      "edits": [
+        {
+          "file": "labs/generator/assembler.py",
+          "pattern": "def _build_asset_provenance",
+          "multiple": false,
+          "replacement": "def _build_asset_provenance(engine: str, input_parameters: dict) -> dict:\n    trace_id = str(uuid.uuid4())\n    provenance = {\n        'engine': engine,\n        'endpoint': os.getenv('AZURE_OPENAI_ENDPOINT') or os.getenv('GEMINI_ENDPOINT'),\n        'deployment': os.getenv('AZURE_OPENAI_DEPLOYMENT'),\n        'api_version': os.getenv('AZURE_OPENAI_API_VERSION', ''),\n        'trace_id': trace_id,\n        'input_parameters': input_parameters or {}\n    }\n    return provenance"
+        }
+      ]
+    },
+    {
+      "id": "cli-validation-flow-v0.3.6a",
+      "description": "Add invoke_mcp() wrapper in validate.py and route CLI generation through it with strict/relaxed persistence.",
+      "edits": [
+        {
+          "file": "labs/mcp/validate.py",
+          "pattern": "def validate_asset",
+          "multiple": true,
+          "replacement": "def invoke_mcp(asset: dict, strict: bool = True) -> dict:\n    result = validate_asset(asset)\n    if strict:\n        if not result.get('ok'):\n            raise ValidationError('strict validation failed')\n    else:\n        if not result.get('ok'):\n            print('[WARN] relaxed validation: asset persisted with warnings')\n    return result"
+        },
+        {
+          "file": "labs/cli.py",
+          "pattern": "critic.review",
+          "multiple": false,
+          "replacement": "from labs.mcp.validate import invoke_mcp\n        review = invoke_mcp(asset, strict=bool(args.strict))"
+        }
+      ]
+    },
+    {
+      "id": "fallback-fillers-v0.3.6a",
+      "description": "Introduce deterministic fallback fillers for shader, tone, haptic, and control sections.",
+      "edits": [
+        {
+          "file": "labs/generator/assembler.py",
+          "pattern": "class AssetAssembler",
+          "multiple": false,
+          "replacement": "class AssetAssembler:\n    @staticmethod\n    def default_shader():\n        return {'type': 'fragment', 'code': '// default shader'}\n\n    @staticmethod\n    def default_tone():\n        return {'type': 'sine', 'frequency': 440.0}\n\n    @staticmethod\n    def default_haptic():\n        return {'pattern': 'pulse', 'duration_ms': 120}\n\n    @staticmethod\n    def default_control():\n        return {'sensitivity': 1.0, 'range': [0, 1]}\n\n    @staticmethod\n    def fill_empty_sections(asset: dict) -> dict:\n        for field, fn in {\n            'shader': AssetAssembler.default_shader,\n            'tone': AssetAssembler.default_tone,\n            'haptic': AssetAssembler.default_haptic,\n            'control': AssetAssembler.default_control\n        }.items():\n            if not asset.get(field):\n                asset[field] = fn()\n        return asset"
         }
       ]
     }
   ],
   "exit_criteria": [
-    "Running `labs.cli generate` with `--engine gemini --schema-version 0.7.3` produces a valid 200 OK response from Gemini.",
-    "Payload includes generation_config.response_schema with direct $ref URL to MCP schema.",
-    "Structured logs under meta/output/labs/external.jsonl show schema_binding=true and correct schema_id.",
-    "MCP validator passes strict mode for generated asset."
+    "All Azure environment variables (AZURE_OPENAI_*) load and warn if unset.",
+    "AzureOpenAIGenerator successfully produces structured JSON assets via chat.completions.",
+    "Gemini and Azure responses parse deterministically (no function_call fallbacks).",
+    "Provenance for 0.7.4+ includes engine, endpoint, deployment, api_version, and input_parameters.",
+    "CLI generate command routes through invoke_mcp() and persists relaxed assets with warnings.",
+    "Legacy assets (0.7.3) fill empty shader/tone/haptic/control sections with deterministic defaults."
   ]
 }

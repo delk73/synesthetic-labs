@@ -24,31 +24,34 @@ predecessor: v0.3.6
 | v0.3.5 | 2025-10-08 | Transport stabilization | First working Gemini→MCP flow (schema 0.7.3) |
 | v0.3.5a | 2025-10-09 | Audit snapshot | Identified semantic / provenance / validation gaps |
 | v0.3.6 | 2025-10-09 | Semantic alignment | Filled semantic gaps, restored provenance, strict validation |
-| **v0.3.6a** | 2025-10-10 | Azure integration | Adds Azure OpenAI engine and environment contract |
+| **v0.3.6a** | 2025-10-10 | Azure integration | Adds Azure OpenAI engine and environment contract; demotes Gemini to placeholder |
 
 ---
 
 ## 1 · Scope
 
 v0.3.6a resolves the semantic, provenance, and validation gaps identified in v0.3.5a  
-**and** introduces a second live generator backend: **Azure OpenAI**.
+**and** introduces a fully working **Azure OpenAI** backend.
+
+**Gemini is now a placeholder engine**, retained for future migration to **Vertex AI Gemini**.
+The public Generative Language API does not support structured-output contracts and remains disabled in live mode.
 
 Focus areas:
-- Completing Gemini schema binding and parsing to canonical contract.  
-- Adding full Azure OpenAI `chat.completions` structured-output parity.  
-- Restoring enriched provenance for schema ≥ 0.7.4.  
-- Re-enabling `invoke_mcp()` lifecycle validation.  
-- Ensuring both backends pass strict validation unassisted.
+- Azure OpenAI `chat.completions` structured-output parity.  
+- MCP schema binding and validation fidelity.  
+- Enriched provenance for schema ≥ 0.7.4.  
+- Re-enabled `invoke_mcp()` validation lifecycle.  
+- Deterministic section filling and provenance completion.
 
 ---
 
 ## 2 · Engine Matrix
 
-| Engine | Module | API | JSON Mode | Cost | Notes |
-|---------|---------|-----|------------|------|-------|
-| `gemini` | `labs/generator/external.py:GeminiGenerator` | Google Generative Language | ✅ | Low | Legacy baseline |
-| `azure` | `labs/generator/external.py:AzureOpenAIGenerator` | Azure OpenAI `chat/completions` | ✅ | Low | Preferred structured-output path |
-| `deterministic` | `labs/generator/offline.py:DeterministicGenerator` | Local stub | ✅ | n/a | For CI / offline |
+| Engine | Module | API | JSON Mode | Cost | Status | Notes |
+|---------|---------|-----|------------|------|--------|-------|
+| `azure` | `labs/generator/external.py:AzureOpenAIGenerator` | Azure OpenAI `chat/completions` | ✅ | Low | ✅ Active | Preferred structured-output engine |
+| `gemini` | `labs/generator/external.py:GeminiGenerator` | Google Generative Language | ❌ | Low | ⚠️ Placeholder | Disabled until Vertex AI migration (structured-output unsupported) |
+| `deterministic` | `labs/generator/offline.py:DeterministicGenerator` | Local stub | ✅ | n/a | ✅ Active | Offline baseline for CI |
 
 ---
 
@@ -57,7 +60,7 @@ Focus areas:
 | Key | Value | Notes |
 |-----|--------|-------|
 | Schema version | `0.7.3` | 0.7.4+ for enriched provenance |
-| Gemini model | `gemini-2.0-flash` | |
+| Default engine | `azure` | Gemini disabled until Vertex AI |
 | Azure deployment | `gpt-4o-mini` | |
 | Validation mode | strict (default) | CLI or `LABS_FAIL_FAST` toggles relaxed |
 | Config precedence | CLI → env → default | |
@@ -73,16 +76,17 @@ Focus areas:
 |-----|----------|
 | `LABS_SCHEMA_VERSION` | Target schema corpus (default `"0.7.3"`) |
 | `LABS_FAIL_FAST` | Enables strict validation when `true` or `1` |
-| `LABS_EXTERNAL_ENGINE` | Engine override (`gemini`, `azure`, `deterministic`) |
+| `LABS_EXTERNAL_ENGINE` | Engine override (`azure`, `deterministic`, `gemini`) |
 | `SYN_SCHEMAS_DIR` | Fallback local schema path |
 
-### 4.2 Gemini Variables
+### 4.2 Gemini Variables (Placeholder Only)
 
-| Var | Purpose |
-|-----|----------|
-| `LABS_EXTERNAL_LIVE` | Enables live Gemini generation |
-| `GEMINI_MODEL` | Gemini model identifier |
-| `GEMINI_API_KEY` | API key for Gemini |
+| Var | Purpose | Status |
+|-----|----------|--------|
+| `LABS_EXTERNAL_LIVE` | Enables live Gemini generation | ⚠️ Ignored |
+| `GEMINI_MODEL` | Gemini model identifier | ⚠️ Ignored |
+| `GEMINI_API_KEY` | API key for Gemini | ⚠️ Ignored |
+| **Note:** Gemini live mode is **disabled** until Vertex AI onboarding. |
 
 ### 4.3 Azure Variables
 
@@ -103,7 +107,7 @@ All variables load via `_load_env_file()` and merge into `os.environ`.
 def generate_asset(
     prompt: str,
     schema_version: str = "0.7.3",
-    engine: str = "gemini",
+    engine: str = "azure",
     strict: bool = True
 ) -> dict:
     """Return a schema-compliant SynestheticAsset with provenance and validation."""
@@ -134,26 +138,15 @@ Deterministic mode may use local `meta/schemas/` stubs.
 
 ## 7 · Engine Request Contracts
 
-### 7.1 Gemini Request
+### 7.1 Gemini Request (Placeholder)
 
 ```json
 {
-  "contents": [
-    {"role": "user", "parts": [{"text": "<prompt>"}]}
-  ],
-  "generation_config": {
-    "response_mime_type": "application/json",
-    "response_schema": {
-      "jsonSchema": {
-        "$ref": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json"
-      }
-    }
-  },
-  "model": "gemini-2.0-flash"
+  "note": "Gemini structured output disabled. Use Azure engine until Vertex AI migration."
 }
 ```
 
-### 7.2 Azure Request
+### 7.2 Azure Request (Active)
 
 ```python
 from openai import AzureOpenAI
@@ -177,8 +170,6 @@ response = client.chat.completions.create(
 asset = json.loads(response.choices[0].message.content)
 ```
 
-Both engines must emit structured JSON that validates under the active schema.
-
 ---
 
 ## 8 · Normalization & Semantic Filling
@@ -191,33 +182,18 @@ Both engines must emit structured JSON that validates under the active schema.
 | `control`   | `_DEFAULT_CONTROL_PARAMETERS`     |
 | `meta_info` | Static tags / schema examples     |
 
-Enriched (≥ 0.7.4) assets must append provenance.
-
 ---
 
 ## 9 · Provenance Schema
 
-| Field              | Description           | Example                    |
-| ------------------ | --------------------- | -------------------------- |
-| `engine`           | Generator engine      | `gemini` or `azure_openai` |
-| `endpoint`         | Service endpoint      | Gemini or Azure URL        |
-| `deployment`       | Model / deployment ID | `gpt-4o-mini`              |
-| `trace_id`         | UUID                  | `"b85b9e..."`              |
-| `api_version`      | API version string    | `"2025-01-01-preview"`     |
-| `input_parameters` | Echoed parameters     | `{...}`                    |
-
-Example (Azure):
-
-```json
-{
-  "engine": "azure_openai",
-  "endpoint": "https://synesthetic-aoai.openai.azure.com/",
-  "deployment": "gpt-4o-mini",
-  "trace_id": "dfe12e0f-fc93-4e0a-8f02-bf9b8d7c126a",
-  "api_version": "2025-01-01-preview",
-  "input_parameters": {}
-}
-```
+| Field              | Description           | Example                |
+| ------------------ | --------------------- | ---------------------- |
+| `engine`           | Generator engine      | `azure_openai`         |
+| `endpoint`         | Service endpoint      | Azure resource URL     |
+| `deployment`       | Model / deployment ID | `gpt-4o-mini`          |
+| `trace_id`         | UUID                  | `"b85b9e..."`          |
+| `api_version`      | API version string    | `"2025-01-01-preview"` |
+| `input_parameters` | Echoed parameters     | `{...}`                |
 
 ---
 
@@ -225,7 +201,7 @@ Example (Azure):
 
 1. **Preflight** — Load `.env`, resolve engine/schema/mode, generate `trace_id`.
 2. **Schema Pull** — Fetch schema via MCP.
-3. **Dispatch** — Call selected generator (Gemini or Azure).
+3. **Dispatch** — Call selected generator (Azure or deterministic; Gemini stubbed).
 4. **Normalize** — Fill empty fields, inject provenance.
 5. **Validate** — Use `invoke_mcp()` with strict/relaxed handling.
 6. **Persist** — Write structured log entries with validation metadata.
@@ -284,7 +260,8 @@ Example:
 | --------------------- | ----------------------------------------- |
 | Env bootstrap         | Azure vars recognized and loaded          |
 | Schema retrieval      | MCP returns valid dict                    |
-| Gemini / Azure        | Return valid JSON objects                 |
+| Azure generation      | Returns valid structured JSON             |
+| Gemini placeholder    | Warns and exits gracefully                |
 | Response parsing      | Canonical extraction path only            |
 | Fallback filling      | Empty sections replaced deterministically |
 | Provenance            | Complete and correct                      |
@@ -309,15 +286,13 @@ v0.3.4 → v0.3.5 → v0.3.5a → v0.3.6 → v0.3.6a
 (core)   (transport) (audit)   (semantic)  (azure)
  |------------ stabilized Gemini transport -------------|
  |---------------- semantic + validation integrity ----------------|
- |-------------------- Azure parity + multi-engine --------------------|
+ |-------------------- Azure parity + Gemini placeholder --------------------|
 ```
 
 ---
 
 ### ✅ Summary
 
-v0.3.6a finalizes the **semantic alignment** and introduces **Azure OpenAI parity**.
-Both Gemini and Azure paths now share a unified schema-bound generator contract, deterministic
-normalization, and MCP-based validation pipeline.
-
-This release is the stable foundation for **v0.3.7** — provenance-rich multi-backend schema evolution.
+v0.3.6a finalizes **semantic alignment** and establishes **Azure OpenAI** as the default structured-output engine.
+Gemini remains present for reference but **is disabled for live calls** until Vertex AI integration provides compliant structured output.
+This version serves as the stable multi-engine foundation for **v0.3.7** — provenance-rich schema evolution.
