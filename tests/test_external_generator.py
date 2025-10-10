@@ -160,22 +160,11 @@ def test_gemini_build_request_injects_response_mime_type() -> None:
     assert payload["contents"][0]["parts"][0]["text"] == "structured"
     generation_config = payload["generation_config"]
     assert generation_config["response_mime_type"] == "application/json"
-    tools = payload.get("tools")
-    assert isinstance(tools, list) and tools
-    declarations = tools[0].get("function_declarations")
-    assert isinstance(declarations, list) and declarations
-    parameters = declarations[0].get("parameters")
-    assert isinstance(parameters, dict)
-    assert parameters.get("type") == "object"
-    assert "$schema" not in parameters.get("properties", {})
-    assert "shader" in parameters.get("properties", {})
-    modulations = parameters["properties"]["modulations"]
-    assert modulations["type"] == "array"
-    assert modulations["items"] == {"type": "object"}
-    tool_config = payload.get("tool_config")
-    assert tool_config
-    config = tool_config.get("function_calling_config", {})
-    assert config.get("mode") == "AUTO"
+    assert "tools" not in payload
+    assert "tool_config" not in payload
+    response_schema = generation_config.get("response_schema")
+    assert isinstance(response_schema, dict)
+    assert response_schema.get("$ref") == generator._latest_schema_binding["schema_id"]
     assert payload["model"] == generator.default_model
 
 
@@ -190,11 +179,10 @@ def test_gemini_build_request_merges_generation_config_parameters() -> None:
 
     generation_config = payload["generation_config"]
     assert generation_config["response_mime_type"] == "application/json"
-    assert payload["tools"][0]["function_declarations"][0]["parameters"]["type"] == "object"
+    assert generation_config["response_schema"]["$ref"] == generator._latest_schema_binding["schema_id"]
     assert generation_config["temperature"] == 0.25
     assert generation_config["max_output_tokens"] == 128
     assert generation_config["seed"] == 42
-    assert payload["tool_config"]["function_calling_config"]["mode"] == "AUTO"
     assert payload["model"] == generator.default_model
 
 
