@@ -12,6 +12,7 @@ import socket
 import time
 import urllib.error
 import urllib.request
+import re
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import uuid
 from copy import deepcopy
@@ -34,7 +35,7 @@ _BACKOFF_FACTOR = 2.0
 _BACKOFF_CAP_SECONDS = 5.0
 _JITTER_FRACTION = 0.2
 
-SENSITIVE_HEADERS = {"authorization", "x-goog-api-key"}
+SENSITIVE_HEADERS = {"authorization", "x-goog-api-key", "api-key"}
 
 _DEFAULT_SECTIONS = {
     "shader": {"input_parameters": []},
@@ -1480,6 +1481,20 @@ class GeminiGenerator(ExternalGenerator):
     api_key_env = "GEMINI_API_KEY"
     endpoint_env = "GEMINI_ENDPOINT"
     default_model = "gemini-2.0-flash"
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        parameters: Optional[JsonDict] = None,
+        seed: Optional[int] = None,
+        timeout: Optional[float] = None,
+        trace_id: Optional[str] = None,
+        schema_version: Optional[str] = None,
+    ) -> Tuple[JsonDict, JsonDict]:
+        raise NotImplementedError(
+            "Gemini structured-output is disabled until Vertex AI migration."
+        )
     
     @property
     def default_endpoint(self) -> str:
@@ -1922,15 +1937,19 @@ class OpenAIGenerator(ExternalGenerator):
         *,
         schema_version: Optional[str] = None,
     ) -> JsonDict:
-        return {
+        model = parameters.get("model")
+        self._active_model = model
+        payload = {
             "trace_id": envelope["trace_id"],
-            "model": parameters.get("model"),
+            "model": model,
             "temperature": parameters.get("temperature"),
             "messages": [
                 {"role": "system", "content": "You are a Synesthetic asset generator."},
                 {"role": "user", "content": prompt},
             ],
+            "response_format": {"type": "json_object"},
         }
+        return payload
 
     def _mock_response(self, prompt: str, parameters: JsonDict) -> JsonDict:
         timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
@@ -1971,6 +1990,30 @@ class OpenAIGenerator(ExternalGenerator):
             },
         }
 
+    @staticmethod
+    def _extract_structured_payload(response: JsonDict) -> JsonDict:
+        choices = response.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ExternalRequestError("bad_response", "missing_choices", retryable=False)
+        first_choice = choices[0]
+        message = first_choice.get("message") if isinstance(first_choice, dict) else None
+        if not isinstance(message, dict):
+            raise ExternalRequestError("bad_response", "missing_message", retryable=False)
+        content = message.get("content")
+        if isinstance(content, list):
+            content = "".join(
+                part.get("text", "") for part in content if isinstance(part, dict)
+            )
+        if not isinstance(content, str):
+            raise ExternalRequestError("bad_response", "missing_content", retryable=False)
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", content, re.DOTALL)
+            if not match:
+                raise ExternalRequestError("bad_response", "invalid_json", retryable=False)
+            return json.loads(match.group(0))
+
     def _parse_response(
         self,
         response: JsonDict,
@@ -1983,9 +2026,10 @@ class OpenAIGenerator(ExternalGenerator):
         response_hash: str,
         schema_version: str,
     ) -> JsonDict:
-        asset_payload = response.get("asset")
+        payload = self._extract_structured_payload(response)
+        asset_payload = payload.get("asset") if isinstance(payload, dict) else None
         if not isinstance(asset_payload, dict):
-            raise ValueError("OpenAI response missing 'asset' payload")
+            asset_payload = payload if isinstance(payload, dict) else {}
         asset = self._normalise_asset(
             asset_payload,
             prompt=prompt,
@@ -2003,6 +2047,47 @@ class OpenAIGenerator(ExternalGenerator):
         return asset
 
 
+class AzureOpenAIGenerator(OpenAIGenerator):
+    engine = "azure"
+    api_version = "2025-01-01-preview"
+
+    api_key_env = "AZURE_OPENAI_API_KEY"
+    endpoint_env = "AZURE_OPENAI_ENDPOINT"
+    default_endpoint = None
+
+    def default_parameters(self) -> JsonDict:
+        deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+        temperature = float(os.getenv("AZURE_OPENAI_TEMPERATURE", "0.4"))
+        return {"model": deployment, "temperature": temperature}
+
+    def _resolve_live_settings(self) -> Dict[str, Any]:
+        api_key = (os.getenv(self.api_key_env or "") or "").strip()
+        if not api_key:
+            raise ExternalRequestError("auth_error", "missing_api_key", retryable=False)
+
+        base_endpoint = (os.getenv(self.endpoint_env or "") or "").strip().rstrip("/")
+        if not base_endpoint:
+            raise ExternalRequestError("network_error", "missing_endpoint", retryable=False)
+
+        deployment = getattr(self, "_active_model", None) or os.getenv(
+            "AZURE_OPENAI_DEPLOYMENT"
+        )
+        if not deployment:
+            raise ExternalRequestError("network_error", "missing_deployment", retryable=False)
+
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", self.api_version)
+        endpoint = (
+            f"{base_endpoint}/openai/deployments/{deployment}/chat/completions"
+            f"?api-version={api_version}"
+        )
+        headers = {"Content-Type": "application/json", "api-key": api_key}
+        log_headers = self._sanitize_headers_for_log(headers)
+        self.endpoint = base_endpoint
+        self.api_version = api_version
+        self._azure_deployment = deployment
+        return {"endpoint": endpoint, "headers": headers, "log_headers": log_headers}
+
+
 def build_external_generator(engine: str, **kwargs: Any) -> ExternalGenerator:
     """Factory returning the configured external generator for *engine*."""
 
@@ -2011,4 +2096,6 @@ def build_external_generator(engine: str, **kwargs: Any) -> ExternalGenerator:
         return GeminiGenerator(**kwargs)
     if normalised == "openai":
         return OpenAIGenerator(**kwargs)
+    if normalised == "azure":
+        return AzureOpenAIGenerator(**kwargs)
     raise ValueError(f"unsupported external engine: {engine}")

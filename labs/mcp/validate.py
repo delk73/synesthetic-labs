@@ -138,4 +138,17 @@ def validate_many(assets: Iterable[MutableMapping[str, Any]], *_) -> JsonDict:
     return payload
 
 
-__all__ = ["validate_asset", "validate_many"]
+def invoke_mcp(asset: MutableMapping[str, Any], strict: bool = True) -> JsonDict:
+    """Validate *asset* via MCP, raising on strict-mode failures."""
+
+    result = validate_asset(asset)
+    if strict and not result.get("ok"):
+        error = ValidationError("strict validation failed")
+        setattr(error, "result", result)
+        raise error
+    if not strict and not result.get("ok"):
+        print("[WARN] relaxed validation: asset persisted with warnings")
+    return result
+
+
+__all__ = ["validate_asset", "validate_many", "invoke_mcp"]

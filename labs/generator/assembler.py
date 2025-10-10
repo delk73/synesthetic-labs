@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import os
 import uuid
 from copy import deepcopy
 from typing import Dict, Iterable, List, Optional, Sequence, Set
@@ -52,6 +53,40 @@ class AssetAssembler:
         version = (schema_version or cls.DEFAULT_SCHEMA_VERSION).strip()
         return cls.SCHEMA_URL_TEMPLATE.format(version=version)
 
+    @staticmethod
+    def default_shader() -> Dict[str, object]:
+        return {"type": "fragment", "code": "// default shader"}
+
+    @staticmethod
+    def default_tone() -> Dict[str, object]:
+        return {"type": "sine", "frequency": 440}
+
+    @staticmethod
+    def default_haptic() -> Dict[str, object]:
+        return {"pattern": "pulse", "duration_ms": 120}
+
+    @staticmethod
+    def default_control() -> Dict[str, object]:
+        return {"sensitivity": 1.0, "range": [0, 1]}
+
+    @staticmethod
+    def fill_defaults(asset: Dict[str, object]) -> Dict[str, object]:
+        if not isinstance(asset, dict):
+            return asset
+
+        fillers = {
+            "shader": AssetAssembler.default_shader,
+            "tone": AssetAssembler.default_tone,
+            "haptic": AssetAssembler.default_haptic,
+            "control": AssetAssembler.default_control,
+        }
+
+        for section, factory in fillers.items():
+            value = asset.get(section)
+            if not isinstance(value, dict) or not value:
+                asset[section] = factory()
+        return asset
+
     def generate(
         self,
         prompt: str,
@@ -95,10 +130,9 @@ class AssetAssembler:
         meta_info_block = self._build_meta_info(meta, timestamp, seed, asset_id)
 
         provenance_block = self._build_asset_provenance(
-            timestamp=timestamp,
-            seed=seed,
-            asset_id=asset_id,
-            trace_id=asset_id,
+            engine="deterministic",
+            schema_version=resolved_schema_version,
+            input_parameters={"prompt": prompt, "seed": seed},
         )
 
         schema_url = self.schema_url(resolved_schema_version)
@@ -188,6 +222,7 @@ class AssetAssembler:
             sections["meta_info"] = meta_info
 
         AssetAssembler._ensure_meta_defaults(meta_info, prompt)
+        AssetAssembler.fill_defaults(sections)
 
         legacy_asset: Dict[str, object] = {
             "$schema": schema_url,
@@ -197,7 +232,7 @@ class AssetAssembler:
             "name": meta_info.get("title") or prompt,
         }
         legacy_asset.update(sections)
-        return legacy_asset
+        return AssetAssembler.fill_defaults(legacy_asset)
 
     @staticmethod
     def _build_enriched_asset(
@@ -309,7 +344,7 @@ class AssetAssembler:
             or AssetAssembler.schema_url(AssetAssembler.DEFAULT_SCHEMA_VERSION)
         )
 
-        return {
+        normalized: Dict[str, object] = {
             "$schema": schema_url,
             "name": asset.get("meta_info", {}).get("title", prompt),
             "shader": {
@@ -335,6 +370,17 @@ class AssetAssembler:
                 "provenance": asset.get("meta_info", {}).get("provenance", {})
             },
         }
+
+        AssetAssembler.fill_defaults(normalized)
+
+        provenance = normalized.get("meta_info", {}).get("provenance")
+        if isinstance(provenance, dict):
+            allowed_keys = {"engine", "trace_id", "timestamp"}
+            normalized.setdefault("meta_info", {})["provenance"] = {
+                key: value for key, value in provenance.items() if key in allowed_keys
+            }
+
+        return normalized
 
 
 
@@ -581,23 +627,46 @@ class AssetAssembler:
             "response_hash": None,
         }
 
+    @staticmethod
+    def _version_tuple(value: str) -> Optional[Sequence[int]]:
+        try:
+            return tuple(int(part) for part in str(value).split("."))
+        except ValueError:
+            return None
+
+    @classmethod
+    def _schema_gte(cls, version: str, target: str) -> bool:
+        lhs = cls._version_tuple(version)
+        rhs = cls._version_tuple(target)
+        if lhs is not None and rhs is not None:
+            return lhs >= rhs
+        return str(version) >= str(target)
+
+    @staticmethod
     def _build_asset_provenance(
-        self,
-        *,
-        timestamp: str,
-        seed: Optional[int],
-        asset_id: str,
-        trace_id: str,
+        engine: str,
+        schema_version: str = "0.7.3",
+        input_parameters: Optional[Dict[str, object]] = None,
     ) -> Dict[str, object]:
-        return {
-            "agent": "AssetAssembler",
-            "version": self.version,
-            "assembled_at": timestamp,
-            "seed": seed,
-            "generator": {
-                "trace_id": trace_id,
-                "mode": "local",
-                "engine": "deterministic",
-            },
-            "asset_id": asset_id,
+        trace_id = str(uuid.uuid4())
+        provenance: Dict[str, object] = {
+            "engine": engine,
+            "trace_id": trace_id,
+            "timestamp": _dt.datetime.utcnow().isoformat() + "Z",
         }
+
+        if AssetAssembler._schema_gte(schema_version, "0.7.4"):
+            provenance.update(
+                {
+                    "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT")
+                    or os.getenv("GEMINI_ENDPOINT"),
+                    "deployment": os.getenv("AZURE_OPENAI_DEPLOYMENT")
+                    or os.getenv("GEMINI_MODEL"),
+                    "api_version": os.getenv(
+                        "AZURE_OPENAI_API_VERSION", "2025-01-01-preview"
+                    ),
+                    "input_parameters": input_parameters or {},
+                }
+            )
+
+        return provenance

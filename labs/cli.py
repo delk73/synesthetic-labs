@@ -9,40 +9,68 @@ import os
 import sys
 from typing import Any, Callable, Dict, Optional
 
+from jsonschema import ValidationError
 from dotenv import load_dotenv
 
 
-def _load_env_file() -> None:
+def _load_env_file(path: str | None = None) -> None:
     """Load environment variables using python-dotenv and enforce required keys."""
 
-    # Resolve .env path relative to project root
-    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    env_path = path or os.path.join(os.path.dirname(__file__), "..", ".env")
     load_dotenv(dotenv_path=env_path)
 
-    # Set up defaults as per v0.3.5 specification
-    os.environ.setdefault("GEMINI_MODEL", "gemini-2.0-flash")
-    os.environ.setdefault("LABS_FAIL_FAST", "false")
     os.environ.setdefault("LABS_SCHEMA_VERSION", "0.7.3")
+    os.environ.setdefault("LABS_FAIL_FAST", os.getenv("LABS_FAIL_FAST", "1"))
+    os.environ.setdefault("LABS_EXTERNAL_ENGINE", os.getenv("LABS_EXTERNAL_ENGINE", "azure"))
+    os.environ.setdefault("GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.0-flash"))
 
-    # Log warnings for missing required keys
     logger = logging.getLogger("labs.cli")
-    for required_key in ("GEMINI_API_KEY", "LABS_EXTERNAL_LIVE"):
+    engine = os.getenv("LABS_EXTERNAL_ENGINE", "azure").strip().lower()
+
+    azure_keys = (
+        "AZURE_OPENAI_ENDPOINT",
+        "AZURE_OPENAI_API_KEY",
+        "AZURE_OPENAI_DEPLOYMENT",
+    )
+    gemini_keys = (
+        "GEMINI_API_KEY",
+        "GEMINI_MODEL",
+        "GEMINI_ENDPOINT",
+    )
+
+    required_keys = azure_keys if engine == "azure" else gemini_keys if engine == "gemini" else ()
+    for required_key in required_keys:
         if not os.getenv(required_key):
-            logger.warning("Missing required env var: %s", required_key)
+            logger.warning("Missing required env var for %s engine: %s", engine, required_key)
 
 
 _load_env_file()
 
 _LOGGER = logging.getLogger("labs.cli")
 
-for _env_var in ("LABS_EXTERNAL_LIVE", "GEMINI_API_KEY", "OPENAI_API_KEY"):
+_MANDATORY_ENV_VARS = ("LABS_EXTERNAL_LIVE",)
+for _env_var in _MANDATORY_ENV_VARS:
     if not os.getenv(_env_var):
         _LOGGER.warning("Missing environment variable %s; falling back to mock mode.", _env_var)
+
+_ENGINE_ENV_VARS = {
+    "azure": ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_DEPLOYMENT"),
+    "gemini": ("GEMINI_API_KEY", "GEMINI_MODEL", "GEMINI_ENDPOINT"),
+}
+_active_engine = os.getenv("LABS_EXTERNAL_ENGINE", "azure").strip().lower()
+for _env_var in _ENGINE_ENV_VARS.get(_active_engine, ()):  # pragma: no branch - trivial iteration
+    if not os.getenv(_env_var):
+        _LOGGER.warning(
+            "Missing environment variable %s for %s engine; falling back to mock mode.",
+            _env_var,
+            _active_engine,
+        )
 
 from labs.agents.critic import CriticAgent, is_fail_fast_enabled
 from labs.agents.generator import GeneratorAgent
 from labs.generator.assembler import AssetAssembler
 from labs.generator.external import ExternalGenerationError, build_external_generator
+from labs.mcp.validate import invoke_mcp
 from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
 from labs.patches import apply_patch, preview_patch, rate_patch
 
@@ -125,7 +153,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     generate_parser.add_argument("prompt", help="Prompt text for the generator")
     generate_parser.add_argument(
         "--engine",
-        choices=("gemini", "openai", "deterministic"),
+        choices=("gemini", "openai", "azure", "deterministic"),
         help="Optional external engine to fulfil the prompt",
     )
     generate_parser.add_argument(
@@ -201,10 +229,25 @@ def main(argv: Optional[list[str]] = None) -> int:
         critic = CriticAgent(validator=validator_callback)
         review = critic.review(asset)
 
-        mcp_ok = _review_mcp_ok(review)
-        relaxed_mode = _is_relaxed_mode(review)
-
+        strict_flag = bool(args.strict if args.strict is not None else is_fail_fast_enabled())
         strict_failure = False
+        try:
+            mcp_response = invoke_mcp(asset, strict=strict_flag)
+        except ValidationError as exc:
+            mcp_response = getattr(
+                exc,
+                "result",
+                {"ok": False, "reason": "validation_failed", "errors": []},
+            )
+            strict_failure = True
+        else:
+            strict_failure = False
+
+        review["mcp_response"] = mcp_response
+        review.setdefault("mode", "strict" if strict_flag else "relaxed")
+
+        mcp_ok = bool(mcp_response.get("ok"))
+        relaxed_mode = _is_relaxed_mode(review)
 
         if mcp_ok:
             _LOGGER.info("MCP validation passed in %s mode", review.get("mode", "strict"))
