@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import hashlib
+import os
 import uuid
 from copy import deepcopy
 from typing import Dict, Iterable, List, Optional, Sequence, Set
@@ -23,6 +24,53 @@ class AssetAssembler:
     DEFAULT_SCHEMA_VERSION = "0.7.3"
     SCHEMA_URL_TEMPLATE = "https://schemas.synesthetic.dev/{version}/synesthetic-asset.schema.json"
     SCHEMA_URL = SCHEMA_URL_TEMPLATE.format(version=DEFAULT_SCHEMA_VERSION)
+
+    @staticmethod
+    def default_shader() -> Dict[str, object]:
+        return {
+            "type": "fragment",
+            "code": "// default shader",
+            "input_parameters": [],
+        }
+
+    @staticmethod
+    def default_tone() -> Dict[str, object]:
+        return {
+            "type": "sine",
+            "frequency": 440.0,
+            "input_parameters": [],
+        }
+
+    @staticmethod
+    def default_haptic() -> Dict[str, object]:
+        return {
+            "pattern": "pulse",
+            "duration_ms": 120,
+            "input_parameters": [],
+        }
+
+    @staticmethod
+    def default_control() -> Dict[str, object]:
+        return {
+            "name": "Fallback Control",
+            "control_parameters": [],
+            "mappings": [],
+            "sensitivity": 1.0,
+            "range": [0, 1],
+        }
+
+    @staticmethod
+    def fill_empty_sections(asset: Dict[str, object]) -> Dict[str, object]:
+        for field, factory in {
+            "shader": AssetAssembler.default_shader,
+            "tone": AssetAssembler.default_tone,
+            "haptic": AssetAssembler.default_haptic,
+            "control": AssetAssembler.default_control,
+        }.items():
+            current = asset.get(field)
+            if not isinstance(current, dict) or not current:
+                asset[field] = factory()
+        return asset
 
     def __init__(
         self,
@@ -99,6 +147,7 @@ class AssetAssembler:
             seed=seed,
             asset_id=asset_id,
             trace_id=asset_id,
+            schema_version=resolved_schema_version,
         )
 
         schema_url = self.schema_url(resolved_schema_version)
@@ -189,6 +238,8 @@ class AssetAssembler:
 
         AssetAssembler._ensure_meta_defaults(meta_info, prompt)
 
+        AssetAssembler.fill_empty_sections(sections)
+
         legacy_asset: Dict[str, object] = {
             "$schema": schema_url,
             "asset_id": asset_id,
@@ -247,6 +298,8 @@ class AssetAssembler:
             sections["meta_info"] = meta_info
 
         AssetAssembler._ensure_meta_defaults(meta_info, prompt)
+
+        AssetAssembler.fill_empty_sections(sections)
 
         normalized_provenance = deepcopy(provenance_block) if isinstance(provenance_block, dict) else {}
 
@@ -588,16 +641,47 @@ class AssetAssembler:
         seed: Optional[int],
         asset_id: str,
         trace_id: str,
+        schema_version: Optional[str],
+        input_parameters: Optional[Dict[str, object]] = None,
     ) -> Dict[str, object]:
+        parameters = input_parameters or {"seed": seed, "version": self.version}
+        generator_block: Dict[str, object] = {
+            "trace_id": trace_id,
+            "mode": "local",
+            "engine": "deterministic",
+        }
+
+        if not self._is_legacy_schema(schema_version):
+            engine_name = os.getenv("LABS_EXTERNAL_ENGINE", "deterministic")
+            endpoint = (
+                os.getenv("AZURE_OPENAI_ENDPOINT")
+                or os.getenv("OPENAI_ENDPOINT")
+                or os.getenv("GEMINI_ENDPOINT")
+                or "internal"
+            )
+            deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT") or os.getenv("OPENAI_MODEL")
+            api_version = (
+                os.getenv("AZURE_OPENAI_API_VERSION")
+                or os.getenv("OPENAI_API_VERSION")
+                or ""
+            )
+            generator_block.update(
+                {
+                    "engine": engine_name or "deterministic",
+                    "endpoint": endpoint,
+                    "deployment": deployment,
+                    "api_version": api_version,
+                    "input_parameters": parameters,
+                }
+            )
+        else:
+            generator_block["input_parameters"] = parameters
+
         return {
             "agent": "AssetAssembler",
             "version": self.version,
             "assembled_at": timestamp,
             "seed": seed,
-            "generator": {
-                "trace_id": trace_id,
-                "mode": "local",
-                "engine": "deterministic",
-            },
+            "generator": generator_block,
             "asset_id": asset_id,
         }

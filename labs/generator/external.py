@@ -288,6 +288,41 @@ def _strict_mode_enabled() -> bool:
     return lowered not in {"0", "false", "no", "off"}
 
 
+def _decode_structured_content(
+    response: JsonDict, *, engine: str, logger: logging.Logger
+) -> JsonDict:
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ExternalRequestError("bad_response", "missing_choices", retryable=False)
+
+    choice = choices[0] if isinstance(choices[0], dict) else {}
+    message = choice.get("message") if isinstance(choice, dict) else None
+    content: Any
+    if isinstance(message, dict):
+        content = message.get("content")
+    else:
+        content = None
+
+    if isinstance(content, list):
+        parts: List[str] = []
+        for entry in content:
+            if isinstance(entry, str):
+                parts.append(entry)
+            elif isinstance(entry, dict) and isinstance(entry.get("text"), str):
+                parts.append(entry["text"])
+        content = "".join(parts)
+
+    if not isinstance(content, str):
+        raise ExternalRequestError("bad_response", "missing_message_content", retryable=False)
+
+    text = content.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        logger.error("Parse error for %s response: %s", engine, exc)
+        raise ExternalRequestError("bad_response", "invalid_json_content", retryable=False) from exc
+
+
 class ExternalRequestError(RuntimeError):
     """Raised when an HTTP invocation fails with a classified taxonomy reason."""
 
@@ -500,6 +535,7 @@ class ExternalGenerator:
                     "engine": self.engine,
                     "api_version": self.api_version,
                     "parameters": parameters,
+                    "deployment": parameters.get("model"),
                     "mode": "mock" if self.mock_mode else "live",
                     "attempts": attempts,
                     "request": request_payload,
@@ -605,6 +641,7 @@ class ExternalGenerator:
             "schema_id": context.get("schema_id"),
             "schema_binding_version": context.get("schema_binding_version"),
             "endpoint": context.get("endpoint"),
+            "deployment": context.get("deployment"),
         }
 
         record["validation_status"] = (
@@ -1472,431 +1509,23 @@ class ExternalGenerator:
 
 
 class GeminiGenerator(ExternalGenerator):
-    """Google Gemini generator (v1beta generateContent)."""
+    """Placeholder until Gemini structured output is available."""
 
     engine = "gemini"
     api_version = "v1beta"
 
-    api_key_env = "GEMINI_API_KEY"
-    endpoint_env = "GEMINI_ENDPOINT"
-    default_model = "gemini-2.0-flash"
-    
-    @property
-    def default_endpoint(self) -> str:
-        """Dynamically build endpoint URL with model from env vars."""
-        model = os.getenv("GEMINI_MODEL", self.default_model)
-        return f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-
-    @staticmethod
-    def _redact_endpoint(endpoint: str) -> str:
-        if not endpoint:
-            return endpoint
-        parsed = urlparse(endpoint)
-        redacted = False
-        redacted_query = []
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True):
-            if key.lower() == "key":
-                redacted = True
-                redacted_query.append((key, "***redacted***"))
-            else:
-                redacted_query.append((key, value))
-        if redacted:
-            parsed = parsed._replace(query=urlencode(redacted_query))
-            return urlunparse(parsed)
-        return endpoint
-
-    def _build_live_headers(self, api_key: str) -> Tuple[Dict[str, str], Dict[str, str]]:
-        headers = {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": api_key,
-        }
-        return headers, self._sanitize_headers_for_log(headers)
-
-    def _build_request_endpoint(self, endpoint: str, api_key: str) -> str:
-        parsed = urlparse(endpoint)
-        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-        query["key"] = api_key
-        return urlunparse(parsed._replace(query=urlencode(query)))
-
-    def connectivity_check(
+    def generate(  # type: ignore[override]
         self,
-        *,
-        endpoint: Optional[str] = None,
-        api_key: Optional[str] = None,
-        headers: Optional[Dict[str, str]] = None,
-        timeout: float = 5.0,
-    ) -> None:
-        """Ensure Gemini endpoint and credentials are available before live requests."""
-
-        if (
-            self.mock_mode
-            or self._transport is not None
-            or getattr(self, "_connectivity_checked", False)
-        ):
-            return
-
-        resolved_endpoint = (
-            (endpoint or os.getenv(self.endpoint_env or "") or self.default_endpoint or getattr(self, "endpoint", None) or "").strip()
-        )
-        resolved_api_key = (api_key or os.getenv(self.api_key_env or "") or "").strip()
-
-        if not resolved_api_key:
-            raise ExternalRequestError(
-                "connectivity_check_failed",
-                "missing_api_key",
-                retryable=False,
-            )
-
-        if not resolved_endpoint:
-            raise ExternalRequestError(
-                "connectivity_check_failed",
-                "missing_endpoint",
-                retryable=False,
-            )
-
-        request_headers = headers or self._build_live_headers(resolved_api_key)[0]
-        request_endpoint = self._build_request_endpoint(resolved_endpoint, resolved_api_key)
-        payload = self._build_request({}, "ping", {})
-
-        try:
-            self._logger.debug("Gemini sending payload: %s", json.dumps(payload, indent=2))
-            response = requests.post(request_endpoint, json=payload, headers=request_headers, timeout=timeout)
-            self._logger.debug("Gemini response status: %s", response.status_code)
-            if response.status_code >= 400:
-                self._logger.debug("Gemini error response body: %s", response.text)
-        except requests.RequestException as exc:
-            self._logger.warning("Gemini connectivity probe failed for %s: %s", resolved_endpoint, exc)
-            raise ExternalRequestError(
-                "connectivity_check_failed",
-                "endpoint_unreachable",
-                retryable=False,
-            ) from exc
-
-        if not (200 <= response.status_code < 300):
-            self._logger.warning(
-                "Gemini connectivity check returned %s for %s", response.status_code, resolved_endpoint
-            )
-            raise ExternalRequestError(
-                "connectivity_check_failed",
-                f"unexpected_status_{response.status_code}",
-                retryable=False,
-            )
-
-        self._connectivity_checked = True
-
-    def _resolve_live_settings(self) -> Dict[str, Any]:
-        api_key = (os.getenv(self.api_key_env or "") or "").strip()
-        if not api_key:
-            raise ExternalRequestError("auth_error", "missing_api_key", retryable=False)
-
-        endpoint = (os.getenv(self.endpoint_env or "") or self.default_endpoint or getattr(self, "endpoint", None) or "").strip()
-        if not endpoint:
-            raise ExternalRequestError("network_error", "missing_endpoint", retryable=False)
-
-        headers, log_headers = self._build_live_headers(api_key)
-        request_endpoint = self._build_request_endpoint(endpoint, api_key)
-        self._gemini_request_endpoint = request_endpoint
-        self.connectivity_check(endpoint=endpoint, api_key=api_key, headers=headers)
-        return {"endpoint": endpoint, "headers": headers, "log_headers": log_headers}
-
-    def _dispatch(
-        self,
-        endpoint: str,
-        payload: JsonDict,
-        *,
-        headers: Dict[str, str],
-        timeout: float,
         prompt: str,
-        parameters: JsonDict,
-    ) -> Tuple[JsonDict, bytes]:
-        request_endpoint = getattr(self, "_gemini_request_endpoint", endpoint)
-        sanitized_endpoint = self._redact_endpoint(request_endpoint)
-        self._logger.debug("Gemini actual generation endpoint: %s", sanitized_endpoint)
-        self._logger.debug("Gemini actual generation payload: %s", json.dumps(payload, indent=2))
-        return super()._dispatch(
-            request_endpoint,
-            payload,
-            headers=headers,
-            timeout=timeout,
-            prompt=prompt,
-            parameters=parameters,
-        )
-
-    def default_parameters(self) -> JsonDict:
-        return {
-            "model": os.getenv("GEMINI_MODEL", self.default_model),
-            "temperature": None,
-        }
-
-    def _build_request(
-        self,
-        envelope: JsonDict,
-        prompt: str,
-        parameters: JsonDict,
         *,
+        parameters: Optional[JsonDict] = None,
+        seed: Optional[int] = None,
+        timeout: Optional[float] = None,
+        trace_id: Optional[str] = None,
         schema_version: Optional[str] = None,
-    ) -> JsonDict:
-        target_version = schema_version or parameters.get("schema_version")
-        schema_id: Optional[str] = None
-        resolved_version: Optional[str] = target_version
-
-        try:
-            if target_version:
-                descriptor_id, descriptor_version, _ = _schema_descriptor(target_version)
-            else:
-                descriptor_id, descriptor_version, _ = _schema_descriptor(None)
-            schema_id = descriptor_id
-            resolved_version = descriptor_version
-        except Exception as exc:  # pragma: no cover - defensive
-            self._logger.warning("Gemini schema binding unavailable: %s", exc)
-
-        # Gemini 2.0 structured-output payload (snake_case)
-        payload: JsonDict = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generation_config": {"response_mime_type": "application/json"},
-            "model": parameters.get("model") or os.getenv("GEMINI_MODEL", self.default_model),
-        }
-
-        generation_config: JsonDict = payload["generation_config"]
-        temperature = parameters.get("temperature")
-        if isinstance(temperature, Real):
-            generation_config["temperature"] = float(temperature)
-
-        max_tokens = parameters.get("max_tokens")
-        if isinstance(max_tokens, int) and max_tokens > 0:
-            generation_config["max_output_tokens"] = max_tokens
-
-        seed = parameters.get("seed")
-        if isinstance(seed, int):
-            generation_config["seed"] = seed
-
-        bound = False
-        if schema_id:
-            generation_config["response_schema"] = {"$ref": schema_id}
-            bound = True
-            self._logger.debug(
-                "Gemini request schema bound to %s (version=%s)",
-                schema_id,
-                resolved_version,
-            )
-
-        self._latest_schema_binding = {
-            "schema_id": schema_id,
-            "schema_version": resolved_version,
-            "bound": bound,
-        }
-
-        return payload
-
-    def _mock_response(self, prompt: str, parameters: JsonDict) -> JsonDict:
-        # Create a complete valid asset using the assembler
-        schema_version = parameters.get("schema_version", "0.7.3")
-        assembler = AssetAssembler(schema_version=schema_version)
-        baseline_asset = assembler.generate(
-            f"{prompt}", 
-            seed=parameters.get("seed", 42), 
-            schema_version=schema_version
-        )
-        
-        # Add Gemini-specific metadata
-        baseline_asset["name"] = "Square Harmony Asset"
-        if "meta_info" not in baseline_asset:
-            baseline_asset["meta_info"] = {}
-        if "tags" not in baseline_asset["meta_info"]:
-            baseline_asset["meta_info"]["tags"] = []
-        baseline_asset["meta_info"]["tags"].extend(["external", "gemini", "mock"])
-        
-        timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        baseline_asset["timestamp"] = timestamp
-        
-        # Handle provenance based on schema version
-        if schema_version == "0.7.3":
-            # For 0.7.3, provenance is a top-level property
-            baseline_asset["provenance"] = {
-                "generator": {
-                    "engine": self.engine,
-                    "endpoint": f"mock://{self.engine}",
-                    "model": os.getenv("GEMINI_MODEL", self.default_model),
-                    "parameters": {
-                        "temperature": parameters.get("temperature"),
-                        "seed": parameters.get("seed"),
-                    },
-                    "trace_id": str(uuid.uuid4()),
-                    "mode": "mock",
-                    "timestamp": timestamp,
-                    "response_hash": "mock-response-hash"
-                }
-            }
-            
-            # Ensure parameter_index is present for 0.7.3
-            if "parameter_index" not in baseline_asset:
-                baseline_asset["parameter_index"] = []
-        else:
-            # For 0.7.4+, provenance goes in meta_info
-            if "provenance" not in baseline_asset["meta_info"]:
-                baseline_asset["meta_info"]["provenance"] = {}
-                
-            baseline_asset["meta_info"]["provenance"].update({
-                "engine": self.engine,
-                "endpoint": f"mock://{self.engine}",
-                "model": os.getenv("GEMINI_MODEL", self.default_model),
-                "parameters": {
-                    "temperature": parameters.get("temperature"),
-                    "seed": parameters.get("seed"),
-                },
-                "trace_id": str(uuid.uuid4()),
-                "mode": "mock",
-                "timestamp": timestamp,
-                "response_hash": "mock-response-hash",
-                "input_parameters": {
-                    "prompt": prompt,
-                    "parameters": parameters,
-                    "taxonomy": {
-                        "domain": "visual",
-                        "task": "generation",
-                        "style": "square" if "square" in prompt.lower() else "compositional"
-                    }
-                }
-            })
-        
-        # Return asset directly instead of nesting
-        return baseline_asset
-
-    def _parse_response(
-        self,
-        response: JsonDict,
-        prompt: str,
-        parameters: JsonDict,
-        *,
-        trace_id: str,
-        mode: str,
-        endpoint: str,
-        response_hash: str,
-        schema_version: str,
-    ) -> JsonDict:
-        """Parse and normalize a Gemini response into a valid synesthetic asset."""
-        _, resolved_schema_version, schema_spec = _schema_descriptor(schema_version)
-
-        # Mock responses may already supply an asset payload
-        if isinstance(response, dict) and "candidates" not in response:
-            return self._normalise_asset(
-                response,
-                prompt=prompt,
-                parameters=parameters,
-                response=response,
-                trace_id=trace_id,
-                mode=mode,
-                endpoint=endpoint,
-                response_hash=response_hash,
-                schema_version=resolved_schema_version,
-            )
-
-        asset_payload = _build_schema_skeleton(schema_spec)
-
-        try:
-            self._logger.debug(
-                "Gemini parse_response received: %s", json.dumps(response, indent=2)
-            )
-            if not isinstance(response.get("candidates"), list) or not response["candidates"]:
-                raise ExternalRequestError("bad_response", "missing_candidates", retryable=False)
-
-            candidate = response["candidates"][0]
-            content = candidate["content"]
-            parts = content["parts"]
-            gemini_data: Any = None
-
-            function_call: Optional[Dict[str, Any]] = None
-            for part in parts:
-                if not isinstance(part, dict):
-                    continue
-                if "function_call" in part and isinstance(part["function_call"], dict):
-                    function_call = part["function_call"]
-                    break
-                if "functionCall" in part and isinstance(part["functionCall"], dict):
-                    function_call = part["functionCall"]
-                    break
-
-            if function_call:
-                args = function_call.get("args")
-                if isinstance(args, dict):
-                    gemini_data = args
-                elif isinstance(args, str):
-                    try:
-                        gemini_data = json.loads(args)
-                    except json.JSONDecodeError:
-                        self._logger.warning("Gemini function_call args not valid JSON: %s", args[:200])
-                        gemini_data = {}
-                self._logger.debug(
-                    "Gemini extracted function_call '%s' with keys: %s",
-                    function_call.get("name"),
-                    sorted(gemini_data.keys()) if isinstance(gemini_data, dict) else type(gemini_data),
-                )
-            else:
-                text_payload: Optional[str] = None
-                for part in parts:
-                    if isinstance(part, dict) and isinstance(part.get("text"), str):
-                        text_payload = part["text"]
-                        break
-                if text_payload:
-                    self._logger.debug("Gemini extracted text: %s", text_payload[:500])
-                    gemini_data = json.loads(text_payload)
-
-            if isinstance(gemini_data, list) and gemini_data:
-                gemini_data = gemini_data[0]
-
-            if isinstance(gemini_data, dict):
-                if gemini_data.get("name"):
-                    asset_payload["name"] = gemini_data["name"]
-
-                if (
-                    gemini_data.get("description")
-                    and isinstance(asset_payload.get("shader"), dict)
-                ):
-                    asset_payload["shader"]["description"] = gemini_data["description"]
-
-                shader_defs = gemini_data.get("shader_definitions")
-                if isinstance(shader_defs, list):
-                    shader_section = asset_payload.get("shader")
-                    if isinstance(shader_section, dict):
-                        shader_section.setdefault("sources", {})
-                        for shader_def in shader_defs:
-                            if not isinstance(shader_def, dict):
-                                continue
-                            square_code = shader_def.get("code", "")
-                            if square_code and "squareSDF" in square_code:
-                                shader_section["name"] = shader_def.get("name", "SquareSDF")
-                                shader_section["sources"]["fragment"] = square_code
-                                self._logger.debug("Updated shader with squareSDF implementation")
-
-                meta_info = asset_payload.setdefault("meta_info", {})
-                tags = meta_info.get("tags")
-                if not isinstance(tags, list):
-                    tags = []
-                if "square" in prompt.lower():
-                    tags.extend(["external", "gemini", "square"])
-                else:
-                    tags.extend(["external", "gemini"])
-                meta_info["tags"] = list(dict.fromkeys(tags))
-                meta_info["gemini_response"] = gemini_data
-
-        except Exception as exc:  # pragma: no cover - defensive fallback
-            self._logger.error("Error processing Gemini response: %s", exc)
-            fallback_asset = _build_schema_skeleton(schema_spec)
-            meta_info = fallback_asset.setdefault("meta_info", {})
-            meta_info["fallback"] = True
-            meta_info["raw_response"] = str(response)[:1000]
-            asset_payload = fallback_asset
-
-        return self._normalise_asset(
-            asset_payload,
-            prompt=prompt,
-            parameters=parameters,
-            response=response,
-            trace_id=trace_id,
-            mode=mode,
-            endpoint=endpoint,
-            response_hash=response_hash,
-            schema_version=resolved_schema_version,
+    ) -> Tuple[JsonDict, JsonDict]:
+        raise NotImplementedError(
+            "Gemini structured-output not supported; use Azure engine until Vertex AI schema APIs are available."
         )
 
 
@@ -1930,6 +1559,7 @@ class OpenAIGenerator(ExternalGenerator):
                 {"role": "system", "content": "You are a Synesthetic asset generator."},
                 {"role": "user", "content": prompt},
             ],
+            "response_format": {"type": "json_object"},
         }
 
     def _mock_response(self, prompt: str, parameters: JsonDict) -> JsonDict:
@@ -1956,19 +1586,31 @@ class OpenAIGenerator(ExternalGenerator):
             if isinstance(range_block, dict):
                 mapping["range"] = deepcopy(range_block)
             default_mappings.append(mapping)
+
+        asset_payload = {
+            "shader": {"component": "shader", "style": "prismatic", "prompt": prompt},
+            "tone": {"component": "tone", "mood": "uplifting"},
+            "haptic": {"component": "haptic", "pattern": "pulse"},
+            "control": {"component": "control", "mappings": default_mappings},
+            "meta": {"component": "meta", "tags": ["external", "openai"]},
+            "modulations": [],
+            "rule_bundle": {"component": "rule_bundle", "rules": []},
+            "timestamp": timestamp,
+        }
+
         return {
             "id": f"openai-mock-{uuid.uuid4()}",
-            "object": "synesthetic.asset",
-            "asset": {
-                "shader": {"component": "shader", "style": "prismatic", "prompt": prompt},
-                "tone": {"component": "tone", "mood": "uplifting"},
-                "haptic": {"component": "haptic", "pattern": "pulse"},
-                "control": {"component": "control", "mappings": default_mappings},
-                "meta": {"component": "meta", "tags": ["external", "openai"]},
-                "modulations": [],
-                "rule_bundle": {"component": "rule_bundle", "rules": []},
-                "timestamp": timestamp,
-            },
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": json.dumps(asset_payload),
+                    },
+                }
+            ],
         }
 
     def _parse_response(
@@ -1983,9 +1625,13 @@ class OpenAIGenerator(ExternalGenerator):
         response_hash: str,
         schema_version: str,
     ) -> JsonDict:
-        asset_payload = response.get("asset")
+        payload = _decode_structured_content(response, engine=self.engine, logger=self._logger)
+        asset_payload = payload.get("asset") if isinstance(payload, dict) else None
         if not isinstance(asset_payload, dict):
-            raise ValueError("OpenAI response missing 'asset' payload")
+            if isinstance(payload, dict):
+                asset_payload = payload
+            else:
+                raise ValueError("OpenAI response missing structured asset payload")
         asset = self._normalise_asset(
             asset_payload,
             prompt=prompt,
@@ -2003,6 +1649,58 @@ class OpenAIGenerator(ExternalGenerator):
         return asset
 
 
+class AzureOpenAIGenerator(OpenAIGenerator):
+    engine = "azure"
+
+    api_key_env = "AZURE_OPENAI_API_KEY"
+    endpoint_env = "AZURE_OPENAI_ENDPOINT"
+    default_endpoint = None
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+        self._deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+
+    def default_parameters(self) -> JsonDict:
+        params = super().default_parameters()
+        if self._deployment:
+            params["model"] = self._deployment
+        return params
+
+    def _resolve_live_settings(self) -> Dict[str, Any]:
+        api_key = (os.getenv(self.api_key_env or "") or "").strip()
+        if not api_key:
+            raise ExternalRequestError("auth_error", "missing_api_key", retryable=False)
+
+        endpoint = (
+            os.getenv(self.endpoint_env or "")
+            or self.default_endpoint
+            or self.endpoint
+            or ""
+        ).strip()
+        if not endpoint:
+            raise ExternalRequestError("network_error", "missing_endpoint", retryable=False)
+
+        headers = {
+            "Content-Type": "application/json",
+            "api-key": api_key,
+        }
+        log_headers = self._sanitize_headers_for_log(headers)
+
+        api_version = self.api_version or ""
+        parsed = urlparse(endpoint)
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        if api_version:
+            query.setdefault("api-version", api_version)
+        endpoint_with_version = urlunparse(parsed._replace(query=urlencode(query)))
+
+        return {
+            "endpoint": endpoint_with_version,
+            "headers": headers,
+            "log_headers": log_headers,
+        }
+
+
 def build_external_generator(engine: str, **kwargs: Any) -> ExternalGenerator:
     """Factory returning the configured external generator for *engine*."""
 
@@ -2011,4 +1709,6 @@ def build_external_generator(engine: str, **kwargs: Any) -> ExternalGenerator:
         return GeminiGenerator(**kwargs)
     if normalised == "openai":
         return OpenAIGenerator(**kwargs)
+    if normalised == "azure":
+        return AzureOpenAIGenerator(**kwargs)
     raise ValueError(f"unsupported external engine: {engine}")

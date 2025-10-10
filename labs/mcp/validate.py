@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, MutableMapping
+import logging
+from typing import Any, Callable, Dict, Iterable, List, MutableMapping, Optional
 
 import jsonschema
 from jsonschema import Draft202012Validator, ValidationError
@@ -124,6 +125,38 @@ def validate_asset(asset: MutableMapping[str, Any], *_) -> JsonDict:
     return {"ok": True, "reason": "validation_passed", "errors": []}
 
 
+def invoke_mcp(
+    asset: MutableMapping[str, Any],
+    *,
+    strict: bool = True,
+    validator: Optional[Callable[[MutableMapping[str, Any]], JsonDict]] = None,
+    result: Optional[JsonDict] = None,
+) -> JsonDict:
+    """Run MCP validation and enforce strict/relaxed handling."""
+
+    payload: JsonDict
+    if result is not None:
+        payload = dict(result)
+    else:
+        target_validator = validator or validate_asset
+        payload = target_validator(asset)
+        if not isinstance(payload, dict):
+            payload = {"ok": bool(payload)}
+
+    ok = bool(payload.get("ok"))
+    payload.setdefault("ok", ok)
+
+    if strict and not ok:
+        raise ValidationError("strict validation failed")
+
+    if not strict and not ok:
+        logging.getLogger("labs.mcp.validate").warning(
+            "relaxed validation: asset persisted with warnings"
+        )
+
+    return payload
+
+
 def validate_many(assets: Iterable[MutableMapping[str, Any]], *_) -> JsonDict:
     results: List[JsonDict] = []
     for asset in assets:
@@ -138,4 +171,4 @@ def validate_many(assets: Iterable[MutableMapping[str, Any]], *_) -> JsonDict:
     return payload
 
 
-__all__ = ["validate_asset", "validate_many"]
+__all__ = ["validate_asset", "validate_many", "invoke_mcp"]
