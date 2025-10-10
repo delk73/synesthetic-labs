@@ -603,6 +603,7 @@ class ExternalGenerator:
             "taxonomy": context.get("taxonomy") or f"external.{self.engine}",
             "schema_binding": context.get("schema_binding", False),
             "schema_id": context.get("schema_id"),
+            "schema_binding_version": context.get("schema_binding_version"),
             "endpoint": context.get("endpoint"),
         }
 
@@ -1636,65 +1637,40 @@ class GeminiGenerator(ExternalGenerator):
         schema_version: Optional[str] = None,
     ) -> JsonDict:
         target_version = schema_version or parameters.get("schema_version")
-        schema_id: Optional[str] = None
-        resolved_version: Optional[str] = target_version
-        schema_spec: Optional[Dict[str, Any]] = None
+        schema_id = None
+        resolved_version = target_version
 
         try:
             if target_version:
-                descriptor_id, descriptor_version, descriptor_spec = _schema_descriptor(target_version)
+                descriptor_id, descriptor_version, _ = _schema_descriptor(target_version)
             else:
-                descriptor_id, descriptor_version, descriptor_spec = _schema_descriptor(None)
+                descriptor_id, descriptor_version, _ = _schema_descriptor(None)
             schema_id = descriptor_id
             resolved_version = descriptor_version
-            schema_spec = descriptor_spec
-        except Exception as exc:  # pragma: no cover - defensive
+        except Exception as exc:
             self._logger.warning("Gemini schema binding unavailable: %s", exc)
 
+        # Gemini 2.0 structured-output payload (snake_case)
         payload: JsonDict = {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [
-                        {"text": prompt},
-                    ],
-                }
-            ],
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generation_config": {"response_mime_type": "application/json"},
             "model": parameters.get("model") or os.getenv("GEMINI_MODEL", self.default_model),
         }
 
         generation_config: JsonDict = payload["generation_config"]
-        temperature = parameters.get("temperature")
-        if isinstance(temperature, Real):
-            generation_config["temperature"] = float(temperature)
-
-        max_tokens = parameters.get("max_tokens")
-        if isinstance(max_tokens, int) and max_tokens > 0:
-            generation_config["max_output_tokens"] = max_tokens
-
-        seed = parameters.get("seed")
-        if isinstance(seed, int):
-            generation_config["seed"] = seed
+        if isinstance(parameters.get("temperature"), Real):
+            generation_config["temperature"] = float(parameters["temperature"])
+        if isinstance(parameters.get("max_tokens"), int) and parameters["max_tokens"] > 0:
+            generation_config["max_output_tokens"] = parameters["max_tokens"]
+        if isinstance(parameters.get("seed"), int):
+            generation_config["seed"] = parameters["seed"]
 
         bound = False
-        if schema_id and schema_spec:
-            sanitized_schema = _sanitize_schema_for_gemini(schema_spec)
-            payload["tools"] = [
-                {
-                    "function_declarations": [
-                        {
-                            "name": "output",
-                            "description": "Synesthetic asset JSON response",
-                            "parameters": sanitized_schema,
-                        }
-                    ]
-                }
-            ]
-            payload["tool_config"] = {"function_calling_config": {"mode": "AUTO"}}
+        if schema_id:
+            generation_config["response_schema"] = {"$ref": schema_id}
             bound = True
             self._logger.debug(
-                "Gemini request schema bound to %s (version=%s) via function declaration",
+                "Gemini request schema bound to %s (version=%s)",
                 schema_id,
                 resolved_version,
             )
@@ -1704,7 +1680,6 @@ class GeminiGenerator(ExternalGenerator):
             "schema_version": resolved_version,
             "bound": bound,
         }
-
         return payload
 
     def _mock_response(self, prompt: str, parameters: JsonDict) -> JsonDict:
