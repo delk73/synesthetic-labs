@@ -1,28 +1,28 @@
 {
-  "task": "Implement Gemini schema binding (v0.3.5a §5.1)",
-  "objective": "Inject MCP schema $id into Gemini generation_config.response_schema and mark schema_binding in logs.",
+  "task": "Fix Gemini structured-output schema binding (v0.3.6 §5.1)",
+  "objective": "Ensure Gemini requests use generationConfig.responseSchema with a flattened MCP schema $id binding and proper schema_binding flag for logs.",
   "changes": [
     {
-      "id": "gemini_request_schema_binding",
-      "description": "Attach MCP schema $id to Gemini generation requests to enforce structured JSON output.",
+      "id": "gemini-structured-output-payload",
+      "description": "Replace legacy function_declarations and nested schema payload with proper generationConfig.responseSchema = { \"$ref\": schema_id } binding.",
       "edits": [
         {
           "file": "labs/generator/external.py",
           "pattern": "def _build_request",
           "multiple": false,
-          "replacement": "from mcp.core import get_schema\n\ndef _build_request(self, prompt: str, schema_version: str = '0.7.3'):\n    schema_resp = get_schema('synesthetic-asset')\n    if not schema_resp.get('ok'):\n        self.logger.warning('MCP schema unavailable; proceeding without schema binding')\n        schema_id = None\n    else:\n        schema_id = schema_resp['schema'].get('$id')\n\n    req = {\n        'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],\n        'generation_config': {\n            'response_mime_type': 'application/json'\n        },\n        'model': self.model\n    }\n    if schema_id:\n        req['generation_config']['response_schema'] = _sanitize_schema_for_gemini(schema_resp['schema'])\n        self.logger.debug(f'Gemini request schema bound to {schema_id}')\n    return req"
+          "replacement": "def _build_request(\n        self,\n        envelope: JsonDict,\n        prompt: str,\n        parameters: JsonDict,\n        *,\n        schema_version: Optional[str] = None,\n    ) -> JsonDict:\n        target_version = schema_version or parameters.get('schema_version')\n        schema_id = None\n        resolved_version = target_version\n\n        try:\n            if target_version:\n                descriptor_id, descriptor_version, _ = _schema_descriptor(target_version)\n            else:\n                descriptor_id, descriptor_version, _ = _schema_descriptor(None)\n            schema_id = descriptor_id\n            resolved_version = descriptor_version\n        except Exception as exc:\n            self._logger.warning('Gemini schema binding unavailable: %s', exc)\n\n        # Gemini 2.0 structured-output payload (snake_case)\n        payload: JsonDict = {\n            'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],\n            'generation_config': {\n                'response_mime_type': 'application/json'\n            },\n            'model': parameters.get('model') or os.getenv('GEMINI_MODEL', self.default_model)\n        }\n\n        generation_config: JsonDict = payload['generation_config']\n        if isinstance(parameters.get('temperature'), Real):\n            generation_config['temperature'] = float(parameters['temperature'])\n        if isinstance(parameters.get('max_tokens'), int) and parameters['max_tokens'] > 0:\n            generation_config['max_output_tokens'] = parameters['max_tokens']\n        if isinstance(parameters.get('seed'), int):\n            generation_config['seed'] = parameters['seed']\n\n        bound = False\n        if schema_id:\n            generation_config['response_schema'] = { '$ref': schema_id }\n            bound = True\n            self._logger.debug('Gemini request schema bound to %s (version=%s)', schema_id, resolved_version)\n\n        self._latest_schema_binding = {\n            'schema_id': schema_id,\n            'schema_version': resolved_version,\n            'bound': bound\n        }\n        return payload"
         }
       ]
     },
     {
-      "id": "gemini_log_schema_binding",
-      "description": "Extend external logging to include schema_binding flag and schema_id reference.",
+      "id": "gemini-schema-binding-log",
+      "description": "Propagate schema_binding flag and schema_id to structured log context for downstream validation of binding state.",
       "edits": [
         {
-          "file": "labs/logging.py",
-          "pattern": "def log_external_generation",
+          "file": "labs/generator/external.py",
+          "pattern": "def record_run",
           "multiple": false,
-          "replacement": "def log_external_generation(event, *, schema_binding=False, schema_id=None):\n    data = {\n        'timestamp': datetime.utcnow().isoformat(),\n        'engine': event.get('engine'),\n        'endpoint': event.get('endpoint'),\n        'trace_id': event.get('trace_id'),\n        'schema_binding': schema_binding,\n        'schema_id': schema_id,\n        'taxonomy': event.get('taxonomy'),\n    }\n    with open('meta/output/labs/external.jsonl', 'a') as f:\n        f.write(json.dumps(data) + '\\n')"
+          "replacement": "def record_run(\n        self,\n        *,\n        context: JsonDict,\n        review: JsonDict,\n        experiment_path: Optional[str],\n    ) -> None:\n        status = 'validation_passed' if review.get('ok') else 'validation_failed'\n        record: JsonDict = {\n            'ts': _dt.datetime.now(tz=_dt.timezone.utc).isoformat(),\n            'trace_id': context.get('trace_id'),\n            'prompt': context.get('prompt'),\n            'engine': self.engine,\n            'mode': context.get('mode'),\n            'strict': context.get('strict'),\n            'parameters': context.get('parameters'),\n            'schema_binding': context.get('schema_binding', False),\n            'schema_id': context.get('schema_id'),\n            'schema_binding_version': context.get('schema_binding_version'),\n            'endpoint': context.get('endpoint'),\n            'taxonomy': context.get('taxonomy') or f'external.{self.engine}',\n            'status': status\n        }\n        log_external_generation(record, path=self.log_path)"
         }
       ]
     }
