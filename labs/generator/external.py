@@ -603,6 +603,7 @@ class ExternalGenerator:
             "taxonomy": context.get("taxonomy") or f"external.{self.engine}",
             "schema_binding": context.get("schema_binding", False),
             "schema_id": context.get("schema_id"),
+            "schema_binding_version": context.get("schema_binding_version"),
             "endpoint": context.get("endpoint"),
         }
 
@@ -1638,28 +1639,20 @@ class GeminiGenerator(ExternalGenerator):
         target_version = schema_version or parameters.get("schema_version")
         schema_id: Optional[str] = None
         resolved_version: Optional[str] = target_version
-        schema_spec: Optional[Dict[str, Any]] = None
 
         try:
             if target_version:
-                descriptor_id, descriptor_version, descriptor_spec = _schema_descriptor(target_version)
+                descriptor_id, descriptor_version, _ = _schema_descriptor(target_version)
             else:
-                descriptor_id, descriptor_version, descriptor_spec = _schema_descriptor(None)
+                descriptor_id, descriptor_version, _ = _schema_descriptor(None)
             schema_id = descriptor_id
             resolved_version = descriptor_version
-            schema_spec = descriptor_spec
         except Exception as exc:  # pragma: no cover - defensive
             self._logger.warning("Gemini schema binding unavailable: %s", exc)
 
+        # Gemini 2.0 structured-output payload (snake_case)
         payload: JsonDict = {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [
-                        {"text": prompt},
-                    ],
-                }
-            ],
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generation_config": {"response_mime_type": "application/json"},
             "model": parameters.get("model") or os.getenv("GEMINI_MODEL", self.default_model),
         }
@@ -1678,23 +1671,11 @@ class GeminiGenerator(ExternalGenerator):
             generation_config["seed"] = seed
 
         bound = False
-        if schema_id and schema_spec:
-            sanitized_schema = _sanitize_schema_for_gemini(schema_spec)
-            payload["tools"] = [
-                {
-                    "function_declarations": [
-                        {
-                            "name": "output",
-                            "description": "Synesthetic asset JSON response",
-                            "parameters": sanitized_schema,
-                        }
-                    ]
-                }
-            ]
-            payload["tool_config"] = {"function_calling_config": {"mode": "AUTO"}}
+        if schema_id:
+            generation_config["response_schema"] = {"$ref": schema_id}
             bound = True
             self._logger.debug(
-                "Gemini request schema bound to %s (version=%s) via function declaration",
+                "Gemini request schema bound to %s (version=%s)",
                 schema_id,
                 resolved_version,
             )
