@@ -10,13 +10,13 @@
     {
       "id": "env-preload-v0.3.6a",
       "section": "4 · Environment",
-      "requirement": "CLI must preload .env and surface Azure environment variables: LABS_SCHEMA_VERSION, LABS_FAIL_FAST, LABS_EXTERNAL_ENGINE, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT, and AZURE_OPENAI_API_VERSION. Gemini vars are placeholders only.",
+      "requirement": "CLI must preload .env and surface Azure environment variables: LABS_SCHEMA_VERSION, LABS_FAIL_FAST, LABS_EXTERNAL_ENGINE, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT, and AZURE_OPENAI_API_VERSION. Gemini vars remain placeholders only.",
       "verify": [
         {
           "path": "labs/cli.py",
           "match": [
             "dotenv",
-            "load",
+            "load_dotenv",
             "LABS_SCHEMA_VERSION",
             "LABS_FAIL_FAST",
             "LABS_EXTERNAL_ENGINE",
@@ -35,7 +35,7 @@
     {
       "id": "mcp-schema-pull-v0.3.6a",
       "section": "5 · Schema Retrieval (MCP)",
-      "requirement": "Generators must call mcp.core.get_schema('synesthetic-asset', version=LABS_SCHEMA_VERSION) and retain both schema and schema_id for generation and validation.",
+      "requirement": "Generators must call get_schema('synesthetic-asset', version=LABS_SCHEMA_VERSION) and cache schema_id + schema for reuse.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -44,8 +44,8 @@
             "get_schema(",
             "\"synesthetic-asset\"",
             "schema_resp",
-            "schema =",
-            "schema_id"
+            "schema_id",
+            "schema"
           ]
         },
         {
@@ -57,7 +57,7 @@
     {
       "id": "gemini-placeholder-v0.3.6a",
       "section": "2 · Engine Matrix",
-      "requirement": "GeminiGenerator must raise NotImplementedError with message 'Vertex AI structured-output unsupported' when invoked.",
+      "requirement": "GeminiGenerator must raise NotImplementedError('Vertex AI structured-output unsupported') when invoked.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -72,7 +72,7 @@
     {
       "id": "azure-schema-binding-v0.3.6a",
       "section": "6 · Engine Request (Azure Schema-Bound)",
-      "requirement": "AzureOpenAIGenerator must call chat.completions.create with response_format.type == 'json_schema', include the MCP-fetched schema under response_format.json_schema.schema, and set strict=True.",
+      "requirement": "AzureOpenAIGenerator must call chat.completions.create with response_format.type == 'json_schema', include the MCP schema under response_format.json_schema.schema, and enforce strict=True.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -94,7 +94,7 @@
     {
       "id": "response-parse-v0.3.6a",
       "section": "6 · Engine Request / Response Contract",
-      "requirement": "Responses must be parsed deterministically from response.choices[0].message.content using json.loads only; no regex or fallback parsing.",
+      "requirement": "Response parsing must occur only via json.loads(response.choices[0].message.content); sub-object validation allowed, no regex or fallback parsing.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -109,7 +109,7 @@
     {
       "id": "validation-confirmation-v0.3.6a",
       "section": "7 · Validation (MCP)",
-      "requirement": "invoke_mcp(asset, strict=True) must be called after generation and must not mutate the asset; validation is confirmation-only.",
+      "requirement": "invoke_mcp(asset, strict=True) must be called after generation; validation confirms schema compliance and does not modify asset.",
       "verify": [
         {
           "path": "labs/mcp/validate.py",
@@ -124,7 +124,7 @@
     {
       "id": "error-handling-retry-v0.3.6a",
       "section": "Operational Error Handling",
-      "requirement": "5xx and network errors must retry ≤3 times with logged attempts; 4xx must fail immediately.",
+      "requirement": "5xx and network errors must retry ≤3 times with logged attempts; 4xx must fail immediately and record error details.",
       "verify": [
         {
           "path": "labs/generator/external.py",

@@ -317,7 +317,8 @@ def test_azure_schema_binding(monkeypatch) -> None:
 
     assert response_format["type"] == "json_schema"
     schema_block = response_format["json_schema"]
-    assert schema_block["strict"] is True
+    assert response_format["strict"] is True
+    assert "strict" not in schema_block
     assert schema_block["name"].startswith("SynestheticAsset_")
     assert isinstance(schema_block["schema"], dict)
     assert context["schema_binding"] is True

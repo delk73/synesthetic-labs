@@ -2121,8 +2121,8 @@ class AzureOpenAIGenerator(OpenAIGenerator):
                 "json_schema": {
                     "name": schema_name,
                     "schema": schema,
-                    "strict": True,
                 },
+                "strict": True,
             }
             self._latest_schema_binding = {
                 "schema_id": schema_id,
