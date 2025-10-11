@@ -1748,10 +1748,12 @@ class GeminiGenerator(ExternalGenerator):
                 baseline_asset["parameter_index"] = []
         else:
             # For 0.7.4+, provenance goes in meta_info
-            if "provenance" not in baseline_asset["meta_info"]:
-                baseline_asset["meta_info"]["provenance"] = {}
-                
-            baseline_asset["meta_info"]["provenance"].update({
+            meta_info = baseline_asset["meta_info"]
+            if "provenance" not in meta_info:
+                meta_info["provenance"] = {}
+
+            meta_info_provenance = meta_info["provenance"]
+            meta_info_provenance.update({
                 "engine": self.engine,
                 "endpoint": f"mock://{self.engine}",
                 "model": os.getenv("GEMINI_MODEL", self.default_model),
@@ -1769,10 +1771,13 @@ class GeminiGenerator(ExternalGenerator):
                     "taxonomy": {
                         "domain": "visual",
                         "task": "generation",
-                        "style": "square" if "square" in prompt.lower() else "compositional"
-                    }
-                }
+                        "style": "square" if "square" in prompt.lower() else "compositional",
+                    },
+                },
             })
+            meta_info_provenance["engine"] = self.engine
+            # Drop deterministic provenance copied from the baseline assembler asset
+            baseline_asset.pop("provenance", None)
         
         # Return asset directly instead of nesting
         return baseline_asset
@@ -1975,18 +1980,37 @@ class OpenAIGenerator(ExternalGenerator):
             if isinstance(range_block, dict):
                 mapping["range"] = deepcopy(range_block)
             default_mappings.append(mapping)
+
+        asset_payload = {
+            "shader": {"component": "shader", "style": "prismatic", "prompt": prompt},
+            "tone": {"component": "tone", "mood": "uplifting"},
+            "haptic": {"component": "haptic", "pattern": "pulse"},
+            "control": {"component": "control", "mappings": default_mappings},
+            "meta": {"component": "meta", "tags": ["external", self.engine]},
+            "modulations": [],
+            "rule_bundle": {"component": "rule_bundle", "rules": []},
+            "timestamp": timestamp,
+        }
+
+        message_content = json.dumps({"asset": asset_payload})
         return {
             "id": f"openai-mock-{uuid.uuid4()}",
-            "object": "synesthetic.asset",
-            "asset": {
-                "shader": {"component": "shader", "style": "prismatic", "prompt": prompt},
-                "tone": {"component": "tone", "mood": "uplifting"},
-                "haptic": {"component": "haptic", "pattern": "pulse"},
-                "control": {"component": "control", "mappings": default_mappings},
-                "meta": {"component": "meta", "tags": ["external", "openai"]},
-                "modulations": [],
-                "rule_bundle": {"component": "rule_bundle", "rules": []},
-                "timestamp": timestamp,
+            "object": "chat.completion",
+            "created": int(_dt.datetime.now(tz=_dt.timezone.utc).timestamp()),
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": message_content,
+                    },
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": len(message_content) // 4,
+                "total_tokens": len(message_content) // 4,
             },
         }
 
@@ -1994,6 +2018,9 @@ class OpenAIGenerator(ExternalGenerator):
     def _extract_structured_payload(response: JsonDict) -> JsonDict:
         choices = response.get("choices")
         if not isinstance(choices, list) or not choices:
+            asset_payload = response.get("asset")
+            if isinstance(asset_payload, dict):
+                return response
             raise ExternalRequestError("bad_response", "missing_choices", retryable=False)
         first_choice = choices[0]
         message = first_choice.get("message") if isinstance(first_choice, dict) else None

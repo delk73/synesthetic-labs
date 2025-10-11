@@ -10,7 +10,7 @@ from labs import cli
 from labs.agents.generator import GeneratorAgent
 from labs.agents.critic import CriticAgent
 from labs.mcp_stdio import MCPUnavailableError, resolve_mcp_endpoint
-from labs.generator.external import GeminiGenerator
+from labs.generator.external import AzureOpenAIGenerator
 
 
 def test_generator_to_critic_pipeline(tmp_path, monkeypatch) -> None:
@@ -259,9 +259,9 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
     monkeypatch.setenv("LABS_EXPERIMENTS_DIR", str(experiments_dir))
 
     external_log = tmp_path / "external.jsonl"
-    gemini = GeminiGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
+    azure = AzureOpenAIGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
 
-    monkeypatch.setattr(cli, "build_external_generator", lambda engine: gemini)
+    monkeypatch.setattr(cli, "build_external_generator", lambda engine: azure)
 
     class LoggedCriticAgent(CriticAgent):
         def __init__(self, validator=None) -> None:  # pragma: no cover - trivial init
@@ -277,7 +277,7 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
     exit_code = cli.main([
         "generate",
         "--engine",
-        "gemini",
+    "azure",
         "--schema-version",
         "0.7.4",
         "chromatic tides",
@@ -286,15 +286,15 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
 
     assert exit_code == 0
     output = json.loads(captured.out)
-    assert output["engine"] == "gemini"
+    assert output["engine"] == "azure"
     asset = output["asset"]
     assert asset["prompt"] == "chromatic tides"
-    assert asset["provenance"]["generator"]["engine"] == "gemini"
+    assert asset["provenance"]["generator"]["engine"] == "azure"
 
     lines = [json.loads(line) for line in external_log.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(lines) == 1
     log_record = lines[0]
-    assert log_record["engine"] == "gemini"
+    assert log_record["engine"] == "azure"
     assert log_record["status"] == "validation_passed"
     assert log_record["normalized_asset"]["meta_info"]["provenance"]["trace_id"]
     assert log_record["raw_response"]["hash"]
@@ -323,7 +323,7 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
     recorded: dict[str, object] = {}
 
     def build_external(engine: str):
-        generator = GeminiGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
+        generator = AzureOpenAIGenerator(log_path=str(external_log), mock_mode=True, sleeper=lambda _: None)
         original_generate = generator.generate
 
         def wrapped(
@@ -337,10 +337,9 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
             schema_version=None,
         ):
             recorded["seed"] = seed
-            recorded["parameters"] = parameters
             recorded["timeout"] = timeout
             recorded["schema_version"] = schema_version
-            return original_generate(
+            asset_result = original_generate(
                 prompt,
                 parameters=parameters,
                 seed=seed,
@@ -348,6 +347,21 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
                 trace_id=trace_id,
                 schema_version=schema_version,
             )
+            if isinstance(asset_result, tuple) and len(asset_result) == 2:
+                asset_payload, context = asset_result
+                context_parameters = context.get("parameters") if isinstance(context, dict) else None
+                if isinstance(context_parameters, dict):
+                    recorded["parameters"] = context_parameters
+                elif isinstance(parameters, dict):
+                    recorded["parameters"] = parameters
+                else:
+                    recorded["parameters"] = {}
+                return asset_payload, context
+            if isinstance(parameters, dict):
+                recorded["parameters"] = parameters
+            else:
+                recorded["parameters"] = {}
+            return asset_result
 
         generator.generate = types.MethodType(wrapped, generator)
         return generator
@@ -364,7 +378,7 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
     args = [
         "generate",
         "--engine",
-        "gemini",
+    "azure",
         "--seed",
         "42",
         "--temperature",
@@ -384,7 +398,8 @@ def test_cli_generate_flags_precedence(monkeypatch, tmp_path, capsys) -> None:
     assert output["review"]["strict"] is False
     assert os.getenv("LABS_FAIL_FAST") == "0"
     assert recorded["seed"] == 42
-    assert recorded["parameters"] == {"temperature": 0.85}
+    assert recorded["parameters"]["temperature"] == 0.85
+    assert recorded["parameters"]["schema_version"] == "0.7.4"
     assert recorded["timeout"] == 12.0
     assert recorded["schema_version"] == "0.7.4"
 

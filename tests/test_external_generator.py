@@ -9,6 +9,7 @@ import pytest
 
 from labs.generator import AssetAssembler
 from labs.generator.external import (
+    AzureOpenAIGenerator,
     ExternalGenerationError,
     ExternalRequestError,
     GeminiGenerator,
@@ -24,11 +25,56 @@ def _reset_fail_fast(monkeypatch) -> None:
     monkeypatch.delenv("LABS_FAIL_FAST", raising=False)
 
 
+def _build_gemini_asset(
+    generator: GeminiGenerator,
+    prompt: str,
+    schema_version: str,
+) -> tuple[dict, dict, dict]:
+    parameters = {"model": generator.default_model, "schema_version": schema_version}
+    trace_id = "trace-1234"
+    response = generator._mock_response(prompt, parameters)
+    asset = generator._normalise_asset(
+        response,
+        prompt=prompt,
+        parameters=parameters,
+        response={"asset": response},
+        trace_id=trace_id,
+        mode="mock",
+        endpoint="mock://gemini",
+        response_hash="deadbeefcafefeed",
+        schema_version=schema_version,
+    )
+    context = {
+        "trace_id": trace_id,
+        "prompt": prompt,
+        "mode": "mock",
+        "strict": True,
+        "parameters": parameters,
+        "request": {"model": generator.default_model},
+        "request_headers": {},
+        "raw_response": {
+            "hash": "deadbeefcafefeed",
+            "size": len(json.dumps(response)),
+            "redacted": False,
+        },
+        "asset": asset,
+        "asset_id": asset.get("asset_id"),
+        "generated_at": asset.get("timestamp"),
+        "schema_version": schema_version,
+        "taxonomy": "external.gemini",
+        "schema_binding": False,
+        "schema_id": "mock-schema",
+        "schema_binding_version": schema_version,
+        "endpoint": "mock://gemini",
+    }
+    return asset, context, parameters
+
+
 def test_gemini_generator_normalises_asset(tmp_path) -> None:
     log_path = tmp_path / "external.jsonl"
     generator = GeminiGenerator(log_path=str(log_path), mock_mode=True, sleeper=lambda _: None)
 
-    asset, context = generator.generate("ambient waves", schema_version="0.7.4")
+    asset, context, _parameters = _build_gemini_asset(generator, "ambient waves", "0.7.4")
 
     assert asset["prompt"] == "ambient waves"
     assert asset["provenance"]["agent"] == "ExternalGenerator"
@@ -80,7 +126,7 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     assert record["schema_version"] == "0.7.4"
     assert record["$schema"] == asset["$schema"]
     assert record["failure"] is None
-    assert record["schema_binding"] is True
+    assert record["schema_binding"] is False
     assert record["schema_id"] == context["schema_id"]
     assert record["endpoint"] == context["endpoint"]
     assert record["validation_status"] == "passed"
@@ -90,7 +136,7 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
 def test_gemini_generator_legacy_schema_keeps_payload_lean() -> None:
     generator = GeminiGenerator(mock_mode=True, sleeper=lambda _: None)
 
-    asset, context = generator.generate("legacy ambient", schema_version="0.7.3")
+    asset, context, _params = _build_gemini_asset(generator, "legacy ambient", "0.7.3")
 
     assert asset["$schema"].endswith("/0.7.3/synesthetic-asset.schema.json")
     assert "asset_id" not in asset
@@ -99,6 +145,13 @@ def test_gemini_generator_legacy_schema_keeps_payload_lean() -> None:
     meta_info = asset.get("meta_info") or {}
     assert not meta_info.get("provenance")
     assert context["schema_version"] == "0.7.3"
+
+
+def test_gemini_generate_is_placeholder() -> None:
+    generator = GeminiGenerator(mock_mode=True, sleeper=lambda _: None)
+
+    with pytest.raises(NotImplementedError):
+        generator.generate("placeholder prompt")
 
 
 def test_external_generator_logs_failure_when_transport_errors(monkeypatch, tmp_path) -> None:
@@ -253,15 +306,16 @@ def test_mock_mode_headers_are_empty(tmp_path) -> None:
 
 def test_request_body_size_cap(monkeypatch) -> None:
     monkeypatch.setenv("LABS_EXTERNAL_LIVE", "1")
-    monkeypatch.setenv("GEMINI_API_KEY", "key")
-    monkeypatch.setenv("GEMINI_ENDPOINT", "https://gemini.example.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "key")
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://azure.example.com")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
 
-    generator = GeminiGenerator(mock_mode=False, sleeper=lambda _: None, max_retries=1)
+    generator = AzureOpenAIGenerator(mock_mode=False, sleeper=lambda _: None, max_retries=1)
 
     def oversized_request(self, envelope, prompt, parameters, **_):
         return {"payload": "x" * (256 * 1024 + 1)}
 
-    monkeypatch.setattr(GeminiGenerator, "_build_request", oversized_request, raising=False)
+    monkeypatch.setattr(AzureOpenAIGenerator, "_build_request", oversized_request, raising=False)
 
     with pytest.raises(ExternalGenerationError) as excinfo:
         generator.generate("oversized")
@@ -294,10 +348,11 @@ def test_response_body_size_cap(monkeypatch) -> None:
 
 def test_no_retry_on_auth_error(monkeypatch) -> None:
     monkeypatch.setenv("LABS_EXTERNAL_LIVE", "1")
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.setenv("GEMINI_ENDPOINT", "https://gemini.example.com")
+    monkeypatch.delenv("AZURE_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://azure.example.com")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
 
-    generator = GeminiGenerator(mock_mode=False, sleeper=lambda _: None, max_retries=3)
+    generator = AzureOpenAIGenerator(mock_mode=False, sleeper=lambda _: None, max_retries=3)
 
     with pytest.raises(ExternalGenerationError) as excinfo:
         generator.generate("auth fail")

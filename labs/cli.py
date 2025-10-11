@@ -231,6 +231,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         strict_flag = bool(args.strict if args.strict is not None else is_fail_fast_enabled())
         strict_failure = False
+        prior_mcp_response = review.get("mcp_response") if isinstance(review.get("mcp_response"), dict) else None
         try:
             mcp_response = invoke_mcp(asset, strict=strict_flag)
         except ValidationError as exc:
@@ -243,10 +244,28 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             strict_failure = False
 
-        review["mcp_response"] = mcp_response
         review.setdefault("mode", "strict" if strict_flag else "relaxed")
+        review["mcp_response_local"] = mcp_response
 
-        mcp_ok = bool(mcp_response.get("ok"))
+        def _response_ok(payload: Optional[Dict[str, Any]]) -> bool:
+            if not isinstance(payload, dict):
+                return False
+            if "ok" in payload:
+                return bool(payload.get("ok"))
+            status = payload.get("status")
+            if isinstance(status, str):
+                return status.lower() in {"ok", "passed", "pass", "success"}
+            return False
+
+        prior_ok = True
+        if prior_mcp_response is not None:
+            review.setdefault("mcp_response", prior_mcp_response)
+            prior_ok = _response_ok(prior_mcp_response)
+        else:
+            review["mcp_response"] = mcp_response
+
+        local_ok = _response_ok(mcp_response)
+        mcp_ok = prior_ok and local_ok
         relaxed_mode = _is_relaxed_mode(review)
 
         if mcp_ok:

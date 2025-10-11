@@ -132,6 +132,8 @@ class AssetAssembler:
         provenance_block = self._build_asset_provenance(
             engine="deterministic",
             schema_version=resolved_schema_version,
+            assembler_version=self.version,
+            trace_id=asset_id,
             input_parameters={"prompt": prompt, "seed": seed},
         )
 
@@ -645,28 +647,44 @@ class AssetAssembler:
     @staticmethod
     def _build_asset_provenance(
         engine: str,
+        *,
         schema_version: str = "0.7.3",
+        assembler_version: str = "v0.2",
+        trace_id: Optional[str] = None,
         input_parameters: Optional[Dict[str, object]] = None,
     ) -> Dict[str, object]:
-        trace_id = str(uuid.uuid4())
+        resolved_trace_id = str(trace_id) if trace_id else str(uuid.uuid4())
+        assembled_at = _dt.datetime.utcnow().isoformat() + "Z"
         provenance: Dict[str, object] = {
+            "agent": "AssetAssembler",
+            "version": assembler_version,
             "engine": engine,
-            "trace_id": trace_id,
-            "timestamp": _dt.datetime.utcnow().isoformat() + "Z",
+            "trace_id": resolved_trace_id,
+            "timestamp": assembled_at,
+            "assembled_at": assembled_at,
+            "generator": {
+                "class": "AssetAssembler",
+                "engine": engine,
+                "trace_id": resolved_trace_id,
+                "mode": "local" if engine == "deterministic" else "external",
+                "version": assembler_version,
+            },
         }
 
+        if input_parameters:
+            provenance["generator"]["input_parameters"] = dict(input_parameters)
+            if "seed" in input_parameters and input_parameters["seed"] is not None:
+                provenance["seed"] = input_parameters["seed"]
+
         if AssetAssembler._schema_gte(schema_version, "0.7.4"):
-            provenance.update(
-                {
-                    "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT")
-                    or os.getenv("GEMINI_ENDPOINT"),
-                    "deployment": os.getenv("AZURE_OPENAI_DEPLOYMENT")
-                    or os.getenv("GEMINI_MODEL"),
-                    "api_version": os.getenv(
-                        "AZURE_OPENAI_API_VERSION", "2025-01-01-preview"
-                    ),
-                    "input_parameters": input_parameters or {},
-                }
-            )
+            endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("GEMINI_ENDPOINT")
+            deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT") or os.getenv("GEMINI_MODEL")
+            api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+            if endpoint:
+                provenance["generator"]["endpoint"] = endpoint
+            if deployment:
+                provenance["generator"]["deployment"] = deployment
+            if api_version:
+                provenance["generator"]["api_version"] = api_version
 
         return provenance
