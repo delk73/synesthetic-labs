@@ -19,18 +19,28 @@ def _load_env_file(path: str | None = None) -> None:
     env_path = path or os.path.join(os.path.dirname(__file__), "..", ".env")
     load_dotenv(dotenv_path=env_path)
 
+    raw_engine = os.getenv("LABS_EXTERNAL_ENGINE")
+    raw_external_live = os.getenv("LABS_EXTERNAL_LIVE")
+
     os.environ.setdefault("LABS_SCHEMA_VERSION", "0.7.3")
     os.environ.setdefault("LABS_FAIL_FAST", os.getenv("LABS_FAIL_FAST", "1"))
-    os.environ.setdefault("LABS_EXTERNAL_ENGINE", os.getenv("LABS_EXTERNAL_ENGINE", "azure"))
+    os.environ.setdefault("LABS_EXTERNAL_ENGINE", raw_engine or "azure")
+    os.environ.setdefault("LABS_EXTERNAL_LIVE", raw_external_live or "0")
     os.environ.setdefault("GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.0-flash"))
 
     logger = logging.getLogger("labs.cli")
-    engine = os.getenv("LABS_EXTERNAL_ENGINE", "azure").strip().lower()
+    engine = os.environ.get("LABS_EXTERNAL_ENGINE", "azure").strip().lower()
+
+    if not raw_engine:
+        logger.warning("LABS_EXTERNAL_ENGINE not set; defaulting to '%s'", engine)
+    if not raw_external_live:
+        logger.warning("LABS_EXTERNAL_LIVE not set; defaulting to mock mode (0)")
 
     azure_keys = (
         "AZURE_OPENAI_ENDPOINT",
         "AZURE_OPENAI_API_KEY",
         "AZURE_OPENAI_DEPLOYMENT",
+        "AZURE_OPENAI_API_VERSION",
     )
     gemini_keys = (
         "GEMINI_API_KEY",
@@ -54,7 +64,7 @@ for _env_var in _MANDATORY_ENV_VARS:
         _LOGGER.warning("Missing environment variable %s; falling back to mock mode.", _env_var)
 
 _ENGINE_ENV_VARS = {
-    "azure": ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_DEPLOYMENT"),
+    "azure": ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_API_VERSION"),
     "gemini": ("GEMINI_API_KEY", "GEMINI_MODEL", "GEMINI_ENDPOINT"),
 }
 _active_engine = os.getenv("LABS_EXTERNAL_ENGINE", "azure").strip().lower()

@@ -87,6 +87,39 @@ class AssetAssembler:
                 asset[section] = factory()
         return asset
 
+    @staticmethod
+    def _fill_empty_sections(asset: Dict[str, object]) -> Dict[str, object]:
+        """Ensure required sections exist with deterministic defaults."""
+
+        if not isinstance(asset, dict):
+            return asset
+
+        AssetAssembler.fill_defaults(asset)
+
+        control = asset.get("control")
+        if not isinstance(control, dict):
+            control = AssetAssembler.default_control()
+            asset["control"] = control
+        control.setdefault("control_parameters", control.get("control_parameters", []))
+
+        if not isinstance(asset.get("modulations"), list):
+            asset["modulations"] = []
+
+        rule_bundle = asset.get("rule_bundle")
+        if not isinstance(rule_bundle, dict):
+            rule_bundle = {"rules": [], "meta_info": {}}
+            asset["rule_bundle"] = rule_bundle
+        else:
+            rules = rule_bundle.get("rules")
+            if not isinstance(rules, list):
+                rule_bundle["rules"] = []
+            meta_info = rule_bundle.get("meta_info")
+            if not isinstance(meta_info, dict):
+                rule_bundle["meta_info"] = {}
+
+        asset.setdefault("meta_info", {})
+        return asset
+
     def generate(
         self,
         prompt: str,
@@ -234,7 +267,12 @@ class AssetAssembler:
             "name": meta_info.get("title") or prompt,
         }
         legacy_asset.update(sections)
-        return AssetAssembler.fill_defaults(legacy_asset)
+        asset_filled = AssetAssembler._fill_empty_sections(legacy_asset)
+        meta_info_block = asset_filled.get("meta_info")
+        if isinstance(meta_info_block, dict):
+            meta_info_block.pop("provenance", None)
+        asset_filled.pop("provenance", None)
+        return asset_filled
 
     @staticmethod
     def _build_enriched_asset(
@@ -369,18 +407,19 @@ class AssetAssembler:
                 "meta_info": {"version": assembler_version},
             },
             "meta_info": {
-                "provenance": asset.get("meta_info", {}).get("provenance", {})
+                key: value
+                for key, value in asset.get("meta_info", {}).items()
+                if key != "provenance"
             },
         }
 
-        AssetAssembler.fill_defaults(normalized)
+        AssetAssembler._fill_empty_sections(normalized)
 
-        provenance = normalized.get("meta_info", {}).get("provenance")
-        if isinstance(provenance, dict):
-            allowed_keys = {"engine", "trace_id", "timestamp"}
-            normalized.setdefault("meta_info", {})["provenance"] = {
-                key: value for key, value in provenance.items() if key in allowed_keys
-            }
+        meta_info = normalized.get("meta_info")
+        if isinstance(meta_info, dict):
+            meta_info.pop("provenance", None)
+
+        normalized.pop("provenance", None)
 
         return normalized
 

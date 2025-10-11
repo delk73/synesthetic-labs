@@ -521,6 +521,10 @@ class ExternalGenerator:
                     "schema_version": resolved_schema_version,
                     "taxonomy": f"external.{self.engine}",
                 }
+                deployment = getattr(self, "_azure_deployment", None) or parameters.get("model")
+                if not deployment and self.engine == "gemini":
+                    deployment = parameters.get("model")
+                context["deployment"] = deployment
                 context["schema_binding"] = bool(binding_meta.get("bound"))
                 context["schema_id"] = binding_meta.get("schema_id")
                 context["schema_binding_version"] = binding_meta.get("schema_version")
@@ -606,7 +610,15 @@ class ExternalGenerator:
             "schema_id": context.get("schema_id"),
             "schema_binding_version": context.get("schema_binding_version"),
             "endpoint": context.get("endpoint"),
+            "deployment": context.get("deployment"),
         }
+
+        if not record.get("deployment"):
+            record["deployment"] = (
+                context.get("parameters", {}) or {}
+            ).get("model")
+
+        record.setdefault("timestamp", record["ts"])
 
         record["validation_status"] = (
             review.get("validation_status") or ("passed" if review.get("ok") else "failed")

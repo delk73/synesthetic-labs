@@ -118,6 +118,8 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     )
     assert record["taxonomy"] == "external.gemini"
     assert record["raw_response"]["hash"] == context["raw_response"]["hash"]
+    assert record["deployment"] == generator.default_model
+    assert record["timestamp"] == record["ts"]
     assert record["raw_response"]["size"] == context["raw_response"]["size"]
     assert record["transport"] == "tcp"
     assert record["strict"] is True

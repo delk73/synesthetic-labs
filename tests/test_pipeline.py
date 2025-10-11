@@ -30,12 +30,10 @@ def test_generator_to_critic_pipeline(tmp_path, monkeypatch) -> None:
     review = critic.review(asset)
 
     assert "meta_info" in asset
-    assert "provenance" in asset["meta_info"]
+    assert "provenance" not in asset["meta_info"]
     assert asset["control"]["control_parameters"]
     assert asset["modulations"]
     assert asset["rule_bundle"]["rules"]
-    generator_provenance = asset["meta_info"]["provenance"]["generator"]
-    assert generator_provenance["agent"] == "GeneratorAgent"
     assert review["ok"] is True
     assert review["validation_status"] == "passed"
     expected_asset_id = asset.get("asset_id") or asset["name"]
@@ -309,6 +307,8 @@ def test_cli_generate_with_external_engine(monkeypatch, tmp_path, capsys) -> Non
     }
     assert log_record["schema_version"] == "0.7.4"
     assert log_record["$schema"] == asset["$schema"]
+    assert log_record["deployment"] == os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+    assert log_record["timestamp"] == log_record["ts"]
 
     persisted_files = list(experiments_dir.glob("*.json"))
     assert len(persisted_files) == 1

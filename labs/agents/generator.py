@@ -78,24 +78,29 @@ class GeneratorAgent:
         timestamp = asset.get("timestamp") or _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
 
         meta = asset.setdefault("meta_info", {})
-        meta_provenance = meta.setdefault("provenance", {})
-        trace_id = meta_provenance.get("trace_id") or str(uuid.uuid4())
-        meta_provenance.setdefault("trace_id", trace_id)
-        meta_provenance.setdefault("mode", "local")
-        meta_provenance.setdefault("timestamp", timestamp)
+        legacy_schema = target_schema_version.startswith("0.7.3")
 
-        if not target_schema_version.startswith("0.7.3"):
+        if legacy_schema:
+            trace_id = asset.get("asset_id") or str(uuid.uuid4())
+            meta.pop("provenance", None)
+            asset.pop("provenance", None)
+            generator_block: Optional[Dict[str, Any]] = None
+        else:
+            meta_provenance = meta.setdefault("provenance", {})
+            trace_id = meta_provenance.get("trace_id") or str(uuid.uuid4())
+            meta_provenance.setdefault("trace_id", trace_id)
+            meta_provenance.setdefault("mode", "local")
+            meta_provenance.setdefault("timestamp", timestamp)
+
             provenance = asset.setdefault("provenance", {})
             provenance.setdefault("agent", "AssetAssembler")
             provenance.setdefault("version", self._assembler.version)
             generator_block = provenance.setdefault("generator", {})
-        else:
-            generator_block = meta_provenance.setdefault("generator", {})
 
-        generator_block.setdefault("agent", self.__class__.__name__)
-        generator_block.setdefault("version", self.version)
-        generator_block.setdefault("generated_at", timestamp)
-        generator_block.setdefault("trace_id", trace_id)
+            generator_block.setdefault("agent", self.__class__.__name__)
+            generator_block.setdefault("version", self.version)
+            generator_block.setdefault("generated_at", timestamp)
+            generator_block.setdefault("trace_id", trace_id)
 
         self._logger.info("Generated asset %s", asset.get("asset_id"))
 

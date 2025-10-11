@@ -48,9 +48,9 @@ def test_asset_assembler_legacy_normalisation() -> None:
     assert asset["tone"].get("effects")
     assert asset["haptic"].get("profile")
     assert isinstance(asset["meta_info"], dict)
-    for key in ("title", "description", "category", "complexity", "tags", "provenance"):
+    for key in ("title", "description", "category", "complexity", "tags"):
         assert key in asset["meta_info"]
-    assert isinstance(asset["meta_info"]["provenance"], dict)
+    assert "provenance" not in asset["meta_info"]
     assert asset["control"]["control_parameters"]
 
 
