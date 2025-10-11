@@ -152,8 +152,10 @@ def test_gemini_generator_legacy_schema_keeps_payload_lean() -> None:
 def test_gemini_generate_is_placeholder() -> None:
     generator = GeminiGenerator(mock_mode=True, sleeper=lambda _: None)
 
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(NotImplementedError) as excinfo:
         generator.generate("placeholder prompt")
+
+    assert str(excinfo.value) == "Vertex AI structured-output unsupported"
 
 
 def test_external_generator_logs_failure_when_transport_errors(monkeypatch, tmp_path) -> None:
@@ -306,6 +308,23 @@ def test_mock_mode_headers_are_empty(tmp_path) -> None:
     assert entry["request_headers"] == {}
 
 
+def test_azure_schema_binding(monkeypatch) -> None:
+    monkeypatch.delenv("LABS_SCHEMA_VERSION", raising=False)
+    generator = AzureOpenAIGenerator(mock_mode=True, sleeper=lambda _: None)
+
+    _asset, context = generator.generate("schema-bound prompt")
+    response_format = context["request"]["response_format"]
+
+    assert response_format["type"] == "json_schema"
+    schema_block = response_format["json_schema"]
+    assert schema_block["strict"] is True
+    assert schema_block["name"].startswith("SynestheticAsset_")
+    assert isinstance(schema_block["schema"], dict)
+    assert context["schema_binding"] is True
+    assert context["schema_id"]
+    assert context["schema_binding_version"]
+
+
 def test_request_body_size_cap(monkeypatch) -> None:
     monkeypatch.setenv("LABS_EXTERNAL_LIVE", "1")
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", "key")
@@ -346,6 +365,37 @@ def test_response_body_size_cap(monkeypatch) -> None:
 
     assert excinfo.value.reason == "bad_response"
     assert excinfo.value.detail == "response_body_exceeds_1MiB"
+
+
+def test_openai_strict_parse() -> None:
+    generator = OpenAIGenerator()
+    good_response = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({"ok": True}),
+                    "role": "assistant",
+                },
+                "index": 0,
+            }
+        ]
+    }
+    bad_response = {
+        "choices": [
+            {
+                "message": {
+                    "content": "not-json",
+                    "role": "assistant",
+                },
+                "index": 0,
+            }
+        ]
+    }
+
+    assert generator._extract_structured_payload(good_response)["ok"] is True
+    with pytest.raises(ExternalRequestError) as excinfo:
+        generator._extract_structured_payload(bad_response)
+    assert excinfo.value.reason == "bad_response"
 
 
 def test_no_retry_on_auth_error(monkeypatch) -> None:

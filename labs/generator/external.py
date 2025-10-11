@@ -12,7 +12,6 @@ import socket
 import time
 import urllib.error
 import urllib.request
-import re
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import uuid
 from copy import deepcopy
@@ -1504,9 +1503,7 @@ class GeminiGenerator(ExternalGenerator):
         trace_id: Optional[str] = None,
         schema_version: Optional[str] = None,
     ) -> Tuple[JsonDict, JsonDict]:
-        raise NotImplementedError(
-            "Gemini structured-output is disabled until Vertex AI migration."
-        )
+        raise NotImplementedError("Vertex AI structured-output unsupported")
     
     @property
     def default_endpoint(self) -> str:
@@ -2047,11 +2044,12 @@ class OpenAIGenerator(ExternalGenerator):
             raise ExternalRequestError("bad_response", "missing_content", retryable=False)
         try:
             return json.loads(content)
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", content, re.DOTALL)
-            if not match:
-                raise ExternalRequestError("bad_response", "invalid_json", retryable=False)
-            return json.loads(match.group(0))
+        except json.JSONDecodeError as exc:
+            raise ExternalRequestError(
+                "bad_response",
+                f"invalid_json: {exc}",
+                retryable=False,
+            ) from exc
 
     def _parse_response(
         self,
@@ -2093,6 +2091,53 @@ class AzureOpenAIGenerator(OpenAIGenerator):
     api_key_env = "AZURE_OPENAI_API_KEY"
     endpoint_env = "AZURE_OPENAI_ENDPOINT"
     default_endpoint = None
+
+    def _build_request(
+        self,
+        envelope: JsonDict,
+        prompt: str,
+        parameters: JsonDict,
+        *,
+        schema_version: Optional[str] = None,
+    ) -> JsonDict:
+        payload = super()._build_request(
+            envelope,
+            prompt,
+            parameters,
+            schema_version=schema_version,
+        )
+
+        target_version = schema_version or parameters.get("schema_version")
+        schema_id: Optional[str] = None
+        resolved_version: Optional[str] = target_version
+
+        try:
+            descriptor_id, descriptor_version, schema = _schema_descriptor(target_version)
+            schema_id = descriptor_id
+            resolved_version = descriptor_version
+            schema_name = f"SynestheticAsset_{descriptor_version.replace('.', '_')}"
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "schema": schema,
+                    "strict": True,
+                },
+            }
+            self._latest_schema_binding = {
+                "schema_id": schema_id,
+                "schema_version": resolved_version,
+                "bound": True,
+            }
+        except Exception as exc:  # pragma: no cover - defensive
+            self._logger.warning("Azure schema binding unavailable: %s", exc)
+            self._latest_schema_binding = {
+                "schema_id": schema_id,
+                "schema_version": resolved_version,
+                "bound": False,
+            }
+
+        return payload
 
     def default_parameters(self) -> JsonDict:
         deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
