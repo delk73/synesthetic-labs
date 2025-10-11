@@ -10,7 +10,7 @@
     {
       "id": "env-preload-v0.3.6a",
       "section": "4 · Environment",
-      "requirement": "CLI must preload .env and surface Azure environment variables: LABS_SCHEMA_VERSION, LABS_FAIL_FAST, LABS_EXTERNAL_ENGINE, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT, and AZURE_OPENAI_API_VERSION. Gemini vars remain placeholders only.",
+      "requirement": "CLI must preload .env and expose Azure environment variables LABS_SCHEMA_VERSION, LABS_FAIL_FAST, LABS_EXTERNAL_ENGINE, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT, and AZURE_OPENAI_API_VERSION. CLI --engine flag overrides .env; otherwise .env takes precedence.",
       "verify": [
         {
           "path": "labs/cli.py",
@@ -35,7 +35,7 @@
     {
       "id": "mcp-schema-pull-v0.3.6a",
       "section": "5 · Schema Retrieval (MCP)",
-      "requirement": "Generators must call get_schema('synesthetic-asset', version=LABS_SCHEMA_VERSION) and cache schema_id + schema for reuse.",
+      "requirement": "Generators must call get_schema('synesthetic-asset', version=LABS_SCHEMA_VERSION), caching schema_id and schema for reuse across generation and validation.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -72,7 +72,7 @@
     {
       "id": "azure-schema-binding-v0.3.6a",
       "section": "6 · Engine Request (Azure Schema-Bound)",
-      "requirement": "AzureOpenAIGenerator must call chat.completions.create with response_format.type == 'json_schema', include the MCP schema under response_format.json_schema.schema, and enforce strict=True.",
+      "requirement": "AzureOpenAIGenerator must invoke chat.completions.create with response_format.type == 'json_schema', include the MCP-fetched schema under response_format.json_schema.schema, and enforce strict=True.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -94,7 +94,7 @@
     {
       "id": "response-parse-v0.3.6a",
       "section": "6 · Engine Request / Response Contract",
-      "requirement": "Response parsing must occur only via json.loads(response.choices[0].message.content); sub-object validation allowed, no regex or fallback parsing.",
+      "requirement": "Response parsing must rely solely on json.loads(response.choices[0].message.content); sub-object validation of the 'asset' key allowed; no regex or fallback parsing permitted.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -109,7 +109,7 @@
     {
       "id": "validation-confirmation-v0.3.6a",
       "section": "7 · Validation (MCP)",
-      "requirement": "invoke_mcp(asset, strict=True) must be called after generation; validation confirms schema compliance and does not modify asset.",
+      "requirement": "invoke_mcp(asset, strict=True) must be called after generation; validation only confirms schema compliance and must not alter or normalize the asset.",
       "verify": [
         {
           "path": "labs/mcp/validate.py",
@@ -124,7 +124,7 @@
     {
       "id": "error-handling-retry-v0.3.6a",
       "section": "Operational Error Handling",
-      "requirement": "5xx and network errors must retry ≤3 times with logged attempts; 4xx must fail immediately and record error details.",
+      "requirement": "5xx and network errors retry ≤3 times with logged attempts; 4xx fail immediately and record reason + attempt metadata.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -139,7 +139,7 @@
     {
       "id": "structured-logging-v0.3.6a",
       "section": "8 · Logging",
-      "requirement": "Structured logs must include engine, schema_id, schema_version, deployment, trace_id, and validation_status in external.jsonl entries.",
+      "requirement": "Structured logs must include engine, schema_id, schema_version, deployment, trace_id, and validation_status fields in meta/output/labs/external.jsonl entries.",
       "verify": [
         {
           "path": "labs/logging.py",

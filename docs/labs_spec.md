@@ -9,20 +9,21 @@ predecessor: v0.3.6
 # Synesthetic Labs — Spec v0.3.6a (True Schema-Bound Generation)
 
 > **Change lineage:**  
-> This release replaces the old *generate → normalize → validate* pattern with a single,
-> strictly schema-bound generation contract.  
-> Every engine now emits assets that are *born compliant* with the active SynestheticAsset
-> schema (fetched live from MCP).
+> Replaces the legacy *generate → normalize → validate* pattern with a single,
+> schema-bound generation contract.  
+> Engines emit assets *born compliant* with the active SynestheticAsset schema
+> (fetched live from MCP).  
+> Validation confirms compliance only — no mutation, normalization, or stripping.
 
 ---
 
 ## 1 · Scope
 
-- Enforce schema-bound generation via the model’s structured-output interface.  
-- Remove all normalization logic.  
-- Keep MCP validation as a **confirmation-only** step.  
-- Support multiple schema versions (`0.7.3`, `0.7.4+`) through the same binding pipeline.  
-- Preserve top-level metadata while validating inner schema objects only.
+- Enforce schema-bound generation via model’s structured-output interface  
+- Remove all normalization logic  
+- Keep MCP validation **confirmation-only**  
+- Support both `0.7.3` and `0.7.4+` schemas through a unified binding path  
+- Allow top-level metadata (`trace_id`, `deployment`, `engine`, `timestamp`) to remain outside validation scope  
 
 ---
 
@@ -31,7 +32,7 @@ predecessor: v0.3.6
 | Engine | Module | API | Binding Mode | Status | Notes |
 |--------|---------|-----|--------------|--------|-------|
 | `azure` | `labs/generator/external.py:AzureOpenAIGenerator` | Azure OpenAI `chat/completions` | ✅ `json_schema` | ✅ Active | Reference implementation |
-| `gemini` | `labs/generator/external.py:GeminiGenerator` | Google Generative Language | ❌ | ⚠️ Placeholder | Disabled until Vertex AI supports structured output |
+| `gemini` | `labs/generator/external.py:GeminiGenerator` | Google Generative Language | ❌ | ⚠️ Placeholder | Disabled until Vertex AI supports schema binding |
 | `deterministic` | `labs/generator/offline.py:DeterministicGenerator` | Local stub | ✅ | ✅ Active | CI baseline |
 
 ---
@@ -40,10 +41,10 @@ predecessor: v0.3.6
 
 | Key | Value | Notes |
 |-----|--------|-------|
-| Schema version | `0.7.3` | Switchable to ≥ `0.7.4` |
-| Default engine | `azure` | |
-| Validation mode | strict | Controlled by `LABS_FAIL_FAST` or CLI flags |
-| MCP source | Remote schema registry | Fallback to local `meta/schemas` |
+| Schema version | `0.7.3` | May switch to ≥ `0.7.4` |
+| Default engine | `azure` | Overrides mock unless `LABS_EXTERNAL_ENGINE` explicitly set |
+| Validation mode | strict | Controlled by `LABS_FAIL_FAST` / CLI flags |
+| MCP source | Remote schema registry | Fallback: local `meta/schemas` |
 
 ---
 
@@ -59,7 +60,8 @@ predecessor: v0.3.6
 | `AZURE_OPENAI_DEPLOYMENT` | Model deployment | `gpt-4o-mini` |
 | `AZURE_OPENAI_API_VERSION` | API version | `2025-01-01-preview` |
 
-All variables load through `_load_env_file()` at CLI startup.
+Loaded by `_load_env_file()` before CLI startup.  
+If CLI `--engine` flag is omitted, `.env` takes precedence.
 
 ---
 
@@ -73,7 +75,8 @@ schema = schema_resp["schema"]
 schema_id = schema_resp["id"]
 ```
 
-Schemas are cached in `_cached_schema_descriptor` for reuse across engines.
+Schema descriptors are cached in `_cached_schema_descriptor`
+for reuse across generation and validation.
 
 ---
 
@@ -108,14 +111,21 @@ resp = client.chat.completions.create(
     temperature=0
 )
 
-raw = json.loads(resp.choices[0].message.content)
+asset = json.loads(resp.choices[0].message.content)
 ```
+
+**Rules**
+
+| ID                      | Requirement                                        |
+| ----------------------- | -------------------------------------------------- |
+| `azure-schema-bind`     | `response_format.type == "json_schema"`            |
+| `azure-schema-source`   | Schema injected directly from MCP                  |
+| `azure-schema-strict`   | `"strict": True` enforced                          |
+| `azure-schema-validate` | Sub-object validation allowed for `asset` key only |
 
 ---
 
 ## 7 · Validation (MCP)
-
-Validation confirms the schema match without mutation:
 
 ```python
 from labs.mcp.validate import invoke_mcp
@@ -123,14 +133,16 @@ result = invoke_mcp(asset, strict=True)
 assert result["ok"]
 ```
 
-Partial validation may be applied to sub-objects only (e.g., `asset` key) while retaining
-metadata such as `trace_id`, `deployment`, or `engine`.
+* Validation confirms schema compliance only.
+* Top-level telemetry fields (`trace_id`, `timestamp`, `deployment`, etc.)
+  are ignored during validation scope.
+* No mutation or normalization permitted.
 
 ---
 
 ## 8 · Logging
 
-Each generation run appends a record to `meta/output/labs/external.jsonl`:
+Each run appends to `meta/output/labs/external.jsonl`:
 
 ```json
 {
@@ -148,23 +160,35 @@ Each generation run appends a record to `meta/output/labs/external.jsonl`:
 
 ## 9 · Tests / Exit Criteria
 
-| Area             | Requirement                                          |
-| ---------------- | ---------------------------------------------------- |
-| Env bootstrap    | Azure vars loaded and verified                       |
-| Schema fetch     | MCP schema retrieved and cached                      |
-| Azure generation | Uses `response_format.type == "json_schema"`         |
-| Parsing          | Deterministic `json.loads`, no regex                 |
-| Validation       | Strict MCP confirmation passes                       |
-| No normalization | No `_normalize` or `_fill_empty_sections` references |
-| Logging          | Includes schema id, version, deployment, trace id    |
-| CI               | `pytest -q` passes                                   |
+| Area             | Requirement                                                 |
+| ---------------- | ----------------------------------------------------------- |
+| Env bootstrap    | Azure vars load and validate                                |
+| Schema fetch     | MCP schema fetched and cached                               |
+| Azure generation | Uses `json_schema` response_format                          |
+| Parsing          | Strict `json.loads` only                                    |
+| Validation       | Passes MCP strict mode (no correction)                      |
+| No normalization | No `_normalize`, `_fill_empty_sections`, or stripping       |
+| Logging          | JSONL entries include schema id/version/deployment/trace_id |
+| CI               | `pytest -q` passes                                          |
 
 ---
 
 ### ✅ Summary
 
-v0.3.6a now defines a **single-pass schema-bound generation loop**:
+v0.3.6a defines a **single-pass, schema-bound generation loop**:
 
-**MCP schema → Azure Chat Completions (json_schema) → Sub-object validation → MCP confirmation.**
+**MCP Schema → Azure Chat Completions (json_schema) → Sub-object validation → MCP confirmation.**
 
-No normalization, no stripping, no fallback — schema compliance is guaranteed at generation time.
+Normalization removed.
+`.env` overrides respected.
+Mocks never override live engines.
+
+```
+
+---
+
+✅ **Changes applied vs prior draft**
+1. Clarified `.env` precedence for `LABS_EXTERNAL_ENGINE`.  
+2. Explicitly allowed top-level metadata outside validation scope.  
+3. Removed any fallback/normalization ambiguity.  
+4. Added sub-object validation allowance (for `asset` key only).  
