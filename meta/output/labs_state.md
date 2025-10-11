@@ -2,31 +2,29 @@
 
 ## Summary of repo state
 
-- **Environment surfacing**: The CLI still preloads `.env`, defaulting schema/engine toggles and warning for missing Azure credentials, so operators see all required knobs up front.
-- **Schema plumbing**: Generators cache MCP schemas (`schema_id`, `schema_version`) correctly, but Azure requests never bind them and Gemini’s placeholder message diverges from the spec text.
-- **Response contract**: External parsers keep regex fallbacks and legacy enrichment, causing strict MCP validation failures despite robust logging of each attempt.
+- CLI bootstraps `.env`, sets schema defaults, and surfaces Azure/Gemini env gaps during import.
+- MCP schema descriptors are cached once and reused across Azure/Gemini pathways, keeping schema_id + version in context.
+- External generators now bind Azure Chat Completions to the MCP schema with strict JSON parsing, while Gemini remains a guarded placeholder.
 
 ## Alignment (Rule → Status → Evidence)
 
 | Rule | Status | Evidence |
 | --- | --- | --- |
-| `env-preload-v0.3.6a` | Present | `labs/cli.py` loads `.env`, seeds `LABS_SCHEMA_VERSION`/`LABS_FAIL_FAST`, and logs missing engine vars right after import.<br>`labs/cli.py` enumerates Azure keys (`AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_VERSION`) per engine.<br>`requirements.txt` keeps `python-dotenv==1.1.1` so the preload path stays wired. |
-| `mcp-schema-pull-v0.3.6a` | Present | `_cached_schema_descriptor` in `labs/generator/external.py` calls `get_schema("synesthetic-asset", version=...)`, returning `(schema_id, version, schema)` for downstream use.<br>`tests/test_mcp_schema_pull.py::test_mcp_schema_pull` asserts both `list_schemas()` and `get_schema()` report `ok`. |
-| `gemini-placeholder-v0.3.6a` | Divergent | `GeminiGenerator.generate` raises `NotImplementedError("Gemini structured-output is disabled until Vertex AI migration.")`, not the required "Vertex AI structured-output unsupported" string.<br>`tests/test_external_generator.py::test_gemini_generate_is_placeholder` only checks the exception type, so the spec-required message isn’t enforced. |
-| `azure-schema-binding-v0.3.6a` | Divergent | `AzureOpenAIGenerator` inherits `_build_request` with `response_format={"type": "json_object"}` and never adds `json_schema`/`strict=True`.<br>No Azure-specific test (`tests/test_external_generator.py`) asserts schema binding, allowing the drift to persist. |
-| `response-parse-v0.3.6a` | Divergent | `_extract_structured_payload` in `OpenAIGenerator` falls back to `re.search(r"\{.*\}")` when `json.loads` fails, violating the deterministic parse requirement.<br>`tests/test_external_generator.py::test_openai_regex_fallback` (section covering `_extract_structured_payload`) exercises that regex path instead of forbidding it. |
-| `validation-confirmation-v0.3.6a` | Present | `labs/mcp/validate.invoke_mcp` returns the validation result and only raises when `strict` and `ok` is false, leaving the asset untouched.<br>`labs/cli.py::main` routes generator output through `invoke_mcp(..., strict=strict_flag)` to confirm validation post-generation. |
-| `error-handling-retry-v0.3.6a` | Present | `ExternalGenerator.generate` retries up to `max_retries` with exponential backoff, while `_classify_http_error` flags 5xx/429 as retryable and 4xx as fatal.<br>`tests/test_external_generator.py::test_external_generator_logs_failure_when_transport_errors` and sibling retry cases cover the 400 vs 503 handling split. |
-| `structured-logging-v0.3.6a` | Present | `ExternalGenerator.record_run` writes JSONL entries with `engine`, `schema_id`, `schema_version`, `deployment`, `trace_id`, and `validation_status`.<br>`meta/output/labs/external.jsonl` entries (e.g. trace `0b96a96f-15cc-437b-acae-b779b5f60e9d`) include those fields, confirming the structured log contract. |
+| `env-preload-v0.3.6a` | Present | `labs/cli.py::_load_env_file` loads dotenv, seeds LABS_* defaults, and warns when Azure vars are missing.<br>`requirements.txt` pins `python-dotenv==1.1.1`. |
+| `mcp-schema-pull-v0.3.6a` | Present | `_cached_schema_descriptor` in `labs/generator/external.py` calls `get_schema("synesthetic-asset", version=...)`, caching `(schema_id, version, schema)`.<br>`tests/test_mcp_schema_pull.py::test_mcp_schema_pull` asserts the schema+id tuple succeeds. |
+| `gemini-placeholder-v0.3.6a` | Present | `GeminiGenerator.generate` raises `NotImplementedError("Vertex AI structured-output unsupported")`.<br>`tests/test_external_generator.py::test_gemini_generate_is_placeholder` checks the exact message. |
+| `azure-schema-binding-v0.3.6a` | Present | `AzureOpenAIGenerator._build_request` sets `response_format` to `json_schema` with the fetched MCP schema and `strict: True`.<br>`tests/test_external_generator.py::test_azure_schema_binding` verifies schema binding metadata on the request context. |
+| `response-parse-v0.3.6a` | Present | `OpenAIGenerator._extract_structured_payload` parses `response.choices[0].message.content` via `json.loads` and raises on decode errors.<br>`tests/test_external_generator.py::test_openai_strict_parse` confirms good JSON passes and invalid JSON raises `ExternalRequestError`. |
+| `validation-confirmation-v0.3.6a` | Present | `labs/cli.py::main` invokes `invoke_mcp(asset, strict=strict_flag)` after generation without mutating the asset.<br>`labs/mcp/validate.py::invoke_mcp` returns the result and only raises for strict failures. |
+| `error-handling-retry-v0.3.6a` | Present | `ExternalGenerator.generate` backs off up to three attempts, recording retry metadata and aborting on non-retryable 4xx errors.<br>`tests/test_external_generator.py` exercises 400 vs 503 flows to cover fail-fast vs retry. |
+| `structured-logging-v0.3.6a` | Present | `ExternalGenerator.record_run` writes engine, schema_id, schema_version, deployment, trace_id, and validation_status to the log record.<br>`tests/test_external_generator.py::test_gemini_generator_normalises_asset` inspects the JSONL output for those fields. |
 
 ## Top gaps & fixes
 
-1. **Normalize the Gemini placeholder message** to match the spec literal "Vertex AI structured-output unsupported" and add an assertion for the string in unit tests.
-2. **Bind Azure chat completions to the MCP schema** by supplying `response_format.type == 'json_schema'`, embedding the fetched schema, and setting `strict=True`, alongside regression coverage.
-3. **Drop regex fallbacks in `_extract_structured_payload`** so responses are parsed strictly via `json.loads(response.choices[0].message.content)` with tests enforcing the contract.
+- No spec divergences detected; keep monitoring external schema updates to ensure descriptors stay current.
+- Capture a fresh live `external.jsonl` sample once Azure credentials are configured to validate production telemetry.
 
 ## Recommendations
 
-- Extend the Azure mock path to emit schema-compliant 0.7.3 assets and verify them with `invoke_mcp(..., strict=True)` in tests.
-- Capture a golden Azure success log once schema binding is restored to track `schema_binding=True` in observability dashboards.
-- Prune legacy provenance/control enrichments in mock outputs to reduce MCP validation noise and keep assets lean under schema 0.7.3.
+- Add integration coverage that exercises `AzureOpenAIGenerator` against a mocked MCP validator with `strict=True` to assert the end-to-end handshake.
+- Extend CLI docs in `README.md` with a quickstart for setting Azure env vars plus Gemini placeholders for clarity.
