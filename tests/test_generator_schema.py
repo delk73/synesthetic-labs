@@ -9,7 +9,7 @@ import jsonschema
 import pytest
 
 from labs.generator import AssetAssembler
-from labs.generator.external import GeminiGenerator
+from labs.generator.external import AzureOpenAIGenerator
 
 SCHEMA_ROOT = Path("meta/schemas")
 
@@ -34,7 +34,7 @@ def test_internal_asset_matches_schema(schema_version: str) -> None:
 
 @pytest.mark.parametrize("schema_version", ["0.7.3", "0.7.4"])
 def test_external_asset_matches_schema(schema_version: str) -> None:
-    generator = GeminiGenerator(mock_mode=True, sleeper=lambda _: None)
+    generator = AzureOpenAIGenerator(mock_mode=True, sleeper=lambda _: None)
     asset, _context = generator.generate(
         "schema validation external",
         schema_version=schema_version,

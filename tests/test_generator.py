@@ -63,7 +63,7 @@ def test_generator_propose_legacy_schema(tmp_path) -> None:
     assert asset["modulations"]
     assert asset["rule_bundle"]["rules"]
     assert "provenance" not in asset
-    assert asset["meta_info"]["provenance"]["generator"]["agent"] == "GeneratorAgent"
+    assert "provenance" not in asset["meta_info"]
 
     lines = log_path.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) == 1

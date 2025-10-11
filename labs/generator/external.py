@@ -34,7 +34,7 @@ _BACKOFF_FACTOR = 2.0
 _BACKOFF_CAP_SECONDS = 5.0
 _JITTER_FRACTION = 0.2
 
-SENSITIVE_HEADERS = {"authorization", "x-goog-api-key"}
+SENSITIVE_HEADERS = {"authorization", "x-goog-api-key", "api-key"}
 
 _DEFAULT_SECTIONS = {
     "shader": {"input_parameters": []},
@@ -520,6 +520,10 @@ class ExternalGenerator:
                     "schema_version": resolved_schema_version,
                     "taxonomy": f"external.{self.engine}",
                 }
+                deployment = getattr(self, "_azure_deployment", None) or parameters.get("model")
+                if not deployment and self.engine == "gemini":
+                    deployment = parameters.get("model")
+                context["deployment"] = deployment
                 context["schema_binding"] = bool(binding_meta.get("bound"))
                 context["schema_id"] = binding_meta.get("schema_id")
                 context["schema_binding_version"] = binding_meta.get("schema_version")
@@ -605,7 +609,15 @@ class ExternalGenerator:
             "schema_id": context.get("schema_id"),
             "schema_binding_version": context.get("schema_binding_version"),
             "endpoint": context.get("endpoint"),
+            "deployment": context.get("deployment"),
         }
+
+        if not record.get("deployment"):
+            record["deployment"] = (
+                context.get("parameters", {}) or {}
+            ).get("model")
+
+        record.setdefault("timestamp", record["ts"])
 
         record["validation_status"] = (
             review.get("validation_status") or ("passed" if review.get("ok") else "failed")
@@ -1480,6 +1492,18 @@ class GeminiGenerator(ExternalGenerator):
     api_key_env = "GEMINI_API_KEY"
     endpoint_env = "GEMINI_ENDPOINT"
     default_model = "gemini-2.0-flash"
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        parameters: Optional[JsonDict] = None,
+        seed: Optional[int] = None,
+        timeout: Optional[float] = None,
+        trace_id: Optional[str] = None,
+        schema_version: Optional[str] = None,
+    ) -> Tuple[JsonDict, JsonDict]:
+        raise NotImplementedError("Vertex AI structured-output unsupported")
     
     @property
     def default_endpoint(self) -> str:
@@ -1733,10 +1757,12 @@ class GeminiGenerator(ExternalGenerator):
                 baseline_asset["parameter_index"] = []
         else:
             # For 0.7.4+, provenance goes in meta_info
-            if "provenance" not in baseline_asset["meta_info"]:
-                baseline_asset["meta_info"]["provenance"] = {}
-                
-            baseline_asset["meta_info"]["provenance"].update({
+            meta_info = baseline_asset["meta_info"]
+            if "provenance" not in meta_info:
+                meta_info["provenance"] = {}
+
+            meta_info_provenance = meta_info["provenance"]
+            meta_info_provenance.update({
                 "engine": self.engine,
                 "endpoint": f"mock://{self.engine}",
                 "model": os.getenv("GEMINI_MODEL", self.default_model),
@@ -1754,10 +1780,13 @@ class GeminiGenerator(ExternalGenerator):
                     "taxonomy": {
                         "domain": "visual",
                         "task": "generation",
-                        "style": "square" if "square" in prompt.lower() else "compositional"
-                    }
-                }
+                        "style": "square" if "square" in prompt.lower() else "compositional",
+                    },
+                },
             })
+            meta_info_provenance["engine"] = self.engine
+            # Drop deterministic provenance copied from the baseline assembler asset
+            baseline_asset.pop("provenance", None)
         
         # Return asset directly instead of nesting
         return baseline_asset
@@ -1922,15 +1951,19 @@ class OpenAIGenerator(ExternalGenerator):
         *,
         schema_version: Optional[str] = None,
     ) -> JsonDict:
-        return {
+        model = parameters.get("model")
+        self._active_model = model
+        payload = {
             "trace_id": envelope["trace_id"],
-            "model": parameters.get("model"),
+            "model": model,
             "temperature": parameters.get("temperature"),
             "messages": [
                 {"role": "system", "content": "You are a Synesthetic asset generator."},
                 {"role": "user", "content": prompt},
             ],
+            "response_format": {"type": "json_object"},
         }
+        return payload
 
     def _mock_response(self, prompt: str, parameters: JsonDict) -> JsonDict:
         timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
@@ -1956,20 +1989,67 @@ class OpenAIGenerator(ExternalGenerator):
             if isinstance(range_block, dict):
                 mapping["range"] = deepcopy(range_block)
             default_mappings.append(mapping)
+
+        asset_payload = {
+            "shader": {"component": "shader", "style": "prismatic", "prompt": prompt},
+            "tone": {"component": "tone", "mood": "uplifting"},
+            "haptic": {"component": "haptic", "pattern": "pulse"},
+            "control": {"component": "control", "mappings": default_mappings},
+            "meta": {"component": "meta", "tags": ["external", self.engine]},
+            "modulations": [],
+            "rule_bundle": {"component": "rule_bundle", "rules": []},
+            "timestamp": timestamp,
+        }
+
+        message_content = json.dumps({"asset": asset_payload})
         return {
             "id": f"openai-mock-{uuid.uuid4()}",
-            "object": "synesthetic.asset",
-            "asset": {
-                "shader": {"component": "shader", "style": "prismatic", "prompt": prompt},
-                "tone": {"component": "tone", "mood": "uplifting"},
-                "haptic": {"component": "haptic", "pattern": "pulse"},
-                "control": {"component": "control", "mappings": default_mappings},
-                "meta": {"component": "meta", "tags": ["external", "openai"]},
-                "modulations": [],
-                "rule_bundle": {"component": "rule_bundle", "rules": []},
-                "timestamp": timestamp,
+            "object": "chat.completion",
+            "created": int(_dt.datetime.now(tz=_dt.timezone.utc).timestamp()),
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": message_content,
+                    },
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": len(message_content) // 4,
+                "total_tokens": len(message_content) // 4,
             },
         }
+
+    @staticmethod
+    def _extract_structured_payload(response: JsonDict) -> JsonDict:
+        choices = response.get("choices")
+        if not isinstance(choices, list) or not choices:
+            asset_payload = response.get("asset")
+            if isinstance(asset_payload, dict):
+                return response
+            raise ExternalRequestError("bad_response", "missing_choices", retryable=False)
+        first_choice = choices[0]
+        message = first_choice.get("message") if isinstance(first_choice, dict) else None
+        if not isinstance(message, dict):
+            raise ExternalRequestError("bad_response", "missing_message", retryable=False)
+        content = message.get("content")
+        if isinstance(content, list):
+            content = "".join(
+                part.get("text", "") for part in content if isinstance(part, dict)
+            )
+        if not isinstance(content, str):
+            raise ExternalRequestError("bad_response", "missing_content", retryable=False)
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ExternalRequestError(
+                "bad_response",
+                f"invalid_json: {exc}",
+                retryable=False,
+            ) from exc
 
     def _parse_response(
         self,
@@ -1983,9 +2063,10 @@ class OpenAIGenerator(ExternalGenerator):
         response_hash: str,
         schema_version: str,
     ) -> JsonDict:
-        asset_payload = response.get("asset")
+        payload = self._extract_structured_payload(response)
+        asset_payload = payload.get("asset") if isinstance(payload, dict) else None
         if not isinstance(asset_payload, dict):
-            raise ValueError("OpenAI response missing 'asset' payload")
+            asset_payload = payload if isinstance(payload, dict) else {}
         asset = self._normalise_asset(
             asset_payload,
             prompt=prompt,
@@ -2003,6 +2084,94 @@ class OpenAIGenerator(ExternalGenerator):
         return asset
 
 
+class AzureOpenAIGenerator(OpenAIGenerator):
+    engine = "azure"
+    api_version = "2025-01-01-preview"
+
+    api_key_env = "AZURE_OPENAI_API_KEY"
+    endpoint_env = "AZURE_OPENAI_ENDPOINT"
+    default_endpoint = None
+
+    def _build_request(
+        self,
+        envelope: JsonDict,
+        prompt: str,
+        parameters: JsonDict,
+        *,
+        schema_version: Optional[str] = None,
+    ) -> JsonDict:
+        payload = super()._build_request(
+            envelope,
+            prompt,
+            parameters,
+            schema_version=schema_version,
+        )
+
+        target_version = schema_version or parameters.get("schema_version")
+        schema_id: Optional[str] = None
+        resolved_version: Optional[str] = target_version
+
+        try:
+            descriptor_id, descriptor_version, schema = _schema_descriptor(target_version)
+            schema_id = descriptor_id
+            resolved_version = descriptor_version
+            schema_name = f"SynestheticAsset_{descriptor_version.replace('.', '_')}"
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "schema": schema,
+                },
+                "strict": True,
+            }
+            self._latest_schema_binding = {
+                "schema_id": schema_id,
+                "schema_version": resolved_version,
+                "bound": True,
+            }
+        except Exception as exc:  # pragma: no cover - defensive
+            self._logger.warning("Azure schema binding unavailable: %s", exc)
+            self._latest_schema_binding = {
+                "schema_id": schema_id,
+                "schema_version": resolved_version,
+                "bound": False,
+            }
+
+        return payload
+
+    def default_parameters(self) -> JsonDict:
+        deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+        temperature = float(os.getenv("AZURE_OPENAI_TEMPERATURE", "0.4"))
+        return {"model": deployment, "temperature": temperature}
+
+    def _resolve_live_settings(self) -> Dict[str, Any]:
+        api_key = (os.getenv(self.api_key_env or "") or "").strip()
+        if not api_key:
+            raise ExternalRequestError("auth_error", "missing_api_key", retryable=False)
+
+        base_endpoint = (os.getenv(self.endpoint_env or "") or "").strip().rstrip("/")
+        if not base_endpoint:
+            raise ExternalRequestError("network_error", "missing_endpoint", retryable=False)
+
+        deployment = getattr(self, "_active_model", None) or os.getenv(
+            "AZURE_OPENAI_DEPLOYMENT"
+        )
+        if not deployment:
+            raise ExternalRequestError("network_error", "missing_deployment", retryable=False)
+
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", self.api_version)
+        endpoint = (
+            f"{base_endpoint}/openai/deployments/{deployment}/chat/completions"
+            f"?api-version={api_version}"
+        )
+        headers = {"Content-Type": "application/json", "api-key": api_key}
+        log_headers = self._sanitize_headers_for_log(headers)
+        self.endpoint = base_endpoint
+        self.api_version = api_version
+        self._azure_deployment = deployment
+        return {"endpoint": endpoint, "headers": headers, "log_headers": log_headers}
+
+
 def build_external_generator(engine: str, **kwargs: Any) -> ExternalGenerator:
     """Factory returning the configured external generator for *engine*."""
 
@@ -2011,4 +2180,6 @@ def build_external_generator(engine: str, **kwargs: Any) -> ExternalGenerator:
         return GeminiGenerator(**kwargs)
     if normalised == "openai":
         return OpenAIGenerator(**kwargs)
+    if normalised == "azure":
+        return AzureOpenAIGenerator(**kwargs)
     raise ValueError(f"unsupported external engine: {engine}")

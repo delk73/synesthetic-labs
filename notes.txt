@@ -1,27 +1,6 @@
-LABS_SCHEMA_VERSION=0.7.3 PYTHONPATH=/home/dce/src/synesthetic-labs LABS_LOG_LEVEL=DEBUG python3 -m labs.cli generate "make a square compositional harmony asset" --engine gemini --schema-version 0.7.3
-
-
-1. Run the dedicated external generator tests
-
-cd /home/dce/src/synesthetic-labspytest tests/test_external_generator.py
-2. Generate a 0.7.3 asset via the CLI (mock mode)
-
-cd /home/dce/src/synesthetic-labsLABS_SCHEMA_VERSION=0.7.3 LABS_LOG_LEVEL=DEBUG PYTHONPATH=/home/dce/src/synesthetic-labs \python3 -m labs.cli generate "make a square compositional harmony asset" --engine gemini --schema-version 0.7.3
-This currently succeeds in mock mode and writes a log entry to external.jsonl.
-
-3. Generate a 0.7.4 asset via the CLI (mock mode)
-
-cd /home/dce/src/synesthetic-labsLABS_SCHEMA_VERSION=0.7.4 LABS_LOG_LEVEL=DEBUG PYTHONPATH=/home/dce/src/synesthetic-labs \python3 -m labs.cli generate "make a square compositional harmony asset" --engine gemini --schema-version 0.7.4
-Right now the critic rejects the 0.7.4 payload: the MCP validator complains about missing name plus several “additional properties” on the normalized asset. The CLI exits with code 1; you can still inspect the rejected asset and review in the failure block that prints to the console.
-
-4. Inspect the structured run log (both passes and failures land here)
-
-cd /home/dce/src/synesthetic-labstail -n 5 meta/output/labs/external.jsonl
-notes
-Tests: pytest tests/test_external_generator.py passes.
-CLI 0.7.3 run completes successfully (mock provenance captured).
-CLI 0.7.4 run fails MCP validation with the errors shown above; you can re-run step 3 with --relaxed or LABS_FAIL_FAST=0 if you want to persist assets while investigating the schema mismatch.
-
-
-
-cd /home/dce/src/synesthetic-labs && LABS_SCHEMA_VERSION=0.7.3 LABS_LOG_LEVEL=DEBUG PYTHONPATH=/home/dce/src/synesthetic-labs python3 -m labs.cli generate "make a square compositional harmony asset" --engine gemini --schema-version 0.7.3
+cd /home/dce/src/synesthetic-labs
+LABS_EXTERNAL_LIVE=0 \
+LABS_SCHEMA_VERSION=0.7.3 \
+LABS_LOG_LEVEL=DEBUG \
+PYTHONPATH=/home/dce/src/synesthetic-labs \
+python3 -m labs.cli generate "make a square compositional harmony asset" --engine azure --schema-version 0.7.3

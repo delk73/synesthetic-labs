@@ -1,6 +1,6 @@
 {
   "version": "v0.3.6a",
-  "spec_ref": "docs/specs/synesthetic_labs_v0.3.6a.md#synesthetic-labs--spec-v0.3.6a",
+  "spec_ref": "docs/labs_spec.md#synesthetic-labs--spec-v0.3.6a",
   "output": {
     "paths": ["meta/output/labs_state.md", "AGENTS.md"],
     "format": "markdown",
@@ -10,19 +10,16 @@
     {
       "id": "env-preload-v0.3.6a",
       "section": "4 · Environment",
-      "requirement": "CLI must preload .env and surface both Gemini (placeholder) and Azure variables: LABS_SCHEMA_VERSION, LABS_FAIL_FAST, LABS_EXTERNAL_ENGINE, GEMINI_MODEL, GEMINI_API_KEY, LABS_EXTERNAL_LIVE, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT, and AZURE_OPENAI_API_VERSION.",
+      "requirement": "CLI must preload .env and surface Azure environment variables: LABS_SCHEMA_VERSION, LABS_FAIL_FAST, LABS_EXTERNAL_ENGINE, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT, and AZURE_OPENAI_API_VERSION. Gemini vars remain placeholders only.",
       "verify": [
         {
           "path": "labs/cli.py",
           "match": [
             "dotenv",
-            "load",
+            "load_dotenv",
             "LABS_SCHEMA_VERSION",
             "LABS_FAIL_FAST",
             "LABS_EXTERNAL_ENGINE",
-            "GEMINI_MODEL",
-            "GEMINI_API_KEY",
-            "LABS_EXTERNAL_LIVE",
             "AZURE_OPENAI_ENDPOINT",
             "AZURE_OPENAI_API_KEY",
             "AZURE_OPENAI_DEPLOYMENT",
@@ -37,8 +34,8 @@
     },
     {
       "id": "mcp-schema-pull-v0.3.6a",
-      "section": "6 · Schema Retrieval (MCP)",
-      "requirement": "All generators must call mcp.core.get_schema('synesthetic-asset') and use the returned schema for normalization and $schema URL resolution.",
+      "section": "5 · Schema Retrieval (MCP)",
+      "requirement": "Generators must call get_schema('synesthetic-asset', version=LABS_SCHEMA_VERSION) and cache schema_id + schema for reuse.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -46,126 +43,88 @@
             "from mcp.core import get_schema",
             "get_schema(",
             "\"synesthetic-asset\"",
-            "$schema"
+            "schema_resp",
+            "schema_id",
+            "schema"
           ]
         },
         {
           "path": "tests/test_mcp_schema_pull.py",
-          "match": ["get_schema", "list_schemas", "assert", "ok"]
+          "match": ["get_schema", "schema", "schema_id", "assert", "ok"]
         }
       ]
     },
     {
       "id": "gemini-placeholder-v0.3.6a",
-      "section": "7.1 · Gemini Request (Placeholder)",
-      "requirement": "GeminiGenerator must emit a clear warning that structured output is disabled and raise NotImplementedError if invoked with LABS_EXTERNAL_ENGINE=gemini.",
+      "section": "2 · Engine Matrix",
+      "requirement": "GeminiGenerator must raise NotImplementedError('Vertex AI structured-output unsupported') when invoked.",
       "verify": [
         {
           "path": "labs/generator/external.py",
-          "match": [
-            "GeminiGenerator",
-            "NotImplementedError",
-            "structured output disabled",
-            "Vertex AI"
-          ]
+          "match": ["GeminiGenerator", "NotImplementedError", "Vertex AI", "structured-output unsupported"]
         },
         {
           "path": "tests/test_external_generator.py",
-          "match": ["pytest.raises", "NotImplementedError", "structured output disabled"]
+          "match": ["pytest.raises", "NotImplementedError", "Vertex AI", "structured-output unsupported"]
         }
       ]
     },
     {
       "id": "azure-schema-binding-v0.3.6a",
-      "section": "7.2 · Azure Request Contract",
-      "requirement": "AzureOpenAIGenerator must construct chat.completions requests using model=os.getenv('AZURE_OPENAI_DEPLOYMENT'), include response_format={'type':'json_object'}, and parse response.choices[0].message.content as JSON.",
+      "section": "6 · Engine Request (Azure Schema-Bound)",
+      "requirement": "AzureOpenAIGenerator must call chat.completions.create with response_format.type == 'json_schema', include the MCP schema under response_format.json_schema.schema, and enforce strict=True.",
       "verify": [
         {
           "path": "labs/generator/external.py",
           "match": [
             "AzureOpenAI",
             "response_format",
-            "json_object",
-            "AZURE_OPENAI_DEPLOYMENT",
-            "response.choices[0].message.content"
+            "json_schema",
+            "strict",
+            "get_schema(",
+            "\"synesthetic-asset\""
           ]
         },
         {
           "path": "tests/test_external_generator.py",
-          "match": ["AzureOpenAI", "json_object", "response_format", "message.content"]
+          "match": ["json_schema", "strict", "schema", "assert"]
         }
       ]
     },
     {
       "id": "response-parse-v0.3.6a",
-      "section": "7 · Request / Response Contract",
-      "requirement": "Responses must be parsed deterministically — Gemini via candidates[0].content.parts[0].text (if ever re-enabled) and Azure via response.choices[0].message.content — and JSON-decoded.",
+      "section": "6 · Engine Request / Response Contract",
+      "requirement": "Response parsing must occur only via json.loads(response.choices[0].message.content); sub-object validation allowed, no regex or fallback parsing.",
       "verify": [
         {
           "path": "labs/generator/external.py",
-          "match": ["candidates", "content", "parts", "text", "json.loads", "response.choices[0].message.content"]
+          "match": ["response.choices[0].message.content", "json.loads"]
         },
         {
           "path": "tests/test_external_generator.py",
-          "match": ["candidates", "message.content", "json.loads"]
+          "match": ["json.loads", "message.content", "assert"]
         }
       ]
     },
     {
-      "id": "normalization-schema-0.7.3-v0.3.6a",
-      "section": "8 · Normalization & Semantic Filling",
-      "requirement": "When schema_version == '0.7.3', the asset must include $schema and fully populated shader, tone, haptic, and control scaffolds using default fill helpers; provenance omitted.",
+      "id": "validation-confirmation-v0.3.6a",
+      "section": "7 · Validation (MCP)",
+      "requirement": "invoke_mcp(asset, strict=True) must be called after generation; validation confirms schema compliance and does not modify asset.",
       "verify": [
         {
-          "path": "labs/generator/assembler.py",
-          "match": [
-            "_normalize_0_7_3",
-            "_fill_empty_sections",
-            "AssetAssembler.default_",
-            "asset['$schema']",
-            "if schema_version == '0.7.3'"
-          ]
+          "path": "labs/mcp/validate.py",
+          "match": ["invoke_mcp", "strict", "return result"]
         },
         {
-          "path": "tests/test_generator.py",
-          "match": ["0.7.3", "assert '$schema' in result", "shader", "tone", "haptic", "control"]
-        }
-      ]
-    },
-    {
-      "id": "provenance-enriched-schema-v0.3.6a",
-      "section": "9 · Provenance Schema",
-      "requirement": "For schema_version >= '0.7.4', provenance must include engine, endpoint, deployment, trace_id, api_version, and input_parameters.",
-      "verify": [
-        {
-          "path": "labs/generator/assembler.py",
-          "match": ["_build_asset_provenance", "engine", "endpoint", "deployment", "api_version", "trace_id", "input_parameters"]
-        },
-        {
-          "path": "tests/test_generator.py",
-          "match": ["provenance", "engine", "endpoint", "deployment", "api_version"]
-        }
-      ]
-    },
-    {
-      "id": "cli-validation-flow-v0.3.6a",
-      "section": "10 · CLI Lifecycle",
-      "requirement": "CLI lifecycle must call invoke_mcp(asset, strict=...) and obey strict/relaxed semantics controlled by LABS_FAIL_FAST or CLI flags.",
-      "verify": [
-        {
-          "path": "labs/cli.py",
-          "match": ["invoke_mcp", "LABS_FAIL_FAST", "--strict", "--relaxed"]
-        },
-        {
-          "path": "tests/test_cli.py",
-          "match": ["mock_mcp", "strict", "relaxed", "assert"]
+          "path": "tests/test_mcp_validate.py",
+          "match": ["invoke_mcp", "assert result['ok']"]
         }
       ]
     },
     {
       "id": "error-handling-retry-v0.3.6a",
-      "section": "12 · Error Classes",
-      "requirement": "5xx and network errors must retry ≤3 times; 4xx must fail immediately; retries logged in structured output.",
+      "section": "Operational Error Handling",
+      "requirement": "5xx and network errors must retry ≤3 times with logged attempts; 4xx must fail immediately and record error details.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -179,8 +138,8 @@
     },
     {
       "id": "structured-logging-v0.3.6a",
-      "section": "13 · Logging",
-      "requirement": "Structured logs must record engine, endpoint, deployment, trace_id, schema_binding, validation_status, and taxonomy to external.jsonl.",
+      "section": "8 · Logging",
+      "requirement": "Structured logs must include engine, schema_id, schema_version, deployment, trace_id, and validation_status in external.jsonl entries.",
       "verify": [
         {
           "path": "labs/logging.py",
@@ -188,37 +147,7 @@
         },
         {
           "path": "labs/generator/external.py",
-          "match": ["log_external_generation", "trace_id", "schema_binding", "validation_status", "endpoint", "deployment"]
-        }
-      ]
-    },
-    {
-      "id": "validation-passes-v0.3.6a",
-      "section": "11 · Validation Rules",
-      "requirement": "Strict MCP validation must pass for schema 0.7.3 with no manual correction. Relaxed mode must still persist assets with warnings.",
-      "verify": [
-        {
-          "path": "labs/mcp/validate.py",
-          "match": ["invoke_mcp", "strict", "relaxed"]
-        },
-        {
-          "path": "tests/test_mcp_validate.py",
-          "match": ["assert result['ok']", "strict", "relaxed"]
-        }
-      ]
-    },
-    {
-      "id": "fallback-filling-v0.3.6a",
-      "section": "8 · Normalization & Semantic Filling",
-      "requirement": "Empty structural sections must auto-fill with deterministic defaults (shader, tone, haptic, control) to satisfy strict validation.",
-      "verify": [
-        {
-          "path": "labs/generator/assembler.py",
-          "match": ["_fill_empty_sections", "AssetAssembler.default_", "return asset"]
-        },
-        {
-          "path": "tests/test_generator.py",
-          "match": ["fill_empty_sections", "assert", "shader", "tone"]
+          "match": ["schema_id", "schema_version", "deployment", "trace_id", "validation_status"]
         }
       ]
     }
