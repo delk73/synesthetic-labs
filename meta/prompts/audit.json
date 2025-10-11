@@ -1,6 +1,6 @@
 {
   "version": "v0.3.6a",
-  "spec_ref": "docs/specs/synesthetic_labs_v0.3.6a.md#synesthetic-labs--spec-v0.3.6a",
+  "spec_ref": "docs/labs_spec.md#synesthetic-labs--spec-v0.3.6a",
   "output": {
     "paths": ["meta/output/labs_state.md", "AGENTS.md"],
     "format": "markdown",
