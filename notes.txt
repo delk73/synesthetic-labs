@@ -1,6 +1,0 @@
-cd /home/dce/src/synesthetic-labs
-LABS_EXTERNAL_LIVE=0 \
-LABS_SCHEMA_VERSION=0.7.3 \
-LABS_LOG_LEVEL=DEBUG \
-PYTHONPATH=/home/dce/src/synesthetic-labs \
-python3 -m labs.cli generate "make a square compositional harmony asset" --engine azure --schema-version 0.7.3
