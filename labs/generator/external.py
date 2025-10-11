@@ -551,6 +551,29 @@ class ExternalGenerator:
                 break
 
         assert final_error is not None
+
+        attempts_made = max(1, len(attempts)) if attempts else 1
+
+        attempt_summaries: List[str] = []
+        for record in attempts:
+            if record.get("status") != "error":
+                continue
+            attempt_no = record.get("attempt")
+            error_info = record.get("error") or {}
+            reason = error_info.get("reason") or "unknown_reason"
+            detail = error_info.get("detail") or "unknown_detail"
+            summary = f"attempt {attempt_no}: {reason} ({detail})"
+            attempt_summaries.append(summary)
+
+        if attempt_summaries:
+            exhausted = attempts_made >= self.max_retries
+            self._logger.error(
+                "External generator %s %s; failures: %s",
+                self.engine,
+                "exhausted retries" if exhausted else "stopped early",
+                "; ".join(attempt_summaries),
+            )
+
         trace = {
             "trace_id": run_trace_id,
             "prompt": prompt,
@@ -564,7 +587,14 @@ class ExternalGenerator:
                 "detail": final_error.detail,
             },
         }
-        message = f"{self.engine} generation failed after {self.max_retries} attempts"
+        suffix_parts = [f"{final_error.reason}:{final_error.detail}"]
+        if getattr(final_error, "status_code", None) is not None:
+            suffix_parts.append(f"status={final_error.status_code}")
+        message = (
+            f"{self.engine} generation failed after {attempts_made}"
+            f" attempt{'s' if attempts_made != 1 else ''}"
+            f" ({', '.join(suffix_parts)})"
+        )
         raise ExternalGenerationError(
             message,
             trace=trace,
