@@ -384,33 +384,64 @@ class AssetAssembler:
             or AssetAssembler.schema_url(AssetAssembler.DEFAULT_SCHEMA_VERSION)
         )
 
+        shader_block = AssetAssembler.default_shader()
+        shader_payload = asset.get("shader", {})
+        if isinstance(shader_payload, dict):
+            fragment_source = (
+                shader_payload.get("sources", {}) if isinstance(shader_payload.get("sources"), dict) else {}
+            )
+            code_value = fragment_source.get("fragment")
+            if isinstance(code_value, str) and code_value.strip():
+                shader_block = {"type": "fragment", "code": code_value}
+
+        tone_block = AssetAssembler.default_tone()
+        tone_payload = asset.get("tone", {})
+        if isinstance(tone_payload, dict):
+            frequency = None
+            if isinstance(tone_payload.get("settings"), dict):
+                frequency = tone_payload["settings"].get("frequency")
+            if isinstance(frequency, (int, float)):
+                tone_block = {"type": tone_payload.get("engine", "sine"), "frequency": frequency}
+
+        haptic_block = AssetAssembler.default_haptic()
+        haptic_payload = asset.get("haptic", {})
+        if isinstance(haptic_payload, dict):
+            profile = haptic_payload.get("profile")
+            if isinstance(profile, dict):
+                pattern = profile.get("waveform")
+                intensity = profile.get("intensity")
+                if isinstance(pattern, str) and isinstance(intensity, (int, float)):
+                    haptic_block = {"pattern": pattern, "duration_ms": int(intensity * 100)}
+
+        control_block = AssetAssembler.default_control()
+
+        normalized_meta: Dict[str, object] = {}
+        meta_payload = asset.get("meta_info", {})
+        if isinstance(meta_payload, dict):
+            title = meta_payload.get("title")
+            if isinstance(title, str):
+                normalized_meta["title"] = title
+            description = meta_payload.get("description")
+            if isinstance(description, str):
+                normalized_meta["description"] = description
+            tags = meta_payload.get("tags")
+            if isinstance(tags, list):
+                normalized_meta["tags"] = [tag for tag in tags if isinstance(tag, str)]
+
         normalized: Dict[str, object] = {
             "$schema": schema_url,
-            "name": asset.get("meta_info", {}).get("title", prompt),
-            "shader": {
-                k: v for k, v in asset.get("shader", {}).items()
-                if k in ("name", "description", "language", "sources", "uniforms", "meta_info")
-            },
-            "tone": {
-                k: v for k, v in asset.get("tone", {}).items()
-                if k in ("name", "description", "engine", "settings", "meta_info")
-            },
-            "haptic": {
-                k: v for k, v in asset.get("haptic", {}).items()
-                if k in ("device", "description", "input_parameters", "meta_info")
-            },
-            "control": asset.get("control", {}),
+            "name": normalized_meta.get("title", prompt),
+            "shader": shader_block,
+            "tone": tone_block,
+            "haptic": haptic_block,
+            "control": control_block,
             "modulations": [],  # forbidden in 0.7.3
             "rule_bundle": {
-                "name": asset.get("rule_bundle", {}).get("name", "default"),
+                "name": "default",
                 "rules": [],
                 "meta_info": {"version": assembler_version},
             },
-            "meta_info": {
-                key: value
-                for key, value in asset.get("meta_info", {}).items()
-                if key != "provenance"
-            },
+            "meta_info": normalized_meta,
         }
 
         AssetAssembler._fill_empty_sections(normalized)

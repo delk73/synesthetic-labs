@@ -936,7 +936,6 @@ class ExternalGenerator:
 
         for section in ("shader", "tone", "haptic"):
             if not isinstance(asset_payload.get(section), dict):
-                self._logger.debug("Adding missing '%s' section", section)
                 asset_payload[section] = {}
 
         if not isinstance(asset_payload.get("control"), dict):
@@ -984,8 +983,6 @@ class ExternalGenerator:
             canonical.get("modulations"),
             canonical.get("modulation"),
         )
-        if not modulations:
-            modulations = deepcopy(_DEFAULT_MODULATIONS)
 
         rule_bundle = self._build_rule_bundle(canonical.get("rule_bundle"))
         rule_bundle_version = (
@@ -2026,42 +2023,39 @@ class OpenAIGenerator(ExternalGenerator):
         return payload
 
     def _mock_response(self, prompt: str, parameters: JsonDict) -> JsonDict:
-        timestamp = _dt.datetime.now(tz=_dt.timezone.utc).isoformat()
-        default_mappings = []
-        for entry in _DEFAULT_CONTROL_PARAMETERS:
-            if not isinstance(entry, dict):
-                continue
-            combo_list = entry.get("combo")
-            combo = combo_list[0] if isinstance(combo_list, list) and combo_list else {}
-            if not isinstance(combo, dict):
-                combo = {}
-            mapping = {
-                "id": entry.get("id"),
-                "input": {
-                    "device": combo.get("device"),
-                    "control": combo.get("control"),
+        schema_version = parameters.get("schema_version") or self.schema_version
+        assembler = AssetAssembler(schema_version=schema_version)
+        asset = assembler.generate(
+            prompt,
+            seed=parameters.get("seed"),
+            schema_version=schema_version,
+        )
+        provenance = asset.get("provenance")
+        if isinstance(provenance, dict):
+            generator_block = provenance.get("generator")
+            if isinstance(generator_block, dict):
+                generator_block["engine"] = self.engine
+                generator_block["mode"] = "mock"
+                generator_block["api_version"] = self.api_version
+            provenance.setdefault("engine", self.engine)
+            provenance.setdefault("mode", "mock")
+        else:
+            asset["provenance"] = {
+                "engine": self.engine,
+                "mode": "mock",
+                "generator": {
+                    "engine": self.engine,
+                    "mode": "mock",
+                    "api_version": self.api_version,
                 },
-                "parameter": entry.get("parameter"),
-                "mode": entry.get("mode", "absolute"),
-                "curve": entry.get("curve", "linear"),
             }
-            range_block = entry.get("range")
-            if isinstance(range_block, dict):
-                mapping["range"] = deepcopy(range_block)
-            default_mappings.append(mapping)
+        if isinstance(asset.get("meta_info"), dict):
+            tags = asset["meta_info"].setdefault("tags", [])
+            if isinstance(tags, list):
+                tags.extend(["external", self.engine])
+                asset["meta_info"]["tags"] = list(dict.fromkeys(tags))
 
-        asset_payload = {
-            "shader": {"component": "shader", "style": "prismatic", "prompt": prompt},
-            "tone": {"component": "tone", "mood": "uplifting"},
-            "haptic": {"component": "haptic", "pattern": "pulse"},
-            "control": {"component": "control", "mappings": default_mappings},
-            "meta": {"component": "meta", "tags": ["external", self.engine]},
-            "modulations": [],
-            "rule_bundle": {"component": "rule_bundle", "rules": []},
-            "timestamp": timestamp,
-        }
-
-        message_content = json.dumps({"asset": asset_payload})
+        message_content = json.dumps({"asset": asset})
         return {
             "id": f"openai-mock-{uuid.uuid4()}",
             "object": "chat.completion",
@@ -2138,9 +2132,13 @@ class OpenAIGenerator(ExternalGenerator):
             response_hash=response_hash,
             schema_version=schema_version,
         )
-        provenance = dict(asset.get("provenance") or {})
-        provenance["openai_object"] = response.get("object")
-        asset["provenance"] = provenance
+
+        provenance_block = asset.get("provenance")
+        if isinstance(provenance_block, dict):
+            provenance = dict(asset["provenance"])
+            provenance.setdefault("openai_object", response.get("object"))
+            asset["provenance"] = provenance
+
         return asset
 
 
@@ -2181,8 +2179,8 @@ class AzureOpenAIGenerator(OpenAIGenerator):
                 "json_schema": {
                     "name": schema_name,
                     "schema": schema,
+                    "strict": True,
                 },
-                "strict": True,
             }
             self._latest_schema_binding = {
                 "schema_id": schema_id,
