@@ -2,36 +2,37 @@
 
 ## Summary of Repo State
 
-- **Environment surfaces**: The CLI still omits several Azure env warnings—`AZURE_OPENAI_API_VERSION` never appears and `LABS_EXTERNAL_ENGINE` defaults silently—though dotenv loading now runs at import time.
-- **External integrations**: Gemini generation is hard-disabled via `NotImplementedError`, while Azure chat completions use structured JSON responses with deterministic parsing and schema binding through MCP lookups.
-- **Normalization & provenance**: Legacy (`0.7.3`) assets retain trimmed meta provenance instead of dropping it entirely, and the assembler still lacks a dedicated fallback filler helper.
-- **Observability**: External run logs capture endpoint, schema binding, and validation data, but omit deployment identifiers, leaving audit trails incomplete.
+- **Environment surfaces**: CLI startup now defaults and warns on every Synesthetic env knob, including `LABS_EXTERNAL_ENGINE`, `LABS_EXTERNAL_LIVE`, and all Azure/Gemini credentials.
+- **External integrations**: Gemini remains gated behind an explicit placeholder, while Azure chat completions deliver structured JSON with schema-bound payloads and deterministic parsing.
+- **Normalization & provenance**: Legacy (`0.7.3`) assets drop provenance after deterministic backfilling, and enriched schemas still emit the full provenance envelope with endpoint/deployment metadata.
+- **Observability**: External run logs now record deployment identifiers, timestamps, and schema binding, giving operators a complete trail across engines.
 
 ## Alignment (Rule → Status → Evidence)
 
 | Rule | Status | Evidence |
 | --- | --- | --- |
-| `env-preload-v0.3.6a` | Divergent | labs/cli.py:16-51 loads dotenv and seeds defaults but never surfaces `AZURE_OPENAI_API_VERSION` or reiterates `LABS_EXTERNAL_ENGINE`.<br>labs/cli.py:40-68 warn for engine-specific keys yet skip `AZURE_OPENAI_API_VERSION` and `LABS_EXTERNAL_LIVE` when unset.<br>requirements.txt:13 retains `python-dotenv`, confirming preload support while highlighting the missing Azure notices. |
-| `mcp-schema-pull-v0.3.6a` | Present | labs/generator/external.py:24-133 caches `get_schema("synesthetic-asset", version=...)` and stores `schema_id` for normalization.<br>tests/test_mcp_schema_pull.py:12-44 asserts both `get_schema` and `list_schemas` succeed and return `ok`. |
-| `gemini-placeholder-v0.3.6a` | Present | labs/generator/external.py:1493-1507 raises `NotImplementedError("Gemini structured-output is disabled until Vertex AI migration.")`.<br>tests/test_external_generator.py:151-160 expects `pytest.raises(NotImplementedError)` when `GeminiGenerator.generate()` is invoked. |
-| `azure-schema-binding-v0.3.6a` | Present | labs/generator/external.py:1888-1967 builds chat-completion payloads with `response_format={'type': 'json_object'}` and stores live deployment info from `AZURE_OPENAI_*` env vars.<br>tests/test_external_generator.py:181-318 exercise Azure responses and assert `response_format` plus JSON decoding via `message.content`. |
-| `response-parse-v0.3.6a` | Present | labs/generator/external.py:1742-1860 reads Gemini `candidates[0].content.parts` and falls back to deterministic JSON loads; OpenAI path decodes `choices[0].message.content`.<br>tests/test_external_generator.py:214-318 validate JSON parsing from `message.content` and Gemini normalization helpers. |
-| `normalization-schema-0.7.3-v0.3.6a` | Divergent | labs/generator/assembler.py:335-372 retains `meta_info['provenance']` (engine/trace/timestamp) instead of omitting provenance for 0.7.3 payloads.<br>labs/generator/assembler.py:108-166 only offers `fill_defaults`—no `_fill_empty_sections` helper mentioned in the spec.<br>tests/test_generator.py:62-87 still assert `meta_info['provenance']['generator']`, locking in the extra metadata. |
-| `provenance-enriched-schema-v0.3.6a` | Present | labs/generator/assembler.py:646-688 injects `engine`, `endpoint`, `deployment`, `api_version`, and `input_parameters` when schema ≥0.7.4.<br>tests/test_generator.py:12-39 confirm enriched assets expose generator agent/version and consistent trace IDs. |
-| `cli-validation-flow-v0.3.6a` | Present | labs/cli.py:223-266 calls `invoke_mcp(asset, strict=strict_flag)` and records both critic-provided and local MCP responses.<br>tests/test_pipeline.py:19-120 cover strict success and relaxed-warning flows, asserting persistence and warning semantics. |
-| `error-handling-retry-v0.3.6a` | Present | labs/generator/external.py:322-520 classifies HTTP errors, retries `>=500`/429 with capped exponential backoff, and logs attempts.<br>tests/test_external_generator.py:320-370 assert retries on 503 and immediate failure on 401/400 cases. |
-| `structured-logging-v0.3.6a` | Divergent | labs/generator/external.py:573-636 writes external logs without a `deployment` field, despite capturing endpoint/schema binding.<br>tests/test_external_generator.py:200-240 read the log entry but never assert deployment presence, leaving the gap untested. |
-| `validation-passes-v0.3.6a` | Present | labs/mcp/validate.py:146-166 enforces strict-mode failures via `invoke_mcp`, printing relaxed warnings otherwise.<br>tests/test_pipeline.py:19-118 show strict runs persisting assets and relaxed mode emitting warnings while still returning review payloads. |
-| `fallback-filling-v0.3.6a` | Divergent | labs/generator/assembler.py:108-166 relies on generic `fill_defaults` rather than a dedicated `_fill_empty_sections` helper mandated by the spec.<br>tests/test_generator.py:62-87 expect populated sections indirectly but offer no coverage for explicit fallback behaviour. |
+| `env-preload-v0.3.6a` | Present | `labs/cli.py:16-74` loads dotenv once and seeds defaults for `LABS_EXTERNAL_ENGINE`/`LABS_EXTERNAL_LIVE` before warning about missing keys.<br>`labs/cli.py:78-96` iterates engine-specific requirements, including `AZURE_OPENAI_API_VERSION` alongside Gemini credentials.<br>`requirements.txt:13` keeps `python-dotenv`, confirming the preload path. |
+| `mcp-schema-pull-v0.3.6a` | Present | `labs/generator/external.py:24-133` caches `get_schema("synesthetic-asset", version=...)` results for downstream normalization.<br>`tests/test_mcp_schema_pull.py:12-44` asserts both `get_schema` and `list_schemas` return `ok` payloads. |
+| `gemini-placeholder-v0.3.6a` | Present | `labs/generator/external.py:1493-1507` raises `NotImplementedError("Gemini structured-output is disabled until Vertex AI migration.")` on use.<br>`tests/test_external_generator.py:151-160` covers the placeholder with `pytest.raises`. |
+| `azure-schema-binding-v0.3.6a` | Present | `labs/generator/external.py:1888-1967` builds chat-completion requests with `response_format={'type': 'json_object'}` and deployment-driven models.<br>`tests/test_external_generator.py:181-318` assert Azure payloads decode `message.content` JSON successfully. |
+| `response-parse-v0.3.6a` | Present | `labs/generator/external.py:1742-1860` handles Gemini `candidates[0].content.parts` and OpenAI/Azure `choices[0].message.content` through `json.loads`.
+`tests/test_external_generator.py:214-318` validate the deterministic parsing path. |
+| `normalization-schema-0.7.3-v0.3.6a` | Present | `labs/generator/assembler.py:116-172` introduces `_fill_empty_sections` and strips meta provenance inside `_normalize_0_7_3`.<br>`tests/test_generator_assembler.py:12-53` confirm legacy assets retain `$schema`, filled scaffolds, and omit provenance. |
+| `provenance-enriched-schema-v0.3.6a` | Present | `labs/generator/assembler.py:646-688` still injects engine, endpoint, deployment, api_version, and input parameters for ≥0.7.4.<br>`tests/test_generator.py:1-39` verify enriched assets surface generator provenance with trace IDs. |
+| `cli-validation-flow-v0.3.6a` | Present | `labs/cli.py:223-282` invokes `invoke_mcp(...)`, persists relaxed runs, and records both critic/local MCP payloads.<br>`tests/test_pipeline.py:19-206` assert strict and relaxed flows across generate/critique commands. |
+| `error-handling-retry-v0.3.6a` | Present | `labs/generator/external.py:322-520` retries 5xx/429 responses with capped backoff while failing fast on 4xx.<br>`tests/test_external_generator.py:320-370` cover rate-limit retries and authentication failures. |
+| `structured-logging-v0.3.6a` | Present | `labs/generator/external.py:573-636` logs `deployment`, `endpoint`, schema binding, and validation metadata per run.<br>`tests/test_external_generator.py:181-249` and `tests/test_pipeline.py:260-318` assert deployment/timestamp fields in the external log stream. |
+| `validation-passes-v0.3.6a` | Present | `labs/mcp/validate.py:141-189` enforces strict-mode failures via `invoke_mcp`, emitting relaxed warnings otherwise.<br>`tests/test_pipeline.py:82-206` capture both failure modes while still persisting relaxed assets. |
+| `fallback-filling-v0.3.6a` | Present | `labs/generator/assembler.py:108-172` leverages `_fill_empty_sections` to backfill shader/tone/haptic/control defaults deterministically.<br>`tests/test_generator.py:40-88` and `tests/test_generator_assembler.py:12-53` verify filled sections across legacy assets. |
 
 ## Top Gaps & Fixes
 
-1. **Broaden environment surfacing**: Expand `_load_env_file()` warnings to include `AZURE_OPENAI_API_VERSION`, `LABS_EXTERNAL_ENGINE`, and `LABS_EXTERNAL_LIVE` so operators see every required knob.
-2. **Complete legacy normalization**: Introduce the `_fill_empty_sections` helper (or equivalent) and strip provenance entirely from 0.7.3 payloads to meet the legacy schema contract.
-3. **Enrich external logging**: Add deployment metadata to `record_run()` outputs and assert it in tests to close the observability gap.
+1. **Env telemetry hardening**: Consider automated smoke tests that assert CLI warnings when flipping between Azure/Gemini engines and mock/live toggles.
+2. **Schema regression guardrails**: Extend test coverage for mixed-schema pipelines (e.g., 0.7.3 assets flowing through CLI relaxed mode) to ensure provenance stays trimmed.
+3. **External log tooling**: Add tooling to summarize the enriched external log stream (deployment/timestamp) for easier operator triage.
 
 ## Recommendations
 
-- Add regression coverage ensuring Azure logs capture `deployment` and relaxed CLI runs persist experiment metadata as expected.
-- Promote a reusable fallback filler utility shared between normalization paths to guarantee deterministic scaffolds.
-- Extend environment self-check tests to assert presence/ordering of every Gemini and Azure credential surfaced at startup.
+- Add a targeted unit test for `_load_env_file` to assert warning coverage when `LABS_EXTERNAL_ENGINE` swaps to Gemini.
+- Wire `_fill_empty_sections` into any future normalization helpers to keep legacy scaffolds deterministic.
+- Build a lightweight analyzer that ships with ops docs to consume `meta/output/labs/external.jsonl` and flag missing deployment/timestamp fields.
