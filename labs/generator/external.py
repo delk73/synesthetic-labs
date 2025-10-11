@@ -29,6 +29,7 @@ JsonDict = Dict[str, Any]
 
 MAX_REQUEST_BYTES = 256 * 1024
 MAX_RESPONSE_BYTES = 1024 * 1024
+MAX_HTTP_ERROR_BODY_BYTES = 2048
 _DEFAULT_BACKOFF_BASE_SECONDS = 0.2
 _BACKOFF_FACTOR = 2.0
 _BACKOFF_CAP_SECONDS = 5.0
@@ -835,8 +836,37 @@ class ExternalGenerator:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 body = response.read(MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
+            error_body_snippet: Optional[str] = None
+            try:
+                raw_error_body = exc.read(MAX_HTTP_ERROR_BODY_BYTES + 1)
+            except Exception:
+                raw_error_body = b""
+
+            if raw_error_body:
+                truncated = raw_error_body[:MAX_HTTP_ERROR_BODY_BYTES]
+                text = truncated.decode("utf-8", errors="replace")
+                if len(raw_error_body) > MAX_HTTP_ERROR_BODY_BYTES:
+                    text = f"{text} ...<truncated>"
+                # Collapse whitespace to keep logs compact
+                error_body_snippet = " ".join(text.split())
+
             reason, detail, retryable = self._classify_http_error(exc)
-            raise ExternalRequestError(reason, detail, status_code=exc.code, retryable=retryable) from exc
+            detail_with_body = detail
+            if error_body_snippet:
+                detail_with_body = f"{detail}:{error_body_snippet}"
+                self._logger.error(
+                    "HTTPError %s for %s: %s",
+                    exc.code,
+                    request.full_url,
+                    error_body_snippet,
+                )
+
+            raise ExternalRequestError(
+                reason,
+                detail_with_body,
+                status_code=exc.code,
+                retryable=retryable,
+            ) from exc
         except urllib.error.URLError as exc:
             reason, detail = self._classify_url_error(exc)
             raise ExternalRequestError(reason, detail, retryable=reason not in {"auth_error", "bad_response"}) from exc
