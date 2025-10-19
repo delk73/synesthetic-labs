@@ -69,14 +69,23 @@ If CLI `--engine` flag is omitted, `.env` takes precedence.
 
 ```python
 from mcp.core import get_schema
-schema_resp = get_schema("synesthetic-asset",
-                         version=os.getenv("LABS_SCHEMA_VERSION", "0.7.3"))
+schema_resp = get_schema(
+    "synesthetic-asset",
+    version=os.getenv("LABS_SCHEMA_VERSION", "0.7.3"),
+)
+schema_name = schema_resp["name"]
+schema_version = schema_resp["version"]
+schema_path = schema_resp["path"]
 schema = schema_resp["schema"]
-schema_id = schema_resp["id"]
+schema_id = schema.get("$id")
 ```
 
 Schema descriptors are cached in `_cached_schema_descriptor`
 for reuse across generation and validation.
+
+The MCP response is the source of truth for schema metadata. Clients must rely on
+the returned `schema_name`, `schema_version`, and `schema_path`, comparing the
+reported version against the requested `LABS_SCHEMA_VERSION` to surface drift.
 
 ---
 

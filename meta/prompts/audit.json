@@ -35,22 +35,20 @@
     {
       "id": "mcp-schema-pull-v0.3.6a",
       "section": "5 · Schema Retrieval (MCP)",
-      "requirement": "Generators must call get_schema('synesthetic-asset', version=LABS_SCHEMA_VERSION), caching schema_id and schema for reuse across generation and validation.",
+      "requirement": "Generators must call get_schema('synesthetic-asset', version=LABS_SCHEMA_VERSION), caching the schema payload and its $id while honoring the MCP-reported metadata (name/version/path) for downstream logging and validation.",
       "verify": [
         {
           "path": "labs/generator/external.py",
           "match": [
-            "from mcp.core import get_schema",
-            "get_schema(",
-            "\"synesthetic-asset\"",
-            "schema_resp",
-            "schema_id",
-            "schema"
+            "get_schema_from_mcp(\"synesthetic-asset\"",
+            "response.get(\"schema\")",
+            "schema.get(\"$id\")",
+            "response.get(\"version\")"
           ]
         },
         {
           "path": "tests/test_mcp_schema_pull.py",
-          "match": ["get_schema", "schema", "schema_id", "assert", "ok"]
+          "match": ["get_schema", "schema", "assert", "ok", "\"version\""]
         }
       ]
     },

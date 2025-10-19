@@ -21,9 +21,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 
-from mcp.core import get_schema
 from labs.generator.assembler import AssetAssembler
 from labs.logging import log_external_generation
+from labs.mcp.tcp_client import get_schema_from_mcp
 
 JsonDict = Dict[str, Any]
 
@@ -93,7 +93,7 @@ def _normalize_schema_version(value: Optional[str]) -> str:
 
 @lru_cache(maxsize=8)
 def _cached_schema_descriptor(version: str) -> Tuple[str, str, Dict[str, Any]]:
-    response = get_schema("synesthetic-asset", version=version)
+    response = get_schema_from_mcp("synesthetic-asset", version=version)
     if not response.get("ok"):
         raise RuntimeError(f"Failed to load schema: {response}")
 
@@ -2011,7 +2011,6 @@ class OpenAIGenerator(ExternalGenerator):
         model = parameters.get("model")
         self._active_model = model
         payload = {
-            "trace_id": envelope["trace_id"],
             "model": model,
             "temperature": parameters.get("temperature"),
             "messages": [
