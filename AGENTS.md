@@ -2,29 +2,29 @@
 
 ## Summary of repo state
 
-- CLI preloads `.env`, seeds LABS defaults at 0.7.3, warns when Azure/Gemini keys are missing, and honours `--engine` overrides during generation.
-- External generators cache MCP schema descriptors, bind Azure requests to strict `json_schema` payloads, and parse completions exclusively via `json.loads`.
-- Structured logging records engine/deployment/schema metadata for every run while Gemini generation remains an intentional `NotImplementedError`.
+- CLI boots `.env`, normalizes LABS/Azure defaults, and honours `--engine` overrides before validation.
+- External generators cache MCP schema metadata, bind Azure requests to strict JSON Schema, and parse completions strictly via `json.loads`.
+- Structured logging emits JSONL entries with trace/schema/deployment fields while Gemini generation intentionally raises `NotImplementedError`.
 
 ## Alignment (Rule → Status → Evidence)
 
 | Rule | Status | Evidence |
 | --- | --- | --- |
-| `env-preload-v0.3.6a` | Present | `labs/cli.py:20` preloads `.env` via `load_dotenv` before CLI setup.<br>`labs/cli.py:25` seeds `LABS_*` defaults and Azure fallbacks while `labs/cli.py:209` routes `--engine` overrides through `build_external_generator`.<br>`requirements.txt:4` pins `python-dotenv==1.1.1` for CLI env bootstrapping. |
-| `mcp-schema-pull-v0.3.6a` | Present | `labs/generator/external.py:96` fetches `get_schema_from_mcp("synesthetic-asset", version=version)` and caches the response.<br>`labs/generator/external.py:104` stores the schema `$id` and MCP-reported `version` for downstream logging.<br>`tests/test_mcp_schema_pull.py:21` exercises `get_schema` and asserts an OK schema payload. |
-| `gemini-placeholder-v0.3.6a` | Present | `labs/generator/external.py:1563` raises `NotImplementedError("Vertex AI structured-output unsupported")` in `GeminiGenerator.generate`.<br>`tests/test_external_generator.py:155` expects the placeholder exception when Gemini generation is invoked. |
-| `azure-schema-binding-v0.3.6a` | Present | `labs/generator/external.py:2176` builds `response_format={"type": "json_schema", "json_schema": {..., "strict": True}}` from the MCP descriptor.<br>`labs/generator/external.py:2184` records the bound `schema_id`/`schema_version` metadata for logging.<br>`tests/test_external_generator.py:315` confirms the Azure generator context carries the strict schema binding. |
-| `response-parse-v0.3.6a` | Present | `labs/generator/external.py:2099` parses `response.choices[0].message.content` strictly with `json.loads` and rejects decode errors.<br>`tests/test_external_generator.py:395` verifies valid JSON succeeds while bad JSON raises `ExternalRequestError`. |
-| `validation-confirmation-v0.3.6a` | Present | `labs/cli.py:246` calls `invoke_mcp(asset, strict=strict_flag)` immediately after generation.<br>`labs/mcp/validate.py:151` returns the validation result unchanged and raises only when strict mode fails.<br>`tests/test_mcp.py:40` asserts `validate_asset` returns the pass-through payload used by CLI validation. |
-| `error-handling-retry-v0.3.6a` | Present | `labs/generator/external.py:424` iterates attempts up to `self.max_retries` per request.<br>`labs/generator/external.py:538` stops retrying once retries are exhausted or the error is non-retryable.<br>`tests/test_external_generator.py:409` and `tests/test_external_generator.py:438` cover fail-fast auth errors and 429 retry backoff success. |
-| `structured-logging-v0.3.6a` | Present | `labs/generator/external.py:618` writes engine, prompt, schema_version, and validation data into the log record.<br>`labs/generator/external.py:640` captures `schema_id`, `schema_binding_version`, `endpoint`, and `deployment` for telemetry.<br>`tests/test_external_generator.py:112` asserts the JSONL entry includes engine, schema metadata, deployment, and validation status. |
+| `env-preload-v0.3.6a` | Present | `labs/cli.py:20` loads `.env` via `load_dotenv` ahead of CLI setup.<br>`labs/cli.py:25` and `labs/cli.py:39` seed LABS defaults and enumerate required Azure keys for exposure warnings.<br>`labs/cli.py:209` routes `--engine` overrides into `build_external_generator`. |
+| `mcp-schema-pull-v0.3.6a` | Present | `labs/generator/external.py:96` fetches `get_schema_from_mcp("synesthetic-asset", version=version)` with caching.<br>`labs/generator/external.py:104` persists the schema `$id` and MCP-reported `version` for downstream logging.<br>`tests/test_mcp_schema_pull.py:21` asserts the MCP payload is OK and exposes `schema["version"]`. |
+| `gemini-placeholder-v0.3.6a` | Present | `labs/generator/external.py:1563` raises `NotImplementedError("Vertex AI structured-output unsupported")` in `GeminiGenerator.generate`.<br>`tests/test_external_generator.py:155` expects the placeholder exception when Gemini generation is invoked.<br>`tests/test_external_generator.py:152` constructs the generator in mock mode for the guard rail. |
+| `azure-schema-binding-v0.3.6a` | Present | `labs/generator/external.py:2176` injects `response_format={"type": "json_schema", ... "strict": True}` built from the MCP descriptor.<br>`labs/generator/external.py:2184` captures the bound `schema_id`/`schema_version` metadata for logging.<br>`tests/test_external_generator.py:315` verifies the strict schema binding and cached identifiers in context. |
+| `response-parse-v0.3.6a` | Present | `labs/generator/external.py:2080` reads the assistant message and `labs/generator/external.py:2099` parses the payload solely with `json.loads`.<br>`labs/generator/external.py:2101` raises `ExternalRequestError` on JSON decoding failures.<br>`tests/test_external_generator.py:395` and `tests/test_external_generator.py:398` confirm valid JSON passes while bad JSON triggers the error. |
+| `validation-confirmation-v0.3.6a` | Present | `labs/cli.py:246` calls `invoke_mcp(asset, strict=strict_flag)` immediately after generation.<br>`labs/mcp/validate.py:146` returns the MCP validation result unchanged unless strict mode fails.<br>`tests/test_mcp.py:38` and `tests/test_mcp.py:40` assert `validate_asset` yields the pass-through success payload. |
+| `error-handling-retry-v0.3.6a` | Present | `labs/generator/external.py:424` iterates attempts up to `self.max_retries` and captures attempt metadata.<br>`labs/generator/external.py:533` and `labs/generator/external.py:538` stop retrying when retries exhaust or the error is non-retryable.<br>`tests/test_external_generator.py:409` and `tests/test_external_generator.py:438` cover immediate 4xx failure versus 429 retry backoff success. |
+| `structured-logging-v0.3.6a` | Present | `labs/logging.py:26` writes JSONL entries to `meta/output/labs/external.jsonl`.<br>`labs/generator/external.py:618` and `labs/generator/external.py:643` include engine, schema_id, schema_version, deployment, trace_id, and validation metadata in each record.<br>`tests/test_external_generator.py:112` and `tests/test_external_generator.py:134` assert those fields appear in the JSONL output. |
 
 ## Top gaps & fixes
 
-- No spec gaps detected; continue watching upstream 0.7.x schema updates so cached descriptors stay fresh.
-- Capture a live `external.jsonl` sample once Azure credentials are configured to validate production telemetry fields.
+- No behavioural gaps against v0.3.6a detected; continue monitoring upstream schema revisions so cached descriptors stay current.
+- Capture a live `meta/output/labs/external.jsonl` sample once Azure credentials are configured to confirm telemetry across real deployments.
 
 ## Recommendations
 
-- Add an integration test that runs `AzureOpenAIGenerator` through a mocked MCP validator to cover the strict-mode handshake end-to-end.
-- Expand the CLI quickstart in `README.md` with explicit Azure env setup steps and a Gemini placeholder callout for clarity.
+- Add an integration test that runs `AzureOpenAIGenerator` against a mocked MCP validator to cover the strict validation handshake end-to-end.
+- Expand the CLI quickstart in `README.md` with explicit Azure environment setup steps plus a Gemini placeholder callout for new operators.
