@@ -1,0 +1,16 @@
+{"command": "generate", "event": "cli_ready", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-20T14:10:03.229611+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-20T14:10:03.231318+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-20T14:10:03.241354+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-20T14:10:03.242171+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-20T14:16:52.327842+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-20T14:16:52.329751+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-20T14:16:52.341694+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-20T14:16:52.342701+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-20T14:44:42.752966+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-20T14:44:42.754732+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-20T14:44:42.766473+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-20T14:44:42.767581+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-20T14:51:05.243262+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-20T14:51:05.245076+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-20T14:51:05.255952+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-20T14:51:05.256821+00:00"}
