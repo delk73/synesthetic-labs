@@ -9,7 +9,6 @@ import os
 import sys
 from typing import Any, Callable, Dict, Optional
 
-from jsonschema import ValidationError
 from dotenv import load_dotenv
 
 
@@ -80,12 +79,13 @@ from labs.agents.critic import CriticAgent, is_fail_fast_enabled
 from labs.agents.generator import GeneratorAgent
 from labs.generator.assembler import AssetAssembler
 from labs.generator.external import ExternalGenerationError, build_external_generator
-from labs.mcp.validate import invoke_mcp
+from labs.mcp import MCPClient, MCPClientError, MCPValidationError
 from labs.mcp_stdio import MCPUnavailableError, build_validator_from_env
 from labs.patches import apply_patch, preview_patch, rate_patch
 
 _EXPERIMENTS_DIR_ENV = "LABS_EXPERIMENTS_DIR"
 _DEFAULT_EXPERIMENTS_DIR = os.path.join("meta", "output", "labs", "experiments")
+_DEFAULT_MCP_LOG_PATH = os.path.join("meta", "output", "labs", "mcp.jsonl")
 def _configure_logging() -> None:
     log_level = os.getenv("LABS_LOG_LEVEL", "INFO")
     level = getattr(logging, log_level.upper(), logging.INFO)
@@ -198,6 +198,35 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     args = parser.parse_args(argv)
 
+    telemetry_path = os.getenv("LABS_MCP_LOG_PATH") or _DEFAULT_MCP_LOG_PATH
+    os.environ.setdefault("LABS_MCP_LOG_PATH", telemetry_path)
+    requested_version = getattr(args, "schema_version", None)
+
+    try:
+        mcp_client = MCPClient(
+            schema_version=requested_version,
+            resolution=os.getenv("LABS_SCHEMA_RESOLUTION"),
+            telemetry_path=telemetry_path,
+        )
+    except MCPClientError as exc:
+        _LOGGER.error("Failed to initialise MCP client: %s", exc)
+        return 1
+
+    mcp_client.record_event(
+        "cli_ready",
+        command=args.command,
+        schema_version=mcp_client.schema_version,
+        schema_resolution=mcp_client.resolution,
+    )
+
+    def _complete(status: int) -> int:
+        mcp_client.record_event(
+            "cli_shutdown",
+            command=args.command,
+            exit_code=status,
+        )
+        return status
+
     if args.command == "generate":
         engine = getattr(args, "engine", None)
         generator: Optional[GeneratorAgent] = None
@@ -205,6 +234,12 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         if args.strict is not None:
             os.environ["LABS_FAIL_FAST"] = "1" if args.strict else "0"
+
+        try:
+            mcp_client.fetch_schema(version=args.schema_version)
+        except MCPClientError as exc:
+            _LOGGER.error("Failed to fetch schema via MCP: %s", exc)
+            return _complete(1)
 
         if engine and engine != "deterministic":
             external_generator = build_external_generator(engine)
@@ -223,7 +258,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             except ExternalGenerationError as exc:
                 external_generator.record_failure(exc)
                 _LOGGER.error("External generator %s failed: %s", engine, exc)
-                return 1
+                return _complete(1)
         else:
             generator = GeneratorAgent(schema_version=args.schema_version)
             asset = generator.propose(
@@ -234,7 +269,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             validator_callback = _build_validator_optional()
         except MCPUnavailableError as exc:
             _LOGGER.error("MCP unavailable: %s", exc)
-            return 1
+            return _complete(1)
 
         critic = CriticAgent(validator=validator_callback)
         review = critic.review(asset)
@@ -243,16 +278,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         strict_failure = False
         prior_mcp_response = review.get("mcp_response") if isinstance(review.get("mcp_response"), dict) else None
         try:
-            mcp_response = invoke_mcp(asset, strict=strict_flag)
-        except ValidationError as exc:
-            mcp_response = getattr(
-                exc,
-                "result",
-                {"ok": False, "reason": "validation_failed", "errors": []},
-            )
+            mcp_response = mcp_client.confirm(asset, strict=strict_flag)
+        except MCPValidationError as exc:
+            result_payload = exc.result if isinstance(exc.result, dict) else None
+            mcp_response = result_payload or {"ok": False, "reason": "validation_failed"}
             strict_failure = True
-        else:
-            strict_failure = False
+        except MCPClientError as exc:
+            mcp_response = {
+                "ok": False,
+                "reason": "mcp_client_error",
+                "detail": str(exc),
+            }
+            strict_failure = True
 
         review.setdefault("mode", "strict" if strict_flag else "relaxed")
         review["mcp_response_local"] = mcp_response
@@ -321,9 +358,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         print(json.dumps(output_payload, indent=2))
         exit_code = 0 if mcp_ok else 1
-        if strict_failure:
-            sys.exit(exit_code)
-        return exit_code
+        return _complete(exit_code)
 
     if args.command == "critique":
         asset = _load_asset(args.asset)
@@ -331,7 +366,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             validator_callback = _build_validator_optional()
         except MCPUnavailableError as exc:
             _LOGGER.error("MCP unavailable: %s", exc)
-            return 1
+            return _complete(1)
 
         critic = CriticAgent(validator=validator_callback)
         review = critic.review(asset)
@@ -342,16 +377,16 @@ def main(argv: Optional[list[str]] = None) -> int:
                 _LOGGER.warning("Critique completed in relaxed mode despite MCP failure")
             else:
                 _LOGGER.error("Critique failed: MCP validation did not pass")
-            return 1
+            return _complete(1)
 
-        return 0
+        return _complete(0)
 
     if args.command == "preview":
         asset = _load_asset(args.asset)
         patch = _load_asset(args.patch)
         record = preview_patch(asset, patch)
         print(json.dumps(record, indent=2))
-        return 0
+        return _complete(0)
 
     if args.command == "apply":
         asset = _load_asset(args.asset)
@@ -361,7 +396,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             validator_callback = _build_validator_optional()
         except MCPUnavailableError as exc:
             _LOGGER.error("MCP unavailable: %s", exc)
-            return 1
+            return _complete(1)
 
         critic = CriticAgent(validator=validator_callback)
         result = apply_patch(asset, patch, critic=critic)
@@ -369,20 +404,21 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         review_payload = result["review"]
         if _review_mcp_ok(review_payload):
-            return 0
+            return _complete(0)
         if _is_relaxed_mode(review_payload):
             _LOGGER.warning("Patch applied in relaxed mode; emitting degraded result")
-            return 1
-        return 1
+            return _complete(1)
+        return _complete(1)
 
     if args.command == "rate":
         rating_payload = _load_asset(args.rating)
         record = rate_patch(args.patch_id, rating_payload, asset_id=args.asset_id)
         print(json.dumps(record, indent=2))
-        return 0
+        return _complete(0)
 
+    _complete(2)
     parser.error("Unknown command")
-    return 1
+    return _complete(1)
 
 
 if __name__ == "__main__":  # pragma: no cover

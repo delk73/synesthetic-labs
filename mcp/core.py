@@ -1,9 +1,9 @@
 """Minimal MCP core emulation for local CI and development.
 
-This module exposes the ``get_schema`` and ``list_schemas`` helpers that the
-Synesthetic Labs tooling expects from the upstream ``mcp.core`` package.  The
-implementation intentionally focuses on deterministic filesystem discovery so
-that tests can run without requiring the full backend repository.
+This module exposes helpers that mirror the upstream ``mcp.core`` package used
+by Synesthetic Labs.  The local implementation focuses on deterministic
+filesystem discovery so that tests can run without requiring the full backend
+repository.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ JsonDict = Dict[str, object]
 
 _SEMVER_PATTERN = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 _SCHEMA_SUFFIX = ".schema.json"
+_VALID_RESOLUTIONS = {"preserve", "inline", "bundled"}
 
 
 def _repo_root() -> Path:
@@ -49,13 +50,30 @@ def _iter_schema_roots() -> Iterator[Path]:
             if resolved.exists() and resolved.is_dir():
                 yield resolved
 
-    default_root = _default_schema_root()
-    try:
-        default_resolved = default_root.resolve(strict=True)
-    except OSError:
-        default_resolved = default_root
-    if default_resolved not in seen and default_resolved.exists():
-        yield default_resolved
+    candidates: List[Path] = []
+    candidates.append(_default_schema_root())
+
+    repo_root = _repo_root()
+    repo_parent = repo_root.parent
+    additional_roots = [
+        repo_parent / "synesthetic-mcp" / "libs" / "synesthetic-schemas" / "docs" / "schema",
+        repo_parent / "synesthetic-mcp" / "libs" / "synesthetic-schemas" / "jsonschema",
+        repo_parent / "synesthetic-schemas" / "docs" / "schema",
+        repo_parent / "synesthetic-schemas" / "jsonschema",
+    ]
+    for candidate in additional_roots:
+        candidates.append(candidate)
+
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError:
+            resolved = candidate
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.exists() and resolved.is_dir():
+            yield resolved
 
 
 def _version_key(version: Optional[str]) -> Tuple[int, int, int, int]:
@@ -148,8 +166,24 @@ def list_schemas() -> JsonDict:
     return {"ok": True, "schemas": summary}
 
 
-def get_schema(name: str, version: Optional[str] = None) -> JsonDict:
+def _normalise_resolution(resolution: Optional[str]) -> str:
+    if resolution is None:
+        return "preserve"
+    candidate = resolution.strip().lower()
+    if candidate not in _VALID_RESOLUTIONS:
+        raise ValueError(f"unsupported schema resolution: {resolution}")
+    return candidate
+
+
+def get_schema(
+    name: str,
+    version: Optional[str] = None,
+    *,
+    resolution: Optional[str] = None,
+) -> JsonDict:
     """Load a schema by *name*, preferring the highest available version."""
+
+    _normalise_resolution(resolution)
 
     if not isinstance(name, str) or not name.strip():
         raise ValueError("schema name must be a non-empty string")
@@ -158,28 +192,35 @@ def get_schema(name: str, version: Optional[str] = None) -> JsonDict:
     catalog = _catalog_schemas()
 
     candidates = catalog.get(normalized, [])
+    fallback_requested = False
+
     if version:
         filtered = [item for item in candidates if item[0] == version]
-        if not filtered:
-            # Fallback to direct filesystem check in case the cache missed it
-            for root in _iter_schema_roots():
-                candidate_path = root / version / f"{normalized}{_SCHEMA_SUFFIX}"
-                if candidate_path.exists():
-                    schema_data = _load_schema(candidate_path)
-                    return _build_response(
-                        name=normalized,
-                        version=version,
-                        source=candidate_path,
-                        schema=schema_data,
-                    )
-            return _build_response(
-                name=normalized,
-                version=version,
-                source=Path(version),
-                ok=False,
-                reason=f"schema_not_found:{normalized}:{version}",
-            )
-        candidates = filtered
+        if filtered:
+            candidates = filtered
+        else:
+            fallback_requested = True
+            if not candidates:
+                # Fallback to direct filesystem check in case the cache missed it
+                for root in _iter_schema_roots():
+                    candidate_path = root / version / f"{normalized}{_SCHEMA_SUFFIX}"
+                    if candidate_path.exists():
+                        schema_data = _load_schema(candidate_path)
+                        response = _build_response(
+                            name=normalized,
+                            version=version,
+                            source=candidate_path,
+                            schema=schema_data,
+                        )
+                        response["requested_version"] = version
+                        return response
+                return _build_response(
+                    name=normalized,
+                    version=version,
+                    source=Path(version),
+                    ok=False,
+                    reason=f"schema_not_found:{normalized}:{version}",
+                )
 
     if not candidates:
         return _build_response(
@@ -203,12 +244,51 @@ def get_schema(name: str, version: Optional[str] = None) -> JsonDict:
             reason=f"schema_load_failed:{exc}",
         )
 
-    return _build_response(
+    payload = _build_response(
         name=normalized,
         version=selected_version,
         source=selected_path,
         schema=schema_payload,
     )
+    if fallback_requested and version and selected_version != version:
+        payload["requested_version"] = version
+    return payload
 
 
-__all__ = ["get_schema", "list_schemas"]
+def validate_many(assets, *, strict: bool = True):
+    """Validate a batch of assets via the local schema catalogue.
+
+    The upstream MCP package exposes ``validate_many`` with transport-backed
+    behaviour.  For the local compatibility layer we defer to the in-repo
+    validator so that the call signature matches tests without depending on the
+    external adapter binary.
+    """
+
+    from typing import Iterable, MutableMapping  # local import to avoid cycle
+
+    if not isinstance(assets, Iterable):
+        raise TypeError("assets must be an iterable of mappings")
+
+    results = []
+    ok = True
+
+    try:
+        from labs.mcp.validate import validate_asset  # noqa: WPS433 - intentional local import
+    except ImportError as exc:  # pragma: no cover - defensive: labs module missing
+        raise RuntimeError("labs.mcp.validate unavailable") from exc
+
+    for candidate in assets:
+        if not isinstance(candidate, MutableMapping):
+            raise TypeError("each asset must be a mutable mapping")
+        result = validate_asset(candidate)
+        ok = ok and bool(result.get("ok"))
+        results.append(result)
+
+    payload: JsonDict = {"ok": ok, "items": results}
+    payload["reason"] = "validation_passed" if ok else "validation_failed"
+    if strict and not ok:
+        payload["strict"] = True
+    return payload
+
+
+__all__ = ["get_schema", "list_schemas", "validate_many"]

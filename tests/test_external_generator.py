@@ -65,6 +65,7 @@ def _build_gemini_asset(
         "schema_binding": False,
         "schema_id": "mock-schema",
         "schema_binding_version": schema_version,
+        "schema_resolution": generator._latest_schema_binding.get("schema_resolution"),
         "endpoint": "mock://gemini",
     }
     return asset, context, parameters
@@ -131,6 +132,8 @@ def test_gemini_generator_normalises_asset(tmp_path) -> None:
     assert record["schema_binding"] is False
     assert record["schema_id"] == context["schema_id"]
     assert record["endpoint"] == context["endpoint"]
+    assert context["schema_resolution"]
+    assert record["schema_resolution"] == context["schema_resolution"]
     assert record["validation_status"] == "passed"
     assert isinstance(record["reviewed_at"], str)
 
@@ -147,6 +150,7 @@ def test_gemini_generator_legacy_schema_keeps_payload_lean() -> None:
     meta_info = asset.get("meta_info") or {}
     assert not meta_info.get("provenance")
     assert context["schema_version"] == "0.7.3"
+    assert context["schema_resolution"]
 
 
 def test_gemini_generate_is_placeholder() -> None:
@@ -323,6 +327,7 @@ def test_azure_schema_binding(monkeypatch) -> None:
     assert context["schema_binding"] is True
     assert context["schema_id"]
     assert context["schema_binding_version"]
+    assert context["schema_resolution"]
 
 
 def test_request_body_size_cap(monkeypatch) -> None:

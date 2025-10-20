@@ -107,15 +107,15 @@
     {
       "id": "validation-confirmation-v0.3.6a",
       "section": "7 · Validation (MCP)",
-      "requirement": "invoke_mcp(asset, strict=True) must be called after generation; validation only confirms schema compliance and must not alter or normalize the asset.",
+      "requirement": "mcp_client.confirm(asset, strict=True) must be called after generation; validation only confirms schema compliance and must not alter or normalize the asset.",
       "verify": [
         {
-          "path": "labs/mcp/validate.py",
-          "match": ["invoke_mcp", "strict", "return result"]
+          "path": "labs/cli.py",
+          "match": ["mcp_client.confirm", "strict="]
         },
         {
-          "path": "tests/test_mcp_validate.py",
-          "match": ["invoke_mcp", "assert result['ok']"]
+          "path": "tests/test_labs_mcp_modes.py",
+          "match": ["client.confirm", "strict=True"]
         }
       ]
     },

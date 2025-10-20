@@ -137,8 +137,10 @@ asset = json.loads(resp.choices[0].message.content)
 ## 7 · Validation (MCP)
 
 ```python
-from labs.mcp.validate import invoke_mcp
-result = invoke_mcp(asset, strict=True)
+from labs.mcp.client import MCPClient
+
+mcp = MCPClient()
+result = mcp.confirm(asset, strict=True)
 assert result["ok"]
 ```
 
@@ -159,6 +161,7 @@ Each run appends to `meta/output/labs/external.jsonl`:
   "engine": "azure_openai",
   "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json",
   "schema_version": "0.7.3",
+  "schema_resolution": "preserve",
   "deployment": "gpt-4o-mini",
   "trace_id": "2a1c4f4e-51ad-4a1c-b8d2-67e65bfcf74e",
   "validation_status": "passed"
