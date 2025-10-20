@@ -1,8 +1,8 @@
 {
   "version": "v0.3.6a",
-  "spec_ref": "docs/specs/synesthetic_labs_v0.3.6a.md#synesthetic-labs--spec-v0.3.6a",
+  "spec_ref": "docs/labs_spec.md#synesthetic-labs--spec-v0.3.6a-schema-bound-generation--0-7-3-lock",
   "task": "Fix Gemini message, enforce Azure schema binding, and remove nondeterministic parsing per v0.3.6a audit",
-  "objective": "Align implementation with v0.3.6a spec by ensuring Gemini uses the exact placeholder text, Azure binds to MCP schemas with strict mode, and OpenAI responses parse strictly via json.loads with no regex fallbacks.",
+  "objective": "Align implementation with the v0.3.6a (0.7.3-locked) spec by ensuring Gemini uses the exact placeholder text, Azure binds to the 0.7.3 MCP schema in strict mode, and OpenAI responses parse strictly via json.loads with no regex fallbacks.",
   "changes": [
     {
       "id": "gemini-placeholder-message-v0.3.6a",

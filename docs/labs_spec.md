@@ -6,7 +6,7 @@ status: stable
 predecessor: v0.3.6
 ---
 
-# Synesthetic Labs — Spec v0.3.6a (True Schema-Bound Generation)
+# Synesthetic Labs — Spec v0.3.6a (Schema-Bound Generation · 0.7.3 Lock)
 
 > **Change lineage:**  
 > Replaces the legacy *generate → normalize → validate* pattern with a single,
@@ -22,7 +22,7 @@ predecessor: v0.3.6
 - Enforce schema-bound generation via model’s structured-output interface  
 - Remove all normalization logic  
 - Keep MCP validation **confirmation-only**  
-- Support both `0.7.3` and `0.7.4+` schemas through a unified binding path  
+- Fix all engines to the SynestheticAsset `0.7.3` schema  
 - Allow top-level metadata (`trace_id`, `deployment`, `engine`, `timestamp`) to remain outside validation scope  
 
 ---
@@ -41,7 +41,7 @@ predecessor: v0.3.6
 
 | Key | Value | Notes |
 |-----|--------|-------|
-| Schema version | `0.7.3` | May switch to ≥ `0.7.4` |
+| Schema version | `0.7.3` | Locked for all engines |
 | Default engine | `azure` | Overrides mock unless `LABS_EXTERNAL_ENGINE` explicitly set |
 | Validation mode | strict | Controlled by `LABS_FAIL_FAST` / CLI flags |
 | MCP source | Remote schema registry | Fallback: local `meta/schemas` |

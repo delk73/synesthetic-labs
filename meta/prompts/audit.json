@@ -1,6 +1,6 @@
 {
   "version": "v0.3.6a",
-  "spec_ref": "docs/labs_spec.md#synesthetic-labs--spec-v0.3.6a",
+  "spec_ref": "docs/labs_spec.md#synesthetic-labs--spec-v0.3.6a-schema-bound-generation--0-7-3-lock",
   "output": {
     "paths": ["meta/output/labs_state.md", "AGENTS.md"],
     "format": "markdown",
@@ -35,7 +35,7 @@
     {
       "id": "mcp-schema-pull-v0.3.6a",
       "section": "5 · Schema Retrieval (MCP)",
-      "requirement": "Generators must call get_schema('synesthetic-asset', version=LABS_SCHEMA_VERSION), caching the schema payload and its $id while honoring the MCP-reported metadata (name/version/path) for downstream logging and validation.",
+      "requirement": "Generators must call get_schema('synesthetic-asset', version=LABS_SCHEMA_VERSION) with LABS_SCHEMA_VERSION defaulting to '0.7.3', caching the schema payload and its $id while honoring the MCP-reported metadata (name/version/path) for downstream logging and validation.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -43,7 +43,8 @@
             "get_schema_from_mcp(\"synesthetic-asset\"",
             "response.get(\"schema\")",
             "schema.get(\"$id\")",
-            "response.get(\"version\")"
+            "response.get(\"version\")",
+            "\"0.7.3\""
           ]
         },
         {
@@ -70,7 +71,7 @@
     {
       "id": "azure-schema-binding-v0.3.6a",
       "section": "6 · Engine Request (Azure Schema-Bound)",
-      "requirement": "AzureOpenAIGenerator must invoke chat.completions.create with response_format.type == 'json_schema', include the MCP-fetched schema under response_format.json_schema.schema, and enforce strict=True.",
+      "requirement": "AzureOpenAIGenerator must invoke chat.completions.create with response_format.type == 'json_schema', include the MCP-fetched 0.7.3 schema under response_format.json_schema.schema, and enforce strict=True.",
       "verify": [
         {
           "path": "labs/generator/external.py",
@@ -80,7 +81,8 @@
             "json_schema",
             "strict",
             "get_schema(",
-            "\"synesthetic-asset\""
+            "\"synesthetic-asset\"",
+            "0.7.3"
           ]
         },
         {
@@ -137,7 +139,7 @@
     {
       "id": "structured-logging-v0.3.6a",
       "section": "8 · Logging",
-      "requirement": "Structured logs must include engine, schema_id, schema_version, deployment, trace_id, and validation_status fields in meta/output/labs/external.jsonl entries.",
+      "requirement": "Structured logs must include engine, schema_id, schema_version (locked to '0.7.3'), deployment, trace_id, and validation_status fields in meta/output/labs/external.jsonl entries.",
       "verify": [
         {
           "path": "labs/logging.py",
@@ -145,7 +147,7 @@
         },
         {
           "path": "labs/generator/external.py",
-          "match": ["schema_id", "schema_version", "deployment", "trace_id", "validation_status"]
+          "match": ["schema_id", "schema_version", "\"0.7.3\"", "deployment", "trace_id", "validation_status"]
         }
       ]
     }
