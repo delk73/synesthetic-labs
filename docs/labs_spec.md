@@ -13,7 +13,7 @@ predecessor: v0.3.6
 > schema-bound generation contract.  
 > Engines emit assets *born compliant* with the active SynestheticAsset schema
 > (fetched live from MCP).  
-> Validation confirms compliance only — no mutation, normalization, or stripping.
+> Validation confirms compliance only — no mutation, normalization, or post-generation sanitization. The discovered MCP schema is authoritative; Labs emits assets that already conform.
 
 ---
 
@@ -65,7 +65,16 @@ If CLI `--engine` flag is omitted, `.env` takes precedence.
 
 ---
 
-## 5 · Schema Retrieval (MCP)
+## 5 · Schema Discovery (MCP Contract)
+
+* MCP discovery precedes all generation or validation.
+* Returned descriptor defines the authoritative `$id`, `name`, and `version` (`SynestheticAsset_0_7_3`).
+* Clients must not alter or filter the schema.
+* Validation checks equality of emitted asset keys to discovered schema properties.
+
+---
+
+## 6 · Schema Retrieval (MCP)
 
 ```python
 from mcp.core import get_schema
@@ -89,7 +98,7 @@ reported version against the requested `LABS_SCHEMA_VERSION` to surface drift.
 
 ---
 
-## 6 · Engine Request (Azure Schema-Bound)
+## 7 · Engine Request (Azure Schema-Bound)
 
 ```python
 from openai import AzureOpenAI
@@ -134,7 +143,7 @@ asset = json.loads(resp.choices[0].message.content)
 
 ---
 
-## 7 · Validation (MCP)
+## 8 · Validation (MCP)
 
 ```python
 from labs.mcp.client import MCPClient
@@ -146,12 +155,12 @@ assert result["ok"]
 
 * Validation confirms schema compliance only.
 * Top-level telemetry fields (`trace_id`, `timestamp`, `deployment`, etc.)
-  are ignored during validation scope.
-* No mutation or normalization permitted.
+  remain outside validation scope.
+* Labs must emit assets already valid under the discovered schema; MCP performs confirmation only (no field removal or mutation).
 
 ---
 
-## 8 · Logging
+## 9 · Logging
 
 Each run appends to `meta/output/labs/external.jsonl`:
 
@@ -170,7 +179,7 @@ Each run appends to `meta/output/labs/external.jsonl`:
 
 ---
 
-## 9 · Tests / Exit Criteria
+## 10 · Tests / Exit Criteria
 
 | Area             | Requirement                                                 |
 | ---------------- | ----------------------------------------------------------- |
@@ -182,6 +191,17 @@ Each run appends to `meta/output/labs/external.jsonl`:
 | No normalization | No `_normalize`, `_fill_empty_sections`, or stripping       |
 | Logging          | JSONL entries include schema id/version/deployment/trace_id |
 | CI               | `pytest -q` passes                                          |
+
+---
+
+### ✅ Schema Discovery Contract
+
+| Phase | Responsibility | Description |
+|--------|----------------|--------------|
+| Discovery | MCP → Labs | MCP returns authoritative `SynestheticAsset_0_7_3` descriptor |
+| Generation | Labs | Engines emit assets exactly matching discovered schema |
+| Validation | Labs → MCP | MCP confirms equality against discovered schema (strict) |
+| Metadata | Labs | Only telemetry (`trace_id`, `deployment`, etc.) allowed outside validation scope |
 
 ---
 
