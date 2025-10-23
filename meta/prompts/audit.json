@@ -1,7 +1,7 @@
 {
-  "id": "labs-spec-v0.3.6a-audit",
+  "id": "labs-spec-v0.3.6a-audit-r3",
   "type": "codex_audit_prompt",
-  "description": "Perform a compliance audit of Synesthetic Labs v0.3.6a implementation against schema-bound generation spec (0.7.3 lock).",
+  "description": "Audit Synesthetic Labs v0.3.6a implementation against schema-bound generation spec (0.7.3 lock, inline MCP resolution).",
   "input": {
     "spec_version": "v0.3.6a",
     "spec_ref": "docs/labs_spec.md#synesthetic-labs--spec-v0.3.6a-schema-bound-generation--0-7-3-lock",
@@ -11,20 +11,20 @@
       "must_write": true
     },
     "rules_source": "docs/labs_spec.md",
-    "ruleset": "schema-bound generation loop, MCP discovery, Azure schema-binding, validation confirmation, structured logging"
+    "ruleset": "schema-bound generation loop, MCP discovery (inline mode), Azure schema-binding, validation confirmation, structured logging"
   },
   "checks": [
     {
       "id": "env-preload-v0.3.6a",
-      "expect": "dotenv preload of Azure vars LABS_SCHEMA_VERSION, LABS_FAIL_FAST, LABS_EXTERNAL_ENGINE, AZURE_OPENAI_*; CLI flag precedence respected",
+      "expect": "dotenv preload of Azure vars LABS_SCHEMA_VERSION, LABS_SCHEMA_RESOLUTION=inline, LABS_FAIL_FAST, LABS_EXTERNAL_ENGINE, AZURE_OPENAI_*; CLI flag precedence respected",
       "files": ["labs/cli.py", "requirements.txt"],
-      "patterns": ["load_dotenv", "LABS_SCHEMA_VERSION", "LABS_FAIL_FAST", "LABS_EXTERNAL_ENGINE", "AZURE_OPENAI_ENDPOINT", "python-dotenv"]
+      "patterns": ["load_dotenv", "LABS_SCHEMA_VERSION", "LABS_SCHEMA_RESOLUTION", "LABS_FAIL_FAST", "LABS_EXTERNAL_ENGINE", "AZURE_OPENAI_ENDPOINT", "python-dotenv"]
     },
     {
-      "id": "mcp-schema-pull-v0.3.6a",
-      "expect": "Generator fetches MCP schema using get_schema('synesthetic-asset', version='0.7.3') and caches descriptor",
+      "id": "mcp-schema-fetch-inline-v0.3.6a",
+      "expect": "Generator fetches MCP schema using get_schema('synesthetic-asset', version='0.7.3', resolution='inline') and caches descriptor",
       "files": ["labs/generator/external.py", "tests/test_mcp_schema_pull.py"],
-      "patterns": ["get_schema", "\"0.7.3\"", "schema.get(\"$id\")", "version", "assert"]
+      "patterns": ["get_schema", "resolution=\"inline\"", "\"0.7.3\"", "schema.get(\"$id\")", "_cached_schema_descriptor"]
     },
     {
       "id": "gemini-placeholder-v0.3.6a",
@@ -34,21 +34,21 @@
     },
     {
       "id": "azure-schema-binding-v0.3.6a",
-      "expect": "AzureOpenAIGenerator uses json_schema response_format with strict=True and injected MCP schema 0.7.3",
+      "expect": "AzureOpenAIGenerator uses json_schema response_format with strict=True and injected MCP inline schema 0.7.3",
       "files": ["labs/generator/external.py", "tests/test_external_generator.py"],
-      "patterns": ["AzureOpenAI", "response_format", "json_schema", "strict", "\"synesthetic-asset\"", "\"0.7.3\""]
+      "patterns": ["AzureOpenAI", "response_format", "json_schema", "\"strict\": True", "\"synesthetic-asset\"", "\"0.7.3\""]
     },
     {
       "id": "response-parse-v0.3.6a",
       "expect": "Response parsed via json.loads(resp.choices[0].message.content); no regex or fallback parsers",
       "files": ["labs/generator/external.py", "tests/test_external_generator.py"],
-      "patterns": ["json.loads", "response.choices", "message.content"]
+      "patterns": ["json.loads", "resp.choices", "message.content"]
     },
     {
       "id": "validation-confirmation-v0.3.6a",
-      "expect": "MCPClient.confirm(asset, strict=True) called post-generation; no normalization",
-      "files": ["labs/cli.py", "tests/test_labs_mcp_modes.py"],
-      "patterns": ["mcp_client.confirm", "strict=True"]
+      "expect": "MCPClient.confirm(asset, strict=True) called post-generation; no normalization, no _normalize/_fill_empty_sections",
+      "files": ["labs/cli.py", "labs/mcp/client.py", "tests/test_labs_mcp_modes.py"],
+      "patterns": ["confirm", "strict=True", "not in", "_normalize"]
     },
     {
       "id": "error-handling-retry-v0.3.6a",
@@ -58,9 +58,9 @@
     },
     {
       "id": "structured-logging-v0.3.6a",
-      "expect": "Structured logs include engine, schema_id, schema_version ('0.7.3'), deployment, trace_id, validation_status",
+      "expect": "Structured logs include engine, schema_id, schema_version ('0.7.3'), schema_resolution='inline', deployment, trace_id, validation_status",
       "files": ["labs/logging.py", "labs/generator/external.py"],
-      "patterns": ["external.jsonl", "json.dumps", "schema_id", "\"0.7.3\"", "trace_id", "validation_status"]
+      "patterns": ["external.jsonl", "json.dumps", "schema_id", "\"0.7.3\"", "schema_resolution", "\"inline\"", "trace_id", "validation_status"]
     }
   ],
   "report": {

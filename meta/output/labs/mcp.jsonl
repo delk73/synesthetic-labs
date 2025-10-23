@@ -34,3 +34,9 @@
 {"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-23T14:58:50.398368+00:00"}
 {"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-23T14:58:50.409616+00:00"}
 {"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-23T14:58:50.410753+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-23T15:06:57.469203+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-23T15:06:57.471143+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-23T15:06:57.481737+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-23T15:06:57.482710+00:00"}
+{"command": "critique", "event": "cli_ready", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-23T15:07:16.537299+00:00"}
+{"command": "critique", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-23T15:07:16.540879+00:00"}

@@ -74,14 +74,23 @@ If CLI `--engine` flag is omitted, `.env` takes precedence.
 
 ---
 
+Yes. Consolidate §6 and §6.1 into a single precise block:
+
 ## 6 · Schema Retrieval (MCP)
+
+Labs retrieves the authoritative schema directly from the live MCP service before any generation or validation.  
+The schema **must be fetched in `inline` resolution mode** to ensure all `$ref` dependencies are embedded for Azure’s strict `json_schema` format.
 
 ```python
 from mcp.core import get_schema
+import os
+
 schema_resp = get_schema(
     "synesthetic-asset",
     version=os.getenv("LABS_SCHEMA_VERSION", "0.7.3"),
+    resolution="inline",
 )
+
 schema_name = schema_resp["name"]
 schema_version = schema_resp["version"]
 schema_path = schema_resp["path"]
@@ -89,14 +98,23 @@ schema = schema_resp["schema"]
 schema_id = schema.get("$id")
 ```
 
-Schema descriptors are cached in `_cached_schema_descriptor`
-for reuse across generation and validation.
+**Resolution Modes**
 
-The MCP response is the source of truth for schema metadata. Clients must rely on
-the returned `schema_name`, `schema_version`, and `schema_path`, comparing the
-reported version against the requested `LABS_SCHEMA_VERSION` to surface drift.
+| Mode       | Behavior                                  | Labs Usage                            |
+| ---------- | ----------------------------------------- | ------------------------------------- |
+| `preserve` | Keeps `$ref` links intact (human/editing) | ❌ Azure rejects remote `$ref`         |
+| `inline`   | Fully embeds referenced schemas           | ✅ Required for Azure strict mode      |
+| `bundled`  | Returns root schema + refs array          | ⚙️ Optional for offline/CI validation |
 
----
+**Defaults**
+
+* `LABS_SCHEMA_VERSION` → `"0.7.3"`
+* `LABS_SCHEMA_RESOLUTION` → `"inline"`
+* `_cached_schema_descriptor` stores the last retrieved schema for reuse.
+
+MCP’s response defines the canonical `$id`, `name`, and `version`.
+Labs must not mutate or filter the schema; validation compares emitted assets against these authoritative properties.
+
 
 ## 7 · Engine Request (Azure Schema-Bound)
 
