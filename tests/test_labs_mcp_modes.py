@@ -35,6 +35,12 @@ def test_mcp_client_fetch_schema_modes(monkeypatch, resolution: str) -> None:
     assert isinstance(descriptor["schema"], dict)
 
 
+def test_mcp_client_defaults_to_inline(monkeypatch) -> None:
+    monkeypatch.delenv("LABS_SCHEMA_RESOLUTION", raising=False)
+    client = MCPClient()
+    assert client.resolution == "inline"
+
+
 def test_mcp_client_fetch_uses_requested_version(monkeypatch) -> None:
     monkeypatch.setenv("LABS_SCHEMA_VERSION", "0.7.3")
     client = MCPClient(resolution="preserve")

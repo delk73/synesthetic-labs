@@ -67,10 +67,11 @@ class MCPClient:
 
     @staticmethod
     def _normalise_resolution(resolution: Optional[str]) -> str:
-        value = (resolution or "preserve").strip().lower()
+        base = resolution.strip().lower() if isinstance(resolution, str) else None
+        value = base or "inline"
         if value not in _VALID_RESOLUTIONS:
-            _LOGGER.warning("Unsupported schema resolution '%s'; falling back to preserve", resolution)
-            return "preserve"
+            _LOGGER.warning("Unsupported schema resolution '%s'; falling back to inline", resolution)
+            return "inline"
         return value
 
     @staticmethod

@@ -22,6 +22,7 @@ def _load_env_file(path: str | None = None) -> None:
     raw_external_live = os.getenv("LABS_EXTERNAL_LIVE")
 
     os.environ.setdefault("LABS_SCHEMA_VERSION", "0.7.3")
+    os.environ.setdefault("LABS_SCHEMA_RESOLUTION", "inline")
     os.environ.setdefault("LABS_FAIL_FAST", os.getenv("LABS_FAIL_FAST", "1"))
     os.environ.setdefault("LABS_EXTERNAL_ENGINE", raw_engine or "azure")
     os.environ.setdefault("LABS_EXTERNAL_LIVE", raw_external_live or "0")
@@ -304,6 +305,49 @@ def main(argv: Optional[list[str]] = None) -> int:
                 return status.lower() in {"ok", "passed", "pass", "success"}
             return False
 
+        def _log_mcp_failure(result: Optional[Dict[str, Any]], *, source: str) -> None:
+            if not isinstance(result, dict) or _response_ok(result):
+                return
+
+            reason = result.get("reason") or result.get("status") or "validation_failed"
+            schema_id = (
+                result.get("schema_id")
+                or (result.get("schema") or {}).get("$id")
+                or mcp_client.schema_id
+                or "unknown"
+            )
+            resolution = (
+                result.get("resolution")
+                or mcp_client.resolution
+                or os.getenv("LABS_SCHEMA_RESOLUTION", "inline")
+            )
+            _LOGGER.error(
+                "MCP validation failed (%s) for schema=%s [%s] source=%s",
+                reason,
+                schema_id,
+                resolution,
+                source,
+            )
+            errors = result.get("errors")
+            if isinstance(errors, list):
+                for entry in errors[:3]:
+                    path_value: Optional[str]
+                    path = entry.get("path")
+                    if isinstance(path, list):
+                        segments = []
+                        for segment in path:
+                            if isinstance(segment, str):
+                                segments.append(segment.lstrip("/"))
+                            else:
+                                segments.append(str(segment))
+                        path_value = ".".join(seg for seg in segments if seg)
+                    elif isinstance(path, str):
+                        path_value = path.lstrip("/")
+                    else:
+                        path_value = None
+                    message = entry.get("msg") or entry.get("message") or entry.get("detail") or "validation error"
+                    _LOGGER.error("  - %s: %s", path_value or "<root>", message)
+
         prior_ok = True
         if prior_mcp_response is not None:
             review.setdefault("mcp_response", prior_mcp_response)
@@ -314,6 +358,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         local_ok = _response_ok(mcp_response)
         mcp_ok = prior_ok and local_ok
         relaxed_mode = _is_relaxed_mode(review)
+
+        if not local_ok:
+            _log_mcp_failure(mcp_response, source="confirm")
+        if prior_mcp_response is not None and not prior_ok:
+            _log_mcp_failure(prior_mcp_response, source="review")
 
         if mcp_ok:
             _LOGGER.info("MCP validation passed in %s mode", review.get("mode", "strict"))

@@ -40,3 +40,15 @@
 {"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-23T15:06:57.482710+00:00"}
 {"command": "critique", "event": "cli_ready", "schema_resolution": "preserve", "schema_version": "0.7.3", "ts": "2025-10-23T15:07:16.537299+00:00"}
 {"command": "critique", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-23T15:07:16.540879+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T00:13:39.109926+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T00:13:39.122223+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-24T00:13:39.134841+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-24T00:13:39.135947+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T13:59:51.574831+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T13:59:51.585509+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-24T13:59:51.597916+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-24T13:59:51.598783+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T17:26:09.984258+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T17:26:09.994767+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-24T17:26:10.006985+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-24T17:26:10.010728+00:00"}
