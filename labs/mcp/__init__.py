@@ -2,4 +2,6 @@
 
 from __future__ import annotations
 
-__all__ = []
+from .client import MCPClient, MCPClientError, MCPValidationError
+
+__all__ = ["MCPClient", "MCPClientError", "MCPValidationError"]

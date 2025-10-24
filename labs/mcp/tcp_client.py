@@ -74,12 +74,13 @@ def _unwrap_jsonrpc(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def get_schema_from_mcp(
-    schema_name: str, 
-    *, 
+    schema_name: str,
+    *,
     version: str | None = None,
-    host: str | None = None, 
+    resolution: str | None = None,
+    host: str | None = None,
     port: int | None = None,
-    timeout: float = 10.0
+    timeout: float = 10.0,
 ) -> Dict[str, Any]:
     """Call the MCP server's get_schema tool via TCP.
     
@@ -88,6 +89,7 @@ def get_schema_from_mcp(
         version: Optional version string (e.g., "0.7.3")
         host: MCP server host (defaults to MCP_HOST env or "127.0.0.1")
         port: MCP server port (defaults to MCP_PORT env or 8765)
+        resolution: Optional schema resolution mode (preserve, inline, bundled)
         timeout: Connection timeout in seconds
         
     Returns:
@@ -106,6 +108,8 @@ def get_schema_from_mcp(
     params: Dict[str, Any] = {"name": schema_name}
     if version is not None:
         params["version"] = version
+    if resolution is not None:
+        params["resolution"] = resolution
     
     # MCP server expects direct method calls, not tools/call wrapper
     request = {

@@ -17,13 +17,13 @@ import uuid
 from copy import deepcopy
 from functools import lru_cache
 from numbers import Real
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 import requests
 
 from labs.generator.assembler import AssetAssembler
 from labs.logging import log_external_generation
-from labs.mcp.tcp_client import get_schema_from_mcp
+from labs.mcp import MCPClient, MCPClientError
 
 JsonDict = Dict[str, Any]
 
@@ -84,6 +84,13 @@ _DEFAULT_CONTROL_PARAMETERS: List[Dict[str, Any]] = [
 _DEFAULT_PARAMETER_INDEX: List[str] = ["shader.u_px", "shader.u_py"]
 
 
+@lru_cache(maxsize=1)
+def _shared_mcp_client() -> MCPClient:
+    """Return the process-wide MCP client for schema lookups."""
+
+    return MCPClient()
+
+
 def _normalize_schema_version(value: Optional[str]) -> str:
     if value is None:
         return AssetAssembler.DEFAULT_SCHEMA_VERSION
@@ -93,17 +100,19 @@ def _normalize_schema_version(value: Optional[str]) -> str:
 
 @lru_cache(maxsize=8)
 def _cached_schema_descriptor(version: str) -> Tuple[str, str, Dict[str, Any]]:
-    response = get_schema_from_mcp("synesthetic-asset", version=version)
-    if not response.get("ok"):
-        raise RuntimeError(f"Failed to load schema: {response}")
+    client = _shared_mcp_client()
+    try:
+        descriptor = client.fetch_schema(version=version)
+    except MCPClientError as exc:
+        raise RuntimeError(f"Failed to load schema via MCP: {exc}") from exc
 
-    schema = response.get("schema")
-    if not isinstance(schema, dict):
-        raise RuntimeError(f"Schema payload missing 'schema': {response}")
+    schema = descriptor.get("schema")
+    if not isinstance(schema, Mapping):
+        raise RuntimeError(f"Schema payload missing 'schema': {descriptor}")
 
-    schema_id = schema.get("$id") or AssetAssembler.schema_url(version)
-    resolved_version = response.get("version") or version
-    return schema_id, resolved_version, schema
+    schema_id = descriptor.get("schema_id") or schema.get("$id") or AssetAssembler.schema_url(version)
+    resolved_version = descriptor.get("version") or version
+    return schema_id, resolved_version, deepcopy(schema)
 
 
 def _schema_descriptor(version: Optional[str]) -> Tuple[str, str, Dict[str, Any]]:
@@ -372,9 +381,11 @@ class ExternalGenerator:
         self._sleep = sleeper
         self._logger = logging.getLogger(self.__class__.__name__)
         self.schema_version = schema_version or AssetAssembler.DEFAULT_SCHEMA_VERSION
+        default_resolution = _shared_mcp_client().resolution
         self._latest_schema_binding: Dict[str, Any] = {
             "schema_id": None,
             "schema_version": self.schema_version,
+             "schema_resolution": default_resolution,
             "bound": False,
         }
 
@@ -410,6 +421,7 @@ class ExternalGenerator:
         self._latest_schema_binding = {
             "schema_id": None,
             "schema_version": resolved_schema_version,
+            "schema_resolution": _shared_mcp_client().resolution,
             "bound": False,
         }
 
@@ -528,6 +540,7 @@ class ExternalGenerator:
                 context["schema_binding"] = bool(binding_meta.get("bound"))
                 context["schema_id"] = binding_meta.get("schema_id")
                 context["schema_binding_version"] = binding_meta.get("schema_version")
+                context["schema_resolution"] = binding_meta.get("schema_resolution")
                 return asset, context
             except ExternalRequestError as exc:
                 attempts.append(
@@ -639,6 +652,7 @@ class ExternalGenerator:
             "schema_binding": context.get("schema_binding", False),
             "schema_id": context.get("schema_id"),
             "schema_binding_version": context.get("schema_binding_version"),
+            "schema_resolution": context.get("schema_resolution"),
             "endpoint": context.get("endpoint"),
             "deployment": context.get("deployment"),
         }
@@ -1761,9 +1775,18 @@ class GeminiGenerator(ExternalGenerator):
                 resolved_version,
             )
 
+        client = _shared_mcp_client()
+        descriptor_meta = client.descriptor or {}
+        schema_resolution = (
+            descriptor_meta.get("schema_resolution")
+            or descriptor_meta.get("resolution")
+            or client.resolution
+        )
+
         self._latest_schema_binding = {
             "schema_id": schema_id,
             "schema_version": resolved_version,
+            "schema_resolution": schema_resolution,
             "bound": bound,
         }
 
@@ -2169,9 +2192,16 @@ class AzureOpenAIGenerator(OpenAIGenerator):
         resolved_version: Optional[str] = target_version
 
         try:
+            client = _shared_mcp_client()
             descriptor_id, descriptor_version, schema = _schema_descriptor(target_version)
             schema_id = descriptor_id
             resolved_version = descriptor_version
+            descriptor_meta = client.descriptor or {}
+            schema_resolution = (
+                descriptor_meta.get("schema_resolution")
+                or descriptor_meta.get("resolution")
+                or client.resolution
+            )
             schema_name = f"SynestheticAsset_{descriptor_version.replace('.', '_')}"
             payload["response_format"] = {
                 "type": "json_schema",
@@ -2184,6 +2214,7 @@ class AzureOpenAIGenerator(OpenAIGenerator):
             self._latest_schema_binding = {
                 "schema_id": schema_id,
                 "schema_version": resolved_version,
+                "schema_resolution": schema_resolution,
                 "bound": True,
             }
         except Exception as exc:  # pragma: no cover - defensive
@@ -2191,6 +2222,7 @@ class AzureOpenAIGenerator(OpenAIGenerator):
             self._latest_schema_binding = {
                 "schema_id": schema_id,
                 "schema_version": resolved_version,
+                "schema_resolution": _shared_mcp_client().resolution,
                 "bound": False,
             }
 

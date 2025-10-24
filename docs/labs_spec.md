@@ -6,14 +6,14 @@ status: stable
 predecessor: v0.3.6
 ---
 
-# Synesthetic Labs — Spec v0.3.6a (True Schema-Bound Generation)
+# Synesthetic Labs — Spec v0.3.6a (Schema-Bound Generation · 0.7.3 Lock)
 
 > **Change lineage:**  
 > Replaces the legacy *generate → normalize → validate* pattern with a single,
 > schema-bound generation contract.  
 > Engines emit assets *born compliant* with the active SynestheticAsset schema
 > (fetched live from MCP).  
-> Validation confirms compliance only — no mutation, normalization, or stripping.
+> Validation confirms compliance only — no mutation, normalization, or post-generation sanitization. The discovered MCP schema is authoritative; Labs emits assets that already conform.
 
 ---
 
@@ -22,7 +22,7 @@ predecessor: v0.3.6
 - Enforce schema-bound generation via model’s structured-output interface  
 - Remove all normalization logic  
 - Keep MCP validation **confirmation-only**  
-- Support both `0.7.3` and `0.7.4+` schemas through a unified binding path  
+- Fix all engines to the SynestheticAsset `0.7.3` schema  
 - Allow top-level metadata (`trace_id`, `deployment`, `engine`, `timestamp`) to remain outside validation scope  
 
 ---
@@ -41,7 +41,7 @@ predecessor: v0.3.6
 
 | Key | Value | Notes |
 |-----|--------|-------|
-| Schema version | `0.7.3` | May switch to ≥ `0.7.4` |
+| Schema version | `0.7.3` | Locked for all engines |
 | Default engine | `azure` | Overrides mock unless `LABS_EXTERNAL_ENGINE` explicitly set |
 | Validation mode | strict | Controlled by `LABS_FAIL_FAST` / CLI flags |
 | MCP source | Remote schema registry | Fallback: local `meta/schemas` |
@@ -65,14 +65,32 @@ If CLI `--engine` flag is omitted, `.env` takes precedence.
 
 ---
 
-## 5 · Schema Retrieval (MCP)
+## 5 · Schema Discovery (MCP Contract)
+
+* MCP discovery precedes all generation or validation.
+* Returned descriptor defines the authoritative `$id`, `name`, and `version` (`SynestheticAsset_0_7_3`).
+* Clients must not alter or filter the schema.
+* Validation checks equality of emitted asset keys to discovered schema properties.
+
+---
+
+Yes. Consolidate §6 and §6.1 into a single precise block:
+
+## 6 · Schema Retrieval (MCP)
+
+Labs retrieves the authoritative schema directly from the live MCP service before any generation or validation.  
+The schema **must be fetched in `inline` resolution mode** to ensure all `$ref` dependencies are embedded for Azure’s strict `json_schema` format.
 
 ```python
 from mcp.core import get_schema
+import os
+
 schema_resp = get_schema(
     "synesthetic-asset",
     version=os.getenv("LABS_SCHEMA_VERSION", "0.7.3"),
+    resolution="inline",
 )
+
 schema_name = schema_resp["name"]
 schema_version = schema_resp["version"]
 schema_path = schema_resp["path"]
@@ -80,16 +98,25 @@ schema = schema_resp["schema"]
 schema_id = schema.get("$id")
 ```
 
-Schema descriptors are cached in `_cached_schema_descriptor`
-for reuse across generation and validation.
+**Resolution Modes**
 
-The MCP response is the source of truth for schema metadata. Clients must rely on
-the returned `schema_name`, `schema_version`, and `schema_path`, comparing the
-reported version against the requested `LABS_SCHEMA_VERSION` to surface drift.
+| Mode       | Behavior                                  | Labs Usage                            |
+| ---------- | ----------------------------------------- | ------------------------------------- |
+| `preserve` | Keeps `$ref` links intact (human/editing) | ❌ Azure rejects remote `$ref`         |
+| `inline`   | Fully embeds referenced schemas           | ✅ Required for Azure strict mode      |
+| `bundled`  | Returns root schema + refs array          | ⚙️ Optional for offline/CI validation |
 
----
+**Defaults**
 
-## 6 · Engine Request (Azure Schema-Bound)
+* `LABS_SCHEMA_VERSION` → `"0.7.3"`
+* `LABS_SCHEMA_RESOLUTION` → `"inline"`
+* `_cached_schema_descriptor` stores the last retrieved schema for reuse.
+
+MCP’s response defines the canonical `$id`, `name`, and `version`.
+Labs must not mutate or filter the schema; validation compares emitted assets against these authoritative properties.
+
+
+## 7 · Engine Request (Azure Schema-Bound)
 
 ```python
 from openai import AzureOpenAI
@@ -134,22 +161,24 @@ asset = json.loads(resp.choices[0].message.content)
 
 ---
 
-## 7 · Validation (MCP)
+## 8 · Validation (MCP)
 
 ```python
-from labs.mcp.validate import invoke_mcp
-result = invoke_mcp(asset, strict=True)
+from labs.mcp.client import MCPClient
+
+mcp = MCPClient()
+result = mcp.confirm(asset, strict=True)
 assert result["ok"]
 ```
 
 * Validation confirms schema compliance only.
 * Top-level telemetry fields (`trace_id`, `timestamp`, `deployment`, etc.)
-  are ignored during validation scope.
-* No mutation or normalization permitted.
+  remain outside validation scope.
+* Labs must emit assets already valid under the discovered schema; MCP performs confirmation only (no field removal or mutation).
 
 ---
 
-## 8 · Logging
+## 9 · Logging
 
 Each run appends to `meta/output/labs/external.jsonl`:
 
@@ -159,6 +188,7 @@ Each run appends to `meta/output/labs/external.jsonl`:
   "engine": "azure_openai",
   "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json",
   "schema_version": "0.7.3",
+  "schema_resolution": "preserve",
   "deployment": "gpt-4o-mini",
   "trace_id": "2a1c4f4e-51ad-4a1c-b8d2-67e65bfcf74e",
   "validation_status": "passed"
@@ -167,7 +197,7 @@ Each run appends to `meta/output/labs/external.jsonl`:
 
 ---
 
-## 9 · Tests / Exit Criteria
+## 10 · Tests / Exit Criteria
 
 | Area             | Requirement                                                 |
 | ---------------- | ----------------------------------------------------------- |
@@ -179,6 +209,17 @@ Each run appends to `meta/output/labs/external.jsonl`:
 | No normalization | No `_normalize`, `_fill_empty_sections`, or stripping       |
 | Logging          | JSONL entries include schema id/version/deployment/trace_id |
 | CI               | `pytest -q` passes                                          |
+
+---
+
+### ✅ Schema Discovery Contract
+
+| Phase | Responsibility | Description |
+|--------|----------------|--------------|
+| Discovery | MCP → Labs | MCP returns authoritative `SynestheticAsset_0_7_3` descriptor |
+| Generation | Labs | Engines emit assets exactly matching discovered schema |
+| Validation | Labs → MCP | MCP confirms equality against discovered schema (strict) |
+| Metadata | Labs | Only telemetry (`trace_id`, `deployment`, etc.) allowed outside validation scope |
 
 ---
 

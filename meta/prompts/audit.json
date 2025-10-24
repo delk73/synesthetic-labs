@@ -1,167 +1,75 @@
 {
-  "version": "v0.3.6a",
-  "spec_ref": "docs/labs_spec.md#synesthetic-labs--spec-v0.3.6a",
-  "output": {
-    "paths": ["meta/output/labs_state.md", "AGENTS.md"],
-    "format": "markdown",
-    "must_write": true
+  "id": "labs-spec-v0.3.6a-audit-r3",
+  "type": "codex_audit_prompt",
+  "description": "Audit Synesthetic Labs v0.3.6a implementation against schema-bound generation spec (0.7.3 lock, inline MCP resolution).",
+  "input": {
+    "spec_version": "v0.3.6a",
+    "spec_ref": "docs/labs_spec.md#synesthetic-labs--spec-v0.3.6a-schema-bound-generation--0-7-3-lock",
+    "target_output": {
+      "files": ["meta/output/labs_state.md", "AGENTS.md"],
+      "format": "markdown",
+      "must_write": true
+    },
+    "rules_source": "docs/labs_spec.md",
+    "ruleset": "schema-bound generation loop, MCP discovery (inline mode), Azure schema-binding, validation confirmation, structured logging"
   },
-  "rules": [
+  "checks": [
     {
       "id": "env-preload-v0.3.6a",
-      "section": "4 · Environment",
-      "requirement": "CLI must preload .env and expose Azure environment variables LABS_SCHEMA_VERSION, LABS_FAIL_FAST, LABS_EXTERNAL_ENGINE, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT, and AZURE_OPENAI_API_VERSION. CLI --engine flag overrides .env; otherwise .env takes precedence.",
-      "verify": [
-        {
-          "path": "labs/cli.py",
-          "match": [
-            "dotenv",
-            "load_dotenv",
-            "LABS_SCHEMA_VERSION",
-            "LABS_FAIL_FAST",
-            "LABS_EXTERNAL_ENGINE",
-            "AZURE_OPENAI_ENDPOINT",
-            "AZURE_OPENAI_API_KEY",
-            "AZURE_OPENAI_DEPLOYMENT",
-            "AZURE_OPENAI_API_VERSION"
-          ]
-        },
-        {
-          "path": "requirements.txt",
-          "match": ["python-dotenv"]
-        }
-      ]
+      "expect": "dotenv preload of Azure vars LABS_SCHEMA_VERSION, LABS_SCHEMA_RESOLUTION=inline, LABS_FAIL_FAST, LABS_EXTERNAL_ENGINE, AZURE_OPENAI_*; CLI flag precedence respected",
+      "files": ["labs/cli.py", "requirements.txt"],
+      "patterns": ["load_dotenv", "LABS_SCHEMA_VERSION", "LABS_SCHEMA_RESOLUTION", "LABS_FAIL_FAST", "LABS_EXTERNAL_ENGINE", "AZURE_OPENAI_ENDPOINT", "python-dotenv"]
     },
     {
-      "id": "mcp-schema-pull-v0.3.6a",
-      "section": "5 · Schema Retrieval (MCP)",
-      "requirement": "Generators must call get_schema('synesthetic-asset', version=LABS_SCHEMA_VERSION), caching the schema payload and its $id while honoring the MCP-reported metadata (name/version/path) for downstream logging and validation.",
-      "verify": [
-        {
-          "path": "labs/generator/external.py",
-          "match": [
-            "get_schema_from_mcp(\"synesthetic-asset\"",
-            "response.get(\"schema\")",
-            "schema.get(\"$id\")",
-            "response.get(\"version\")"
-          ]
-        },
-        {
-          "path": "tests/test_mcp_schema_pull.py",
-          "match": ["get_schema", "schema", "assert", "ok", "\"version\""]
-        }
-      ]
+      "id": "mcp-schema-fetch-inline-v0.3.6a",
+      "expect": "Generator fetches MCP schema using get_schema('synesthetic-asset', version='0.7.3', resolution='inline') and caches descriptor",
+      "files": ["labs/generator/external.py", "tests/test_mcp_schema_pull.py"],
+      "patterns": ["get_schema", "resolution=\"inline\"", "\"0.7.3\"", "schema.get(\"$id\")", "_cached_schema_descriptor"]
     },
     {
       "id": "gemini-placeholder-v0.3.6a",
-      "section": "2 · Engine Matrix",
-      "requirement": "GeminiGenerator must raise NotImplementedError('Vertex AI structured-output unsupported') when invoked.",
-      "verify": [
-        {
-          "path": "labs/generator/external.py",
-          "match": ["GeminiGenerator", "NotImplementedError", "Vertex AI", "structured-output unsupported"]
-        },
-        {
-          "path": "tests/test_external_generator.py",
-          "match": ["pytest.raises", "NotImplementedError", "Vertex AI", "structured-output unsupported"]
-        }
-      ]
+      "expect": "GeminiGenerator raises NotImplementedError('Vertex AI structured-output unsupported')",
+      "files": ["labs/generator/external.py", "tests/test_external_generator.py"],
+      "patterns": ["GeminiGenerator", "NotImplementedError", "Vertex AI", "structured-output unsupported"]
     },
     {
       "id": "azure-schema-binding-v0.3.6a",
-      "section": "6 · Engine Request (Azure Schema-Bound)",
-      "requirement": "AzureOpenAIGenerator must invoke chat.completions.create with response_format.type == 'json_schema', include the MCP-fetched schema under response_format.json_schema.schema, and enforce strict=True.",
-      "verify": [
-        {
-          "path": "labs/generator/external.py",
-          "match": [
-            "AzureOpenAI",
-            "response_format",
-            "json_schema",
-            "strict",
-            "get_schema(",
-            "\"synesthetic-asset\""
-          ]
-        },
-        {
-          "path": "tests/test_external_generator.py",
-          "match": ["json_schema", "strict", "schema", "assert"]
-        }
-      ]
+      "expect": "AzureOpenAIGenerator uses json_schema response_format with strict=True and injected MCP inline schema 0.7.3",
+      "files": ["labs/generator/external.py", "tests/test_external_generator.py"],
+      "patterns": ["AzureOpenAI", "response_format", "json_schema", "\"strict\": True", "\"synesthetic-asset\"", "\"0.7.3\""]
     },
     {
       "id": "response-parse-v0.3.6a",
-      "section": "6 · Engine Request / Response Contract",
-      "requirement": "Response parsing must rely solely on json.loads(response.choices[0].message.content); sub-object validation of the 'asset' key allowed; no regex or fallback parsing permitted.",
-      "verify": [
-        {
-          "path": "labs/generator/external.py",
-          "match": ["response.choices[0].message.content", "json.loads"]
-        },
-        {
-          "path": "tests/test_external_generator.py",
-          "match": ["json.loads", "message.content", "assert"]
-        }
-      ]
+      "expect": "Response parsed via json.loads(resp.choices[0].message.content); no regex or fallback parsers",
+      "files": ["labs/generator/external.py", "tests/test_external_generator.py"],
+      "patterns": ["json.loads", "resp.choices", "message.content"]
     },
     {
       "id": "validation-confirmation-v0.3.6a",
-      "section": "7 · Validation (MCP)",
-      "requirement": "invoke_mcp(asset, strict=True) must be called after generation; validation only confirms schema compliance and must not alter or normalize the asset.",
-      "verify": [
-        {
-          "path": "labs/mcp/validate.py",
-          "match": ["invoke_mcp", "strict", "return result"]
-        },
-        {
-          "path": "tests/test_mcp_validate.py",
-          "match": ["invoke_mcp", "assert result['ok']"]
-        }
-      ]
+      "expect": "MCPClient.confirm(asset, strict=True) called post-generation; no normalization, no _normalize/_fill_empty_sections",
+      "files": ["labs/cli.py", "labs/mcp/client.py", "tests/test_labs_mcp_modes.py"],
+      "patterns": ["confirm", "strict=True", "not in", "_normalize"]
     },
     {
       "id": "error-handling-retry-v0.3.6a",
-      "section": "Operational Error Handling",
-      "requirement": "5xx and network errors retry ≤3 times with logged attempts; 4xx fail immediately and record reason + attempt metadata.",
-      "verify": [
-        {
-          "path": "labs/generator/external.py",
-          "match": ["retry", "status_code", ">= 500"]
-        },
-        {
-          "path": "tests/test_external_generator.py",
-          "match": ["retry", "400", "503"]
-        }
-      ]
+      "expect": "Retry ≤3 times on 5xx/network errors; fail fast on 4xx with reason logged",
+      "files": ["labs/generator/external.py", "tests/test_external_generator.py"],
+      "patterns": ["retry", "status_code", ">= 500", "400", "503"]
     },
     {
       "id": "structured-logging-v0.3.6a",
-      "section": "8 · Logging",
-      "requirement": "Structured logs must include engine, schema_id, schema_version, deployment, trace_id, and validation_status fields in meta/output/labs/external.jsonl entries.",
-      "verify": [
-        {
-          "path": "labs/logging.py",
-          "match": ["external.jsonl", "json.dumps"]
-        },
-        {
-          "path": "labs/generator/external.py",
-          "match": ["schema_id", "schema_version", "deployment", "trace_id", "validation_status"]
-        }
-      ]
+      "expect": "Structured logs include engine, schema_id, schema_version ('0.7.3'), schema_resolution='inline', deployment, trace_id, validation_status",
+      "files": ["labs/logging.py", "labs/generator/external.py"],
+      "patterns": ["external.jsonl", "json.dumps", "schema_id", "\"0.7.3\"", "schema_resolution", "\"inline\"", "trace_id", "validation_status"]
     }
   ],
   "report": {
-    "sections": [
-      "Summary of repo state",
-      "Alignment (Rule → Status → Evidence)",
-      "Top gaps & fixes",
-      "Recommendations"
-    ],
+    "sections": ["Summary of repo state", "Alignment (Rule → Status → Evidence)", "Top gaps & fixes", "Recommendations"],
     "status_values": ["Present", "Missing", "Divergent", "Deferred"]
   },
   "exit_criteria": [
     "meta/output/labs_state.md non-empty",
     "AGENTS.md overwritten (non-empty)",
-    "Every rule reported with Present/Missing/Divergent/Deferred and ≤3 evidence lines"
+    "Every rule has a Present/Missing/Divergent/Deferred status with ≤3 evidence lines"
   ]
 }
