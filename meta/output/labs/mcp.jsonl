@@ -56,3 +56,23 @@
 {"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T17:33:14.041665+00:00"}
 {"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-24T17:33:14.054367+00:00"}
 {"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-24T17:33:14.058124+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T21:36:39.931603+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T21:36:39.943250+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-24T21:36:39.955492+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-24T21:36:39.958707+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T22:19:29.611854+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T22:19:29.623274+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-24T22:19:29.635965+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-24T22:19:29.639346+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T22:19:32.122098+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T22:19:32.133734+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-24T22:19:32.146276+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-24T22:19:32.149947+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T22:32:37.684962+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-24T22:32:37.702183+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-24T22:32:37.714272+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-24T22:32:37.717640+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-25T21:05:34.314444+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-25T21:05:34.327030+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-25T21:05:34.339280+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-25T21:05:34.342616+00:00"}

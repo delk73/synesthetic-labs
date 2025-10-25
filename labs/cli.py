@@ -152,6 +152,96 @@ def _is_relaxed_mode(review: Dict[str, Any]) -> bool:
     return review.get("mode") == "relaxed"
 
 
+def _response_ok(payload: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    if "ok" in payload:
+        return bool(payload.get("ok"))
+    status = payload.get("status")
+    if isinstance(status, str):
+        return status.lower() in {"ok", "passed", "pass", "success"}
+    return False
+
+
+def _emit_mcp_failure_logs(
+    result: Optional[Dict[str, Any]],
+    *,
+    source: str,
+    logger: Optional[logging.Logger] = None,
+    fallback_schema_id: Optional[str] = None,
+    fallback_resolution: Optional[str] = None,
+    max_errors: int = 3,
+) -> None:
+    logger = logger or _LOGGER
+    if not isinstance(result, dict) or _response_ok(result):
+        return
+
+    reason = result.get("reason") or result.get("status") or "validation_failed"
+    schema_info = result.get("schema")
+    schema_id = (
+        (schema_info or {}).get("$id")
+        or result.get("schema_id")
+        or fallback_schema_id
+        or "unknown"
+    )
+    resolution = (
+        result.get("schema_resolution")
+        or (schema_info or {}).get("schema_resolution")
+        or result.get("resolution")
+        or fallback_resolution
+        or os.getenv("LABS_SCHEMA_RESOLUTION", "inline")
+    )
+    source_tag = result.get("source") or source
+
+    logger.error(
+        "MCP validation failed (%s) for schema=%s [%s] source=%s",
+        reason,
+        schema_id,
+        resolution,
+        source_tag,
+    )
+    errors = result.get("errors")
+    if isinstance(errors, list):
+        for entry in errors[:max_errors]:
+            path_value: Optional[str]
+            path = entry.get("path") if isinstance(entry, dict) else None
+            if isinstance(path, list):
+                segments = []
+                for segment in path:
+                    if isinstance(segment, str):
+                        segments.append(segment.lstrip("/"))
+                    else:
+                        segments.append(str(segment))
+                path_value = ".".join(seg for seg in segments if seg)
+            elif isinstance(path, str):
+                path_value = path.lstrip("/")
+            else:
+                path_value = None
+            message = (
+                entry.get("msg")
+                or entry.get("message")
+                or entry.get("detail")
+                or "validation error"
+            ) if isinstance(entry, dict) else "validation error"
+            bad_value = entry.get("value") if isinstance(entry, dict) else None
+            if bad_value is not None:
+                bad_str = str(bad_value)
+                if len(bad_str) > 200:
+                    bad_value = bad_str[:197] + "..."
+            detail: Optional[str]
+            if bad_value is not None:
+                try:
+                    detail = json.dumps(bad_value)
+                except (TypeError, ValueError):
+                    detail = repr(bad_value)
+            else:
+                detail = None
+            if detail:
+                logger.error("  - %s: %s → %s", path_value or "<root>", message, detail)
+            else:
+                logger.error("  - %s: %s", path_value or "<root>", message)
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     """Entry point for the Labs CLI."""
 
@@ -295,59 +385,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         review.setdefault("mode", "strict" if strict_flag else "relaxed")
         review["mcp_response_local"] = mcp_response
 
-        def _response_ok(payload: Optional[Dict[str, Any]]) -> bool:
-            if not isinstance(payload, dict):
-                return False
-            if "ok" in payload:
-                return bool(payload.get("ok"))
-            status = payload.get("status")
-            if isinstance(status, str):
-                return status.lower() in {"ok", "passed", "pass", "success"}
-            return False
-
-        def _log_mcp_failure(result: Optional[Dict[str, Any]], *, source: str) -> None:
-            if not isinstance(result, dict) or _response_ok(result):
-                return
-
-            reason = result.get("reason") or result.get("status") or "validation_failed"
-            schema_id = (
-                result.get("schema_id")
-                or (result.get("schema") or {}).get("$id")
-                or mcp_client.schema_id
-                or "unknown"
-            )
-            resolution = (
-                result.get("resolution")
-                or mcp_client.resolution
-                or os.getenv("LABS_SCHEMA_RESOLUTION", "inline")
-            )
-            _LOGGER.error(
-                "MCP validation failed (%s) for schema=%s [%s] source=%s",
-                reason,
-                schema_id,
-                resolution,
-                source,
-            )
-            errors = result.get("errors")
-            if isinstance(errors, list):
-                for entry in errors[:3]:
-                    path_value: Optional[str]
-                    path = entry.get("path")
-                    if isinstance(path, list):
-                        segments = []
-                        for segment in path:
-                            if isinstance(segment, str):
-                                segments.append(segment.lstrip("/"))
-                            else:
-                                segments.append(str(segment))
-                        path_value = ".".join(seg for seg in segments if seg)
-                    elif isinstance(path, str):
-                        path_value = path.lstrip("/")
-                    else:
-                        path_value = None
-                    message = entry.get("msg") or entry.get("message") or entry.get("detail") or "validation error"
-                    _LOGGER.error("  - %s: %s", path_value or "<root>", message)
-
         prior_ok = True
         if prior_mcp_response is not None:
             review.setdefault("mcp_response", prior_mcp_response)
@@ -360,9 +397,19 @@ def main(argv: Optional[list[str]] = None) -> int:
         relaxed_mode = _is_relaxed_mode(review)
 
         if not local_ok:
-            _log_mcp_failure(mcp_response, source="confirm")
+            _emit_mcp_failure_logs(
+                mcp_response,
+                source="confirm",
+                fallback_schema_id=mcp_client.schema_id,
+                fallback_resolution=mcp_client.resolution,
+            )
         if prior_mcp_response is not None and not prior_ok:
-            _log_mcp_failure(prior_mcp_response, source="review")
+            _emit_mcp_failure_logs(
+                prior_mcp_response,
+                source="review",
+                fallback_schema_id=mcp_client.schema_id,
+                fallback_resolution=mcp_client.resolution,
+            )
 
         if mcp_ok:
             _LOGGER.info("MCP validation passed in %s mode", review.get("mode", "strict"))

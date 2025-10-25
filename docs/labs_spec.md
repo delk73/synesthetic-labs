@@ -1,29 +1,30 @@
 ---
-version: v0.3.6a
-lastReviewed: 2025-10-11
+version: v0.3.7
+lastReviewed: 2025-10-25
 owner: labs-core
 status: stable
-predecessor: v0.3.6
+predecessor: v0.3.6a
 ---
 
-# Synesthetic Labs — Spec v0.3.6a (Schema-Bound Generation · 0.7.3 Lock)
+# Synesthetic Labs — Spec v0.3.7 (Schema-Bundle Generation · 0.7.3 Lock)
 
 > **Change lineage:**  
-> Replaces the legacy *generate → normalize → validate* pattern with a single,
-> schema-bound generation contract.  
-> Engines emit assets *born compliant* with the active SynestheticAsset schema
-> (fetched live from MCP).  
-> Validation confirms compliance only — no mutation, normalization, or post-generation sanitization. The discovered MCP schema is authoritative; Labs emits assets that already conform.
+> Extends v0.3.6a by replacing static generator templates with schema-driven builders.  
+> Generators, assemblers, and critics now consume the cached inline **MCP schema bundle** directly.  
+> No normalization or post-generation mutation occurs.  
+> Validation remains confirmation-only.  
 
 ---
 
 ## 1 · Scope
 
-- Enforce schema-bound generation via model’s structured-output interface  
-- Remove all normalization logic  
-- Keep MCP validation **confirmation-only**  
-- Fix all engines to the SynestheticAsset `0.7.3` schema  
-- Allow top-level metadata (`trace_id`, `deployment`, `engine`, `timestamp`) to remain outside validation scope  
+- Enforce schema-bound generation via live MCP descriptor (`0.7.3`).  
+- Cache resolved inline schema locally; expose through `load_schema_bundle()`.  
+- Route the schema bundle into the `AssetAssembler` and its component factories.  
+- Replace static v0.2 templates with builders that read schema structure (`required`, `enum`, `properties`, `additionalProperties`).  
+- Fallback template path gated behind feature flag `LABS_LEGACY_TEMPLATES=1`.  
+- Keep MCP validation **confirmation-only**, no mutation.  
+- Allow top-level metadata (`trace_id`, `deployment`, `engine`, `timestamp`) outside validation scope.  
 
 ---
 
@@ -31,9 +32,9 @@ predecessor: v0.3.6
 
 | Engine | Module | API | Binding Mode | Status | Notes |
 |--------|---------|-----|--------------|--------|-------|
-| `azure` | `labs/generator/external.py:AzureOpenAIGenerator` | Azure OpenAI `chat/completions` | ✅ `json_schema` | ✅ Active | Reference implementation |
-| `gemini` | `labs/generator/external.py:GeminiGenerator` | Google Generative Language | ❌ | ⚠️ Placeholder | Disabled until Vertex AI supports schema binding |
-| `deterministic` | `labs/generator/offline.py:DeterministicGenerator` | Local stub | ✅ | ✅ Active | CI baseline |
+| `azure` | `labs/generator/external.py:AzureOpenAIGenerator` | Azure OpenAI `chat/completions` | ✅ `json_schema` | ✅ Active | Primary implementation |
+| `gemini` | `labs/generator/external.py:GeminiGenerator` | Google Generative Language | ⚙️ Planned | ⚠️ Waiting for Vertex AI structured output |
+| `deterministic` | `labs/generator/offline.py:DeterministicGenerator` | Local stub | ✅ | ✅ Active | CI baseline / regression harness |
 
 ---
 
@@ -41,110 +42,138 @@ predecessor: v0.3.6
 
 | Key | Value | Notes |
 |-----|--------|-------|
-| Schema version | `0.7.3` | Locked for all engines |
-| Default engine | `azure` | Overrides mock unless `LABS_EXTERNAL_ENGINE` explicitly set |
-| Validation mode | strict | Controlled by `LABS_FAIL_FAST` / CLI flags |
-| MCP source | Remote schema registry | Fallback: local `meta/schemas` |
+| Schema version | `0.7.3` | Locked globally |
+| Default engine | `azure` | Override via `LABS_EXTERNAL_ENGINE` |
+| Validation mode | strict | Fail-fast unless relaxed explicitly |
+| MCP source | Remote schema registry | Fallback: cached bundle under `meta/schemas/` |
+| Template mode | schema-driven | Legacy path only under feature flag |
 
 ---
 
 ## 4 · Environment
 
 | Var | Purpose | Example |
-|-----|----------|---------|
+|-----|----------|----------|
 | `LABS_SCHEMA_VERSION` | Target schema corpus | `0.7.3` |
-| `LABS_FAIL_FAST` | Strict / relaxed validation toggle | `1` |
+| `LABS_SCHEMA_RESOLUTION` | Inline/preserve/bundled | `inline` |
+| `LABS_FAIL_FAST` | Strict validation toggle | `1` |
 | `LABS_EXTERNAL_ENGINE` | Engine selector | `azure` |
-| `AZURE_OPENAI_ENDPOINT` | Azure resource endpoint | `https://synesthetic-aoai.openai.azure.com/` |
+| `LABS_LEGACY_TEMPLATES` | Enable old v0.2 static payloads | unset |
+| `AZURE_OPENAI_ENDPOINT` | Azure endpoint | `https://synesthetic-aoai.openai.azure.com/` |
 | `AZURE_OPENAI_API_KEY` | Resource key | `<secret>` |
 | `AZURE_OPENAI_DEPLOYMENT` | Model deployment | `gpt-4o-mini` |
 | `AZURE_OPENAI_API_VERSION` | API version | `2025-01-01-preview` |
 
-Loaded by `_load_env_file()` before CLI startup.  
-If CLI `--engine` flag is omitted, `.env` takes precedence.
+Environment is pre-loaded by `_load_env_file()` before CLI startup.  
+CLI flags override `.env` values.
 
 ---
 
-## 5 · Schema Discovery (MCP Contract)
+## 5 · Schema Retrieval (MCP Contract)
 
-* MCP discovery precedes all generation or validation.
-* Returned descriptor defines the authoritative `$id`, `name`, and `version` (`SynestheticAsset_0_7_3`).
-* Clients must not alter or filter the schema.
-* Validation checks equality of emitted asset keys to discovered schema properties.
-
----
-
-Yes. Consolidate §6 and §6.1 into a single precise block:
-
-## 6 · Schema Retrieval (MCP)
-
-Labs retrieves the authoritative schema directly from the live MCP service before any generation or validation.  
-The schema **must be fetched in `inline` resolution mode** to ensure all `$ref` dependencies are embedded for Azure’s strict `json_schema` format.
+Labs retrieves the authoritative schema from MCP before any generation or validation.  
+Schema must be fetched in **`inline` resolution mode** to embed all `$ref` dependencies for strict JSON Schema compliance.
 
 ```python
-from mcp.core import get_schema
-import os
-
-schema_resp = get_schema(
-    "synesthetic-asset",
+schema_resp = MCPClient().fetch_schema(
+    name="synesthetic-asset",
     version=os.getenv("LABS_SCHEMA_VERSION", "0.7.3"),
-    resolution="inline",
+    resolution=os.getenv("LABS_SCHEMA_RESOLUTION", "inline"),
 )
-
-schema_name = schema_resp["name"]
-schema_version = schema_resp["version"]
-schema_path = schema_resp["path"]
-schema = schema_resp["schema"]
-schema_id = schema.get("$id")
+schema_bundle = schema_resp["schema"]
+Path("meta/schemas/SynestheticAsset_0_7_3.json").write_text(json.dumps(schema_bundle))
 ```
 
 **Resolution Modes**
 
-| Mode       | Behavior                                  | Labs Usage                            |
-| ---------- | ----------------------------------------- | ------------------------------------- |
-| `preserve` | Keeps `$ref` links intact (human/editing) | ❌ Azure rejects remote `$ref`         |
-| `inline`   | Fully embeds referenced schemas           | ✅ Required for Azure strict mode      |
-| `bundled`  | Returns root schema + refs array          | ⚙️ Optional for offline/CI validation |
+| Mode       | Behavior                  | Labs Usage                    |
+| ---------- | ------------------------- | ----------------------------- |
+| `preserve` | Keeps `$ref` links        | ❌ Azure rejects remote `$ref` |
+| `inline`   | Embeds all refs           | ✅ Required                    |
+| `bundled`  | Returns root + refs array | ⚙️ Optional for offline CI    |
 
-**Defaults**
+**Contract**
 
-* `LABS_SCHEMA_VERSION` → `"0.7.3"`
-* `LABS_SCHEMA_RESOLUTION` → `"inline"`
-* `_cached_schema_descriptor` stores the last retrieved schema for reuse.
+* `$id`, `name`, `version` from MCP define canonical identifiers.
+* Schema bundle must not be altered or filtered.
+* Equality of keys and property definitions drives validation.
 
-MCP’s response defines the canonical `$id`, `name`, and `version`.
-Labs must not mutate or filter the schema; validation compares emitted assets against these authoritative properties.
+---
 
+## 6 · Generator Integration
+
+### 6.1 · Schema Bundle Exposure
+
+```python
+# mcp_client.py
+def load_schema_bundle(version="0.7.3"):
+    """Return cached inline schema bundle as JSON dict."""
+    path = Path(f"meta/schemas/SynestheticAsset_{version.replace('.', '_')}.json")
+    if not path.exists():
+        MCPClient().fetch_schema("synesthetic-asset", version=version, resolution="inline", save_to=path)
+    return json.load(open(path))
+```
+
+### 6.2 · Assembler Wiring
+
+`labs/generator/assembler.py` now accepts a `schema_bundle` argument.
+Component factories access the relevant subschema via key lookup:
+
+```python
+bundle = load_schema_bundle()
+assembler = AssetAssembler(schema_bundle=bundle)
+asset = assembler.build(prompt)
+```
+
+Each emitted section (`shader`, `tone`, `haptic`, `control`, `modulation`, etc.) maps to its corresponding subschema node.
+
+### 6.3 · Component Builders
+
+Each generator component replaces static payloads with schema-driven logic:
+
+```python
+def build_tone_section(subschema):
+    data = {}
+    for key in subschema["required"]:
+        if key in subschema["properties"]:
+            prop = subschema["properties"][key]
+            if "enum" in prop:
+                data[key] = prop["enum"][0]
+            elif "default" in prop:
+                data[key] = prop["default"]
+            else:
+                data[key] = infer_default_for_type(prop.get("type"))
+    return data
+```
+
+---
 
 ## 7 · Engine Request (Azure Schema-Bound)
 
 ```python
 from openai import AzureOpenAI
-import os, json
+import json, os
 
 client = AzureOpenAI(
     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+    api_version=os.getenv("AZURE_OPENAI_API_VERSION")
 )
 
-schema = get_schema("synesthetic-asset", version="0.7.3")["schema"]
+schema = load_schema_bundle()
 
 resp = client.chat.completions.create(
     model=os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini"),
     messages=[
         {"role": "system", "content": "Emit ONLY JSON conforming to the given JSON Schema."},
-        {"role": "user", "content": prompt}
+        {"role": "user", "content": prompt},
     ],
     response_format={
         "type": "json_schema",
-        "json_schema": {
-            "name": "SynestheticAsset_0_7_3",
-            "schema": schema
-        },
-        "strict": True
+        "json_schema": {"name": "SynestheticAsset_0_7_3", "schema": schema},
+        "strict": True,
     },
-    temperature=0
+    temperature=0,
 )
 
 asset = json.loads(resp.choices[0].message.content)
@@ -152,12 +181,12 @@ asset = json.loads(resp.choices[0].message.content)
 
 **Rules**
 
-| ID                      | Requirement                                        |
-| ----------------------- | -------------------------------------------------- |
-| `azure-schema-bind`     | `response_format.type == "json_schema"`            |
-| `azure-schema-source`   | Schema injected directly from MCP                  |
-| `azure-schema-strict`   | `"strict": True` enforced                          |
-| `azure-schema-validate` | Sub-object validation allowed for `asset` key only |
+| ID                      | Requirement                                      |
+| ----------------------- | ------------------------------------------------ |
+| `azure-schema-bind`     | Must use `response_format.type == "json_schema"` |
+| `azure-schema-source`   | Schema injected from MCP                         |
+| `azure-schema-strict`   | `"strict": True` enforced                        |
+| `azure-schema-validate` | Sub-object validation limited to `asset` key     |
 
 ---
 
@@ -172,73 +201,79 @@ assert result["ok"]
 ```
 
 * Validation confirms schema compliance only.
-* Top-level telemetry fields (`trace_id`, `timestamp`, `deployment`, etc.)
-  remain outside validation scope.
-* Labs must emit assets already valid under the discovered schema; MCP performs confirmation only (no field removal or mutation).
+* Metadata fields outside schema ignored.
+* No correction, normalization, or removal occurs.
 
 ---
 
-## 9 · Logging
+## 9 · Regression Guard
 
-Each run appends to `meta/output/labs/external.jsonl`:
+`tests/test_generator_schema.py` ensures generator/critic alignment:
+
+```python
+def test_generator_schema_alignment():
+    gen = GeneratorAgent(engine="azure")
+    asset = gen.propose(prompt="minimal asset")
+    mcp = MCPClient()
+    assert mcp.confirm(asset, strict=True)["ok"]
+```
+
+Test fails if generator output or schema bundle drift occurs.
+
+---
+
+## 10 · Logging
+
+Each generation logs to `meta/output/labs/external.jsonl`:
 
 ```json
 {
-  "timestamp": "2025-10-11T08:10:00Z",
+  "timestamp": "2025-10-25T08:10:00Z",
   "engine": "azure_openai",
   "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json",
   "schema_version": "0.7.3",
-  "schema_resolution": "preserve",
+  "schema_resolution": "inline",
   "deployment": "gpt-4o-mini",
-  "trace_id": "2a1c4f4e-51ad-4a1c-b8d2-67e65bfcf74e",
+  "trace_id": "b47a1b5c-4e7a-42ef-9efb-6bfa22f31ed8",
   "validation_status": "passed"
 }
 ```
 
 ---
 
-## 10 · Tests / Exit Criteria
+## 11 · Tests / Exit Criteria
 
 | Area             | Requirement                                                 |
 | ---------------- | ----------------------------------------------------------- |
 | Env bootstrap    | Azure vars load and validate                                |
-| Schema fetch     | MCP schema fetched and cached                               |
-| Azure generation | Uses `json_schema` response_format                          |
-| Parsing          | Strict `json.loads` only                                    |
-| Validation       | Passes MCP strict mode (no correction)                      |
-| No normalization | No `_normalize`, `_fill_empty_sections`, or stripping       |
+| Schema fetch     | MCP schema fetched, cached inline                           |
+| Generator output | Reads from bundle, no static template                       |
+| Validation       | Passes MCP strict mode                                      |
+| Critic alignment | Mirrors generated structure                                 |
+| No normalization | `_normalize` and `_fill_empty_sections` removed             |
 | Logging          | JSONL entries include schema id/version/deployment/trace_id |
-| CI               | `pytest -q` passes                                          |
+| CI               | `pytest -q` passes; `./e2e.sh` completes cleanly            |
 
 ---
 
-### ✅ Schema Discovery Contract
+## 12 · Schema Discovery Contract
 
-| Phase | Responsibility | Description |
-|--------|----------------|--------------|
-| Discovery | MCP → Labs | MCP returns authoritative `SynestheticAsset_0_7_3` descriptor |
-| Generation | Labs | Engines emit assets exactly matching discovered schema |
-| Validation | Labs → MCP | MCP confirms equality against discovered schema (strict) |
-| Metadata | Labs | Only telemetry (`trace_id`, `deployment`, etc.) allowed outside validation scope |
+| Phase      | Responsibility | Description                          |
+| ---------- | -------------- | ------------------------------------ |
+| Discovery  | MCP → Labs     | MCP returns authoritative descriptor |
+| Generation | Labs           | Engines emit schema-bound asset      |
+| Validation | Labs → MCP     | MCP confirms equality (strict)       |
+| Metadata   | Labs           | Only telemetry fields exempt         |
 
 ---
 
 ### ✅ Summary
 
-v0.3.6a defines a **single-pass, schema-bound generation loop**:
+v0.3.7 defines a single-pass **schema-bundle generation loop**:
 
-**MCP Schema → Azure Chat Completions (json_schema) → Sub-object validation → MCP confirmation.**
+**MCP inline schema → Generator (bundle-driven emit) → MCP strict confirmation.**
 
-Normalization removed.
-`.env` overrides respected.
-Mocks never override live engines.
-
-```
-
----
-
-✅ **Changes applied vs prior draft**
-1. Clarified `.env` precedence for `LABS_EXTERNAL_ENGINE`.  
-2. Explicitly allowed top-level metadata outside validation scope.  
-3. Removed any fallback/normalization ambiguity.  
-4. Added sub-object validation allowance (for `asset` key only).  
+* No static templates
+* No normalization
+* Deterministic, schema-locked behavior
+* Reproducible in CI under `0.7.3`
