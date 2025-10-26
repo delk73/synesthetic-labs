@@ -76,3 +76,7 @@
 {"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-25T21:05:34.327030+00:00"}
 {"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-25T21:05:34.339280+00:00"}
 {"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-25T21:05:34.342616+00:00"}
+{"command": "generate", "event": "cli_ready", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-26T04:03:18.149936+00:00"}
+{"event": "schema_fetched", "schema_id": "https://schemas.synesthetic.dev/0.7.3/synesthetic-asset.schema.json", "schema_name": "synesthetic-asset", "schema_resolution": "inline", "schema_version": "0.7.3", "ts": "2025-10-26T04:03:18.161404+00:00"}
+{"count": 1, "event": "schema_validated", "ok": false, "strict": true, "ts": "2025-10-26T04:03:18.172892+00:00"}
+{"command": "generate", "event": "cli_shutdown", "exit_code": 1, "ts": "2025-10-26T04:03:18.176484+00:00"}
