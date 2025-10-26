@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from .client import MCPClient, MCPClientError, MCPValidationError
+from .client import MCPClient, MCPClientError, MCPValidationError, load_schema_bundle
 
-__all__ = ["MCPClient", "MCPClientError", "MCPValidationError"]
+__all__ = ["MCPClient", "MCPClientError", "MCPValidationError", "load_schema_bundle"]

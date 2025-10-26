@@ -19,7 +19,7 @@ predecessor: v0.3.6a
 ## 1 · Scope
 
 - Enforce schema-bound generation via live MCP descriptor (`0.7.3`).  
-- Cache resolved inline schema locally; expose through `load_schema_bundle()`.  
+- Expose live inline schema loader via `load_schema_bundle()`; no on-disk cache.  
 - Route the schema bundle into the `AssetAssembler` and its component factories.  
 - Replace static v0.2 templates with builders that read schema structure (`required`, `enum`, `properties`, `additionalProperties`).  
 - Fallback template path gated behind feature flag `LABS_LEGACY_TEMPLATES=1`.  
@@ -81,7 +81,6 @@ schema_resp = MCPClient().fetch_schema(
     resolution=os.getenv("LABS_SCHEMA_RESOLUTION", "inline"),
 )
 schema_bundle = schema_resp["schema"]
-Path("meta/schemas/SynestheticAsset_0_7_3.json").write_text(json.dumps(schema_bundle))
 ```
 
 **Resolution Modes**
@@ -107,11 +106,10 @@ Path("meta/schemas/SynestheticAsset_0_7_3.json").write_text(json.dumps(schema_bu
 ```python
 # mcp_client.py
 def load_schema_bundle(version="0.7.3"):
-    """Return cached inline schema bundle as JSON dict."""
-    path = Path(f"meta/schemas/SynestheticAsset_{version.replace('.', '_')}.json")
-    if not path.exists():
-        MCPClient().fetch_schema("synesthetic-asset", version=version, resolution="inline", save_to=path)
-    return json.load(open(path))
+    """Return live inline schema bundle as JSON dict."""
+    client = MCPClient(schema_version=version, resolution="inline")
+    descriptor = client.fetch_schema("synesthetic-asset", version=version, resolution="inline")
+    return descriptor["schema"]
 ```
 
 ### 6.2 · Assembler Wiring

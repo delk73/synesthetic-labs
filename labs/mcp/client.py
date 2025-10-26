@@ -20,7 +20,7 @@ JsonDict = Dict[str, Any]
 
 _LOGGER = logging.getLogger("labs.mcp.client")
 _DEFAULT_SCHEMA_NAME = "synesthetic-asset"
-_VALID_RESOLUTIONS = {"preserve", "inline", "bundled"}
+_VALID_RESOLUTIONS = {"inline"}
 
 
 class MCPClientError(RuntimeError):
@@ -68,11 +68,12 @@ class MCPClient:
     @staticmethod
     def _normalise_resolution(resolution: Optional[str]) -> str:
         base = resolution.strip().lower() if isinstance(resolution, str) else None
-        value = base or "inline"
+        value = base or 'inline'
         if value not in _VALID_RESOLUTIONS:
-            _LOGGER.warning("Unsupported schema resolution '%s'; falling back to inline", resolution)
-            return "inline"
-        return value
+            _LOGGER.warning("Unsupported schema resolution '%s'; forcing inline", resolution)
+        elif value != 'inline':
+            _LOGGER.info("Forcing inline schema resolution (requested '%s')", resolution)
+        return 'inline'
 
     @staticmethod
     def _resolve_batch_limit(candidate: Optional[int]) -> int:
@@ -397,4 +398,25 @@ class MCPClient:
                 bundle_meta.pop("provenance", None)
 
 
-__all__ = ["MCPClient", "MCPClientError", "MCPValidationError"]
+def load_schema_bundle(
+    *,
+    schema_name: str = _DEFAULT_SCHEMA_NAME,
+    version: Optional[str] = None,
+    client: Optional["MCPClient"] = None,
+) -> Dict[str, Any]:
+    """Fetch and return the authoritative inline schema bundle without disk IO."""
+
+    active_client = client or MCPClient(schema_name=schema_name, schema_version=version, resolution='inline')
+    descriptor = active_client.fetch_schema(
+        schema_name,
+        version=version,
+        resolution='inline',
+        force=client is None,
+    )
+    schema = descriptor.get("schema")
+    if not isinstance(schema, Mapping):
+        raise MCPClientError("MCP schema response missing inline bundle")
+    return copy.deepcopy(schema)
+
+
+__all__ = ["MCPClient", "MCPClientError", "MCPValidationError", "load_schema_bundle"]
