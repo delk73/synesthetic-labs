@@ -226,6 +226,7 @@ class AssetAssembler:
         base_sections: Dict[str, object],
         rule_bundle_version: Optional[str] = None,
     ) -> Dict[str, object]:
+        """Build 0.7.3-compliant asset with only schema-required fields."""
         sections = deepcopy(base_sections)
 
         if not isinstance(sections.get("shader"), dict):
@@ -259,19 +260,26 @@ class AssetAssembler:
         AssetAssembler._ensure_meta_defaults(meta_info, prompt)
         AssetAssembler.fill_defaults(sections)
 
+        # 0.7.3 schema requires ONLY: shader, tone, haptic, control, modulations, rule_bundle, meta_info
+        # Plus optional $schema. NO asset_id, prompt, timestamp, name at top level.
         legacy_asset: Dict[str, object] = {
             "$schema": schema_url,
-            "asset_id": asset_id,
-            "prompt": prompt,
-            "timestamp": timestamp,
-            "name": meta_info.get("title") or prompt,
         }
         legacy_asset.update(sections)
         asset_filled = AssetAssembler._fill_empty_sections(legacy_asset)
+        
+        # Clean up any provenance fields that shouldn't be at root for 0.7.3
         meta_info_block = asset_filled.get("meta_info")
         if isinstance(meta_info_block, dict):
             meta_info_block.pop("provenance", None)
         asset_filled.pop("provenance", None)
+        asset_filled.pop("asset_id", None)
+        asset_filled.pop("prompt", None)
+        asset_filled.pop("timestamp", None)
+        asset_filled.pop("name", None)
+        asset_filled.pop("seed", None)
+        asset_filled.pop("parameter_index", None)
+        
         return asset_filled
 
     @staticmethod
@@ -287,6 +295,7 @@ class AssetAssembler:
         seed: Optional[int],
         rule_bundle_version: Optional[str] = None,
     ) -> Dict[str, object]:
+        """Build 0.7.4+ asset with all required enriched fields."""
         sections = deepcopy(base_sections)
 
         if not isinstance(sections.get("shader"), dict):
@@ -323,20 +332,26 @@ class AssetAssembler:
 
         AssetAssembler._ensure_meta_defaults(meta_info, prompt)
 
-        normalized_provenance = deepcopy(provenance_block) if isinstance(provenance_block, dict) else {}
-
         unique_parameters = sorted({param for param in parameter_index if isinstance(param, str)})
 
+        # 0.7.4 schema requires: asset_id, prompt, timestamp, shader, tone, haptic, 
+        # control, modulations, rule_bundle, meta_info, parameter_index
+        # Optional: $schema, seed
         enriched_asset: Dict[str, object] = {
             "$schema": schema_url,
             "asset_id": asset_id,
             "prompt": prompt,
-            "seed": seed,
             "timestamp": timestamp,
             "parameter_index": unique_parameters,
-            "provenance": normalized_provenance,
         }
+        
+        # seed is optional, only include if not None
+        if seed is not None:
+            enriched_asset["seed"] = seed
+        
+        # Add all required sections
         enriched_asset.update(sections)
+        
         return enriched_asset
 
     @staticmethod
