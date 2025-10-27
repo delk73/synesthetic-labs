@@ -37,6 +37,56 @@ Document exactly what will be removed in first cleanup pass. Review before execu
 
 ---
 
+## ⚠️ PRE-CLEANUP: Decouple MCP from Generator (REQUIRED FIRST)
+
+**Problem Discovered**: `labs/mcp/client.py` imports `labs.generator.assembler.AssetAssembler`, which creates a dependency on code we're about to delete.
+
+### Files That Import Generator Code
+1. `labs/mcp/client.py` (line 14): `from labs.generator.assembler import AssetAssembler`
+   - Uses: `AssetAssembler.DEFAULT_SCHEMA_VERSION` (fallback constant)
+   - Uses: `AssetAssembler.schema_url()` (URL construction helper)
+
+2. `tests/test_mcp.py` (line 5): `from labs.generator import AssetAssembler`
+   - Uses: `AssetAssembler(schema_version="0.7.4")` to generate test fixtures
+
+### Decoupling Strategy
+
+**Step 0a: Update `labs/mcp/client.py`**
+- Replace `AssetAssembler.DEFAULT_SCHEMA_VERSION` with hardcoded `"0.7.4"`
+- Replace `AssetAssembler.schema_url(version)` with inline logic: `f"https://synesthetic.dev/schemas/{version}/synesthetic-asset.schema.json"`
+- Remove import of `AssetAssembler`
+
+**Step 0b: Update `tests/test_mcp.py`**
+- Replace `AssetAssembler` usage with raw JSON fixtures
+- Use inline asset dict: `{"$schema": "...", "name": "test", "modality": {...}, ...}`
+- Remove import of `AssetAssembler`
+
+### Why This Approach
+- ✅ Keeps `labs/mcp/` self-contained (no generator dependency)
+- ✅ MCP client owns its own defaults (schema version, URL construction)
+- ✅ Tests use explicit fixtures (clearer intent, no hidden logic)
+- ✅ Enables clean deletion of `labs/generator/` without import errors
+
+### Execution (Before Main Cleanup)
+```bash
+# Step 0a: Decouple labs/mcp/client.py
+# - Remove: from labs.generator.assembler import AssetAssembler
+# - Replace: AssetAssembler.DEFAULT_SCHEMA_VERSION → "0.7.4"
+# - Replace: AssetAssembler.schema_url(version) → f"https://synesthetic.dev/schemas/{version}/synesthetic-asset.schema.json"
+
+# Step 0b: Decouple tests/test_mcp.py
+# - Remove: from labs.generator import AssetAssembler
+# - Replace: AssetAssembler().generate() calls with raw JSON fixtures
+
+# Verify decoupling worked
+pytest tests/test_mcp.py --collect-only
+# Should succeed without import errors
+```
+
+**After decoupling succeeds**, proceed with main cleanup steps 1-9.
+
+---
+
 ## Files to DELETE (First Pass)
 
 ### Directories - High Confidence Removals
@@ -323,6 +373,77 @@ pytest-asyncio>=0.24.0
 
 ## Execution Plan
 
+### Step 0: Decouple MCP from Generator (MUST RUN FIRST)
+
+**Step 0a: Decouple `labs/mcp/client.py`**
+
+Remove the import and replace helper references:
+- Line 14: Remove `from labs.generator.assembler import AssetAssembler`
+- Line 58: Replace `AssetAssembler.DEFAULT_SCHEMA_VERSION` with `"0.7.4"`
+- Line 273: Replace `AssetAssembler.schema_url(requested_version)` with:
+  ```python
+  f"https://synesthetic.dev/schemas/{requested_version}/synesthetic-asset.schema.json"
+  ```
+- Line 276: Replace `AssetAssembler.schema_url(resolved_version)` with:
+  ```python
+  f"https://synesthetic.dev/schemas/{resolved_version}/synesthetic-asset.schema.json"
+  ```
+
+**Step 0b: Decouple `tests/test_mcp.py`**
+
+Remove the import and replace with raw JSON fixtures:
+- Line 5: Remove `from labs.generator import AssetAssembler`
+- Replace `test_validate_asset_accepts_generated_asset()` with raw fixture:
+  ```python
+  def test_validate_asset_accepts_generated_asset() -> None:
+      asset = {
+          "$schema": "https://synesthetic.dev/schemas/0.7.4/synesthetic-asset.schema.json",
+          "name": "validator smoke test",
+          "modality": {"type": "shader", "tags": []},
+          "output": {"type": "glsl", "content": "void main() {}"},
+          "meta_info": {}
+      }
+      result = validate_asset(asset)
+      assert result == {"ok": True, "reason": "validation_passed", "errors": []}
+  ```
+- Replace `test_validate_many_rolls_up_failures()` with raw fixture:
+  ```python
+  def test_validate_many_rolls_up_failures() -> None:
+      valid_asset = {
+          "$schema": "https://synesthetic.dev/schemas/0.7.4/synesthetic-asset.schema.json",
+          "name": "batch validation",
+          "modality": {"type": "shader", "tags": []},
+          "output": {"type": "glsl", "content": "void main() {}"},
+          "meta_info": {}
+      }
+      invalid_asset = {
+          "$schema": "https://synesthetic.dev/schemas/0.7.4/synesthetic-asset.schema.json",
+          "asset_id": 1
+      }
+      batch = [valid_asset, invalid_asset]
+      response = validate_many(batch)
+      assert response["ok"] is False
+      assert response["reason"] == "validation_failed"
+      assert len(response["items"]) == 2
+      assert response["items"][0]["ok"] is True
+      assert response["items"][1]["ok"] is False
+  ```
+
+**Step 0c: Verify Decoupling**
+```bash
+# Verify no generator imports remain in protected files
+grep -r "labs.generator\|from labs import generator" labs/mcp/ tests/test_mcp*.py tests/test_labs_mcp_modes.py
+
+# Should return nothing (exit code 1)
+
+# Verify MCP tests collect successfully
+pytest tests/test_mcp.py --collect-only
+
+# Should show test collection without errors
+```
+
+---
+
 ### Step 1: Verify Archive
 ```bash
 ls -lh meta/archived/archive-v0.3.6a.zip
@@ -486,18 +607,23 @@ unzip /path/to/meta/archived/archive-v0.3.6a.zip -d recovery
 
 **Status**: ✅ CONFIRMED - READY TO EXECUTE
 **Decisions**: All removals confirmed - complete clean slate for v2
-**Next**: Execute cleanup steps 1-9, verify MCP tests
+**Next**: Execute cleanup steps 0 (decouple), then 1-9 (deletions), verify MCP tests
 
 ---
 
 ## 🔍 Pre-Execution Validation Checklist
 
 Before running cleanup, verify:
-- [ ] You understand: `labs/mcp/` stays completely untouched
+- [ ] You understand: Step 0 (decouple) must run BEFORE deletions
+- [ ] You understand: `labs/mcp/` will be modified ONLY to remove generator imports
 - [ ] You understand: NO schema files will be added to `meta/schemas/`
-- [ ] You understand: Only DELETE and 4 REWRITES - no other modifications
+- [ ] You understand: Only DELETE and 6 REWRITES (2 decouple + 4 planned)
 - [ ] Archive verified: `ls -lh meta/archived/archive-v0.3.6a.zip` (~15MB)
 - [ ] On correct branch: `git branch` shows `dce-reset-dev`
+
+After Step 0 (decouple), verify:
+- [ ] `grep -r "labs.generator" labs/mcp/ tests/test_mcp*.py` returns nothing
+- [ ] `pytest tests/test_mcp.py --collect-only` succeeds
 
 After execution, verify:
 - [ ] `git diff labs/mcp/` shows NO changes
@@ -514,13 +640,22 @@ If ANY of the above fail, STOP and review what went wrong.
 ## 📊 Final Checklist Summary
 
 **Before Execution**:
-- [ ] Understood: `labs/mcp/`, `mcp/`, and MCP tests are completely untouched
+- [ ] Understood: Step 0 decouples MCP from generator (modifies `labs/mcp/client.py` and `tests/test_mcp.py`)
 - [ ] Understood: `meta/schemas/` stays empty (no .json files added)
-- [ ] Understood: Only 6 directories deleted, 20+ files deleted, 4 files rewritten
+- [ ] Understood: Only 6 directories deleted, 20+ files deleted, 6 files modified/rewritten
 - [ ] Archive exists and is ~15MB
 - [ ] On `dce-reset-dev` branch
 
-**Actions Taken**:
+**Actions Taken (Step 0 - Decouple)**:
+- [ ] Removed `AssetAssembler` import from `labs/mcp/client.py`
+- [ ] Inlined schema version constant in `labs/mcp/client.py`
+- [ ] Inlined schema URL construction in `labs/mcp/client.py`
+- [ ] Removed `AssetAssembler` import from `tests/test_mcp.py`
+- [ ] Replaced generated fixtures with raw JSON in `tests/test_mcp.py`
+- [ ] Verified: `grep -r "labs.generator" labs/mcp/ tests/test_mcp*.py` returns nothing
+- [ ] Verified: `pytest tests/test_mcp.py --collect-only` succeeds
+
+**Actions Taken (Steps 1-9 - Main Cleanup)**:
 - [ ] Deleted 6 directories: agents, experimental, experiments, lifecycle, datasets, generator
 - [ ] Deleted root scripts: audit.sh, clear.sh, e2e.sh, nuke.sh, test.sh
 - [ ] Deleted root files: notes.md, AGENTS.md
@@ -532,8 +667,12 @@ If ANY of the above fail, STOP and review what went wrong.
 - [ ] Updated CI to run only MCP tests
 
 **Post-Execution Verification**:
-- [ ] No changes to `labs/mcp/`, `mcp/`, or MCP test files (git diff)
+- [ ] Changes to `labs/mcp/client.py` are ONLY decoupling (no generator imports)
+- [ ] Changes to `tests/test_mcp.py` are ONLY decoupling (no generator imports)
+- [ ] No changes to other `labs/mcp/` files (git diff)
+- [ ] No changes to `mcp/` (git diff)
+- [ ] No changes to other MCP test files (git diff test_mcp_*.py, test_labs_mcp_modes.py, etc.)
 - [ ] No .json files in `meta/schemas/` (find command)
 - [ ] MCP tests collect successfully (pytest --collect-only)
-- [ ] Git status shows only expected deletions and 4 rewrites
+- [ ] Git status shows: 6 dirs deleted, 20+ files deleted, 6 files modified (2 decouple + 4 rewrites)
 
