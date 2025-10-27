@@ -14,7 +14,7 @@
 **UNTOUCHABLE INFRASTRUCTURE** - Do NOT modify:
 - ✅ `labs/mcp/` - Entire directory stays as-is (working MCP client)
 - ✅ `mcp/` - Entire directory stays as-is (protocol core)
-- ✅ `tests/test_mcp*.py`, `test_socket.py`, `test_tcp.py` - Keep unmodified
+- ✅ `tests/test_mcp*.py`, `test_labs_mcp_modes.py`, `test_socket.py`, `test_tcp.py` - Keep unmodified
 - ✅ `labs/transport.py`, `labs/mcp_stdio.py` - Required dependencies
 - ✅ `labs/logging.py`, `labs/core.py` - Shared utilities
 - ✅ `docs/`, `meta/prompts/` - Documentation stays as-is
@@ -152,6 +152,7 @@ tests/conftest.py               # ✅ KEEP - Pytest config
 tests/test_mcp.py               # ✅ KEEP - UNTOUCHED - MCP client tests
 tests/test_mcp_validator.py     # ✅ KEEP - UNTOUCHED - Validation tests
 tests/test_mcp_schema_pull.py   # ✅ KEEP - UNTOUCHED - Schema fetching tests
+tests/test_labs_mcp_modes.py    # ✅ KEEP - UNTOUCHED - Inline resolution tests
 tests/test_socket.py            # ✅ KEEP - UNTOUCHED - Socket transport tests
 tests/test_tcp.py               # ✅ KEEP - UNTOUCHED - TCP transport tests
 ```
@@ -167,6 +168,8 @@ meta/                           # ✅ KEEP - Entire directory UNTOUCHED
   archived/archive-v0.3.6a.zip  # Archive is safe
   prompts/                      # Standup templates
   schemas/                      # ⚠️ REFERENCE ONLY - MCP is authority, do not add files here
+    0.7.3/                      # Empty directory (no .json files)
+    0.7.4/                      # Empty directory (no .json files)
   output/                       # Logs
 ```
 
@@ -174,6 +177,7 @@ meta/                           # ✅ KEEP - Entire directory UNTOUCHED
 
 **CRITICAL**: 
 - Do NOT add schema files to `meta/schemas/` - MCP is the only schema authority
+- Schema directories exist but are EMPTY (no .json files) and must stay that way
 - Do NOT modify existing files in docs/ or meta/prompts/
 - Logs in meta/output/ can accumulate but don't modify structure
 
@@ -260,7 +264,7 @@ pytest-asyncio>=0.24.0
 **Update to**:
 ```yaml
 - name: Run tests
-  run: pytest tests/test_mcp*.py tests/test_socket.py tests/test_tcp.py -v
+  run: pytest tests/test_mcp*.py tests/test_labs_mcp_modes.py tests/test_socket.py tests/test_tcp.py -v
 ```
 
 **Rationale**: Only run MCP infrastructure tests (deleted tests will fail)
@@ -274,7 +278,7 @@ pytest-asyncio>=0.24.0
 ### DO NOT MODIFY
 - **`labs/mcp/` directory** - Entire directory stays untouched
 - **`mcp/` directory** - Entire directory stays untouched  
-- **Test files** - `test_mcp*.py`, `test_socket.py`, `test_tcp.py` stay untouched
+- **Test files** - `test_mcp*.py`, `test_labs_mcp_modes.py`, `test_socket.py`, `test_tcp.py` stay untouched
 - **`labs/transport.py`** - Required by mcp/, keep as-is
 - **`labs/mcp_stdio.py`** - Required by mcp/client.py, keep as-is
 - **`labs/logging.py`** - Keep as-is
@@ -391,7 +395,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run MCP infrastructure tests
-        run: pytest tests/test_mcp*.py tests/test_socket.py tests/test_tcp.py -v
+        run: pytest tests/test_mcp*.py tests/test_labs_mcp_modes.py tests/test_socket.py tests/test_tcp.py -v
 EOF
 ```
 
@@ -501,7 +505,38 @@ After execution, verify:
 - [ ] `git diff labs/mcp/` shows NO changes
 - [ ] `git diff mcp/` shows NO changes
 - [ ] `git diff tests/test_mcp.py` shows NO changes
+- [ ] `git diff tests/test_labs_mcp_modes.py` shows NO changes
 - [ ] `find meta/schemas -name "*.json" -type f` shows NO files (currently empty)
-- [ ] `pytest tests/test_mcp.py --collect-only` succeeds
+- [ ] `pytest tests/test_mcp*.py tests/test_labs_mcp_modes.py --collect-only` succeeds
 
 If ANY of the above fail, STOP and review what went wrong.
+
+---
+
+## 📊 Final Checklist Summary
+
+**Before Execution**:
+- [ ] Understood: `labs/mcp/`, `mcp/`, and MCP tests are completely untouched
+- [ ] Understood: `meta/schemas/` stays empty (no .json files added)
+- [ ] Understood: Only 6 directories deleted, 20+ files deleted, 4 files rewritten
+- [ ] Archive exists and is ~15MB
+- [ ] On `dce-reset-dev` branch
+
+**Actions Taken**:
+- [ ] Deleted 6 directories: agents, experimental, experiments, lifecycle, datasets, generator
+- [ ] Deleted root scripts: audit.sh, clear.sh, e2e.sh, nuke.sh, test.sh
+- [ ] Deleted root files: notes.md, AGENTS.md
+- [ ] Deleted labs files: cli.py, patches.py, mcp_stub.py
+- [ ] Deleted 15 test files (generator/critic/pipeline/etc.)
+- [ ] Rewrote `labs/__init__.py` to v2 minimal
+- [ ] Rewrote `requirements.txt` to minimal deps
+- [ ] Rewrote `README.md` for v2 status
+- [ ] Updated CI to run only MCP tests
+
+**Post-Execution Verification**:
+- [ ] No changes to `labs/mcp/`, `mcp/`, or MCP test files (git diff)
+- [ ] No .json files in `meta/schemas/` (find command)
+- [ ] MCP tests collect successfully (pytest --collect-only)
+- [ ] Git status shows only expected deletions and 4 rewrites
+
+**Ready for**: Commit, review diff against main, merge to main when ready
