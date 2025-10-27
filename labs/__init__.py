@@ -1,6 +1,5 @@
-"""Synesthetic Labs package exposing core agents."""
+"""Synesthetic Labs v2 - Minimal schema-driven generator."""
 
-from .agents.generator import GeneratorAgent
-from .agents.critic import CriticAgent
+__version__ = "2.0.0"
 
-__all__ = ["GeneratorAgent", "CriticAgent"]
+__all__: list[str] = []

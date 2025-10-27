@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from labs.generator import AssetAssembler
 from labs.mcp.validate import validate_asset, validate_many
 from labs.mcp_stdio import resolve_mcp_endpoint
 
@@ -32,8 +31,13 @@ def test_validate_asset_rejects_schema_ref() -> None:
 
 
 def test_validate_asset_accepts_generated_asset() -> None:
-    assembler = AssetAssembler(schema_version="0.7.4")
-    asset = assembler.generate("validator smoke test", schema_version="0.7.4")
+    asset = {
+        "$schema": "https://synesthetic.dev/schemas/0.7.4/synesthetic-asset.schema.json",
+        "name": "validator smoke test",
+        "modality": {"type": "shader", "tags": []},
+        "output": {"type": "glsl", "content": "void main() {}"},
+        "meta_info": {},
+    }
 
     result = validate_asset(asset)
 
@@ -41,10 +45,19 @@ def test_validate_asset_accepts_generated_asset() -> None:
 
 
 def test_validate_many_rolls_up_failures() -> None:
-    assembler = AssetAssembler(schema_version="0.7.4")
-    asset = assembler.generate("batch validation", schema_version="0.7.4")
+    valid_asset = {
+        "$schema": "https://synesthetic.dev/schemas/0.7.4/synesthetic-asset.schema.json",
+        "name": "batch validation",
+        "modality": {"type": "shader", "tags": []},
+        "output": {"type": "glsl", "content": "void main() {}"},
+        "meta_info": {},
+    }
+    invalid_asset = {
+        "$schema": "https://synesthetic.dev/schemas/0.7.4/synesthetic-asset.schema.json",
+        "asset_id": 1,
+    }
 
-    batch = [asset, {"$schema": "meta/schemas/0.7.4/synesthetic-asset.schema.json", "asset_id": 1}]
+    batch = [valid_asset, invalid_asset]
 
     response = validate_many(batch)
 

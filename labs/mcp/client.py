@@ -11,7 +11,6 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping,
 
 from mcp import core as mcp_core
 
-from labs.generator.assembler import AssetAssembler
 from labs.logging import log_jsonl
 from labs.mcp.exceptions import MCPUnavailableError
 from labs.mcp.tcp_client import get_schema_from_mcp
@@ -53,7 +52,7 @@ class MCPClient:
     ) -> None:
         self.schema_name = schema_name or _DEFAULT_SCHEMA_NAME
         self._requested_version = schema_version or os.getenv(
-            "LABS_SCHEMA_VERSION", AssetAssembler.DEFAULT_SCHEMA_VERSION
+            "LABS_SCHEMA_VERSION", "0.7.4"
         )
         env_resolution = os.getenv("LABS_SCHEMA_RESOLUTION")
         self.resolution = self._normalise_resolution(resolution or env_resolution)
@@ -270,9 +269,9 @@ class MCPClient:
 
         schema_id = schema.get("$id")
         if requested_version and isinstance(requested_version, str) and requested_version.strip():
-            schema_id = AssetAssembler.schema_url(requested_version)
+            schema_id = f"https://synesthetic.dev/schemas/{requested_version}/synesthetic-asset.schema.json"
         elif not isinstance(schema_id, str) or not schema_id.strip():
-            schema_id = AssetAssembler.schema_url(resolved_version)
+            schema_id = f"https://synesthetic.dev/schemas/{resolved_version}/synesthetic-asset.schema.json"
 
         descriptor: JsonDict = {
             "ok": True,
