@@ -167,7 +167,7 @@ ls meta/archived/
 # Should see: archive-v0.3.6a.zip
 
 ls meta/prompts/
-# Should see: v2standup.json, reset.json
+# Should see: standup_template.json, README.md
 
 ls docs/
 # Should see preserved docs
@@ -266,8 +266,8 @@ After reset, the repo has:
 - MCP client fully functional (`labs/mcp/`)
 - MCP tests passing (prove connectivity)
 - Docker deployment infrastructure
-- v0.3.6a safely archived (`meta/archive/`)
-- Complete documentation (LESSONS_LEARNED.md, v2standup.json, reset.json)
+- v0.3.6a safely archived (`meta/archived/`)
+- Complete documentation (LESSONS_LEARNED.md, CLEANUP_PLAN.md, standup_template.json)
 
 ### ❌ Removed Complexity
 - Hardcoded template generators deleted
@@ -295,7 +295,7 @@ Before proceeding to v2 rebuild, verify:
 - [ ] MCP tests pass: `pytest tests/test_mcp.py -v` succeeds
 - [ ] Generator code removed: `labs/generator/` doesn't exist
 - [ ] Clean git status: `git status` shows working tree clean (after commit)
-- [ ] Prompts preserved: `meta/prompts/v2standup.json` and `reset.json` exist
+- [ ] Prompts preserved: `meta/prompts/standup_template.json` exists
 - [ ] Documentation updated: `README.md` describes v2 approach
 - [ ] Requirements trimmed: No Azure/Gemini SDKs in `requirements.txt`
 

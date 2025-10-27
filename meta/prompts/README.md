@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains standup templates and scripts for building schema-version-confined lab environments.
+This directory contains the standup template for building schema-version-confined lab environments.
 
 ## Files
 
@@ -11,26 +11,15 @@ This directory contains standup templates and scripts for building schema-versio
 **Status**: Template - NOT for direct execution  
 **Usage**: Copy and replace `{VERSION}` placeholders when ready to standup a new schema version
 
-### `v2standup.json` (Legacy)
-**Purpose**: Historical v0.3.6a → v2 migration plan  
-**Status**: Backward-looking, references v0.3.6a cleanup  
-**Usage**: Reference for lessons learned, not for greenfield standup
-
-### `reset.json`
-**Purpose**: Reset procedure to strip v0.3.6a cruft  
-**Status**: One-time cleanup script  
-**Usage**: Execute once to prepare repo for fresh standup
-
 ## When to Use
 
 ### NOT NOW
-- We are currently in **documentation phase**
+- We are currently in **cleanup/reset phase**
 - Repo contains v0.3.6a code (archived in `meta/archived/`)
-- Reset has not been executed yet
-- Do not attempt standup until after reset
+- Do not attempt standup until after cleanup
 
-### AFTER RESET
-1. Execute `reset.json` procedure to clean repo
+### AFTER CLEANUP
+1. Execute `CLEANUP_PLAN.md` steps 1-9 to clean repo
 2. Verify MCP tests still pass
 3. Repo is now minimal foundation
 4. THEN copy `standup_template.json` to `v0_7_3_standup.json`
@@ -50,7 +39,7 @@ The `standup_template.json` is **greenfield-focused**:
 ```
 Current State (v0.3.6a)
     ↓
-Execute reset.json
+Execute CLEANUP_PLAN.md
     ↓
 Minimal Foundation
     ↓
@@ -78,3 +67,4 @@ The template assumes:
 - Pure TDD from scratch
 
 This makes it reusable for any schema version, forever.
+

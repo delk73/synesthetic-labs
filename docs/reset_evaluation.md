@@ -139,7 +139,7 @@ labs/mcp/tcp_client.py:10: from labs.transport import (...)
 
 **Solution**: ✅ **KEEP `labs/transport.py`**
 
-**Action**: ✅ Remove from delete list in reset.json
+**Action**: ✅ Kept in preserved list
 
 ---
 
@@ -154,7 +154,7 @@ labs/mcp/client.py:339: from labs.mcp_stdio import build_validator_from_env
 
 **Solution**: ✅ **KEEP `labs/mcp_stdio.py`**
 
-**Action**: ✅ Remove from delete list in reset.json
+**Action**: ✅ Kept in preserved list
 
 ---
 
@@ -257,8 +257,8 @@ After reset, verify:
 - [ ] `tests/conftest.py`
 - [ ] `.github/workflows/ci.yml`
 - [ ] `meta/archived/archive-v0.3.6a.zip`
-- [ ] `meta/prompts/v2standup.json`
-- [ ] `meta/prompts/reset.json`
+- [ ] `meta/prompts/standup_template.json`
+- [ ] `CLEANUP_PLAN.md`
 - [ ] `docs/reset_process.md`
 - [ ] `LESSONS_LEARNED.md`
 - [ ] `README.md` (kept and updated)
@@ -342,22 +342,16 @@ If these pass, MCP infrastructure is intact.
 
 ## Next Steps
 
-1. **Update `meta/prompts/reset.json`** with corrections:
-   - Remove `labs/transport.py` from delete list
-   - Remove `labs/mcp_stdio.py` from delete list
-   - Add `labs/cli.py` to delete list
-   - Add step to update `labs/__init__.py`
+1. **Execute cleanup** following `CLEANUP_PLAN.md` steps 1-9
 
-2. **Execute reset** following updated procedure
+2. **Verify** all checklist items pass
 
-3. **Verify** all checklist items pass
+3. **Commit** clean minimal state
 
-4. **Commit** clean minimal state
-
-5. **Begin v2** following `meta/prompts/v2standup.json`
+4. **Begin v2** following `meta/prompts/standup_template.json` (instantiate for 0.7.3)
 
 ---
 
 **Evaluation Status**: ✅ COMPLETE  
 **CI Status**: ✅ KEEP AS-IS  
-**Action Required**: Update reset.json with 4 corrections above
+**Action Required**: Follow CLEANUP_PLAN.md for execution
