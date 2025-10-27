@@ -479,16 +479,14 @@ unzip /path/to/meta/archived/archive-v0.3.6a.zip -d recovery
 ## Next Steps After Cleanup
 
 1. Verify MCP tests still pass: `pytest tests/test_mcp.py -v`
-2. Commit: `git commit -m "Reset to minimal foundation - MCP infrastructure only"`
-3. Review: `git diff main` to see full changes
-4. Document: Update any docs that reference deleted code
-5. Ready: Repo is now minimal foundation for v2 standup
+2. Document: Update any docs that reference deleted code
+3. Ready: Repo is now minimal foundation for v2 standup
 
 ---
 
 **Status**: ✅ CONFIRMED - READY TO EXECUTE
 **Decisions**: All removals confirmed - complete clean slate for v2
-**Next**: Execute cleanup steps 1-9, verify MCP tests, commit minimal foundation
+**Next**: Execute cleanup steps 1-9, verify MCP tests
 
 ---
 
@@ -539,4 +537,3 @@ If ANY of the above fail, STOP and review what went wrong.
 - [ ] MCP tests collect successfully (pytest --collect-only)
 - [ ] Git status shows only expected deletions and 4 rewrites
 
-**Ready for**: Commit, review diff against main, merge to main when ready
