@@ -1,5 +1,37 @@
 # Pre-Reset Cleanup Plan - Review & Confirm
 
+## 📋 Quick Reference
+
+**What gets DELETED**: 6 directories + 20+ files (generators, agents, experimental, scripts, wrong tests)  
+**What gets KEPT UNTOUCHED**: `labs/mcp/`, `mcp/`, MCP tests, transport files, docs  
+**What gets REWRITTEN**: 4 files only (`labs/__init__.py`, `requirements.txt`, `README.md`, CI test command)  
+**What gets FORBIDDEN**: Adding schema files, modifying MCP infrastructure, adding code  
+
+---
+
+## ⚠️ CRITICAL RULES (Read First)
+
+**UNTOUCHABLE INFRASTRUCTURE** - Do NOT modify:
+- ✅ `labs/mcp/` - Entire directory stays as-is (working MCP client)
+- ✅ `mcp/` - Entire directory stays as-is (protocol core)
+- ✅ `tests/test_mcp*.py`, `test_socket.py`, `test_tcp.py` - Keep unmodified
+- ✅ `labs/transport.py`, `labs/mcp_stdio.py` - Required dependencies
+- ✅ `labs/logging.py`, `labs/core.py` - Shared utilities
+- ✅ `docs/`, `meta/prompts/` - Documentation stays as-is
+
+**FORBIDDEN ACTIONS**:
+- ❌ Do NOT add schema files to `meta/schemas/` - MCP is schema authority
+- ❌ Do NOT modify any file in `labs/mcp/` or `mcp/`
+- ❌ Do NOT modify MCP test files
+- ❌ Do NOT add code - only delete or rewrite specified files
+
+**ALLOWED ACTIONS**:
+- ✅ DELETE directories/files listed in DELETE section
+- ✅ REWRITE (complete replacement) of 4 files: `labs/__init__.py`, `requirements.txt`, `README.md`, CI test command
+- ✅ That's it - nothing else
+
+---
+
 ## Purpose
 Document exactly what will be removed in first cleanup pass. Review before executing.
 
@@ -19,6 +51,8 @@ labs/generator/                 # Hardcoded template generators
 ```
 
 **Rationale**: All built on broken foundation, none pass MCP validation
+
+**CRITICAL**: Do NOT modify `labs/mcp/` directory at all - keep it completely untouched
 
 ### Root Scripts - v0.3.6a Workflow
 ```bash
@@ -75,20 +109,22 @@ tests/test_path_guard.py
 
 ### MCP Infrastructure (Core)
 ```bash
-labs/mcp/                       # ✅ KEEP - Entire directory
+labs/mcp/                       # ✅ KEEP - Entire directory UNTOUCHED
   __init__.py
   __main__.py
-  client.py                     # Proven working
-  validate.py                   # Validation logic
-  exceptions.py                 # Error types
-  tcp_client.py                 # TCP transport
-  socket_main.py                # Socket transport (keep, won't use initially)
+  client.py                     # ✅ DO NOT MODIFY - Working as-is
+  validate.py                   # ✅ DO NOT MODIFY
+  exceptions.py                 # ✅ DO NOT MODIFY
+  tcp_client.py                 # ✅ DO NOT MODIFY
+  socket_main.py                # ✅ DO NOT MODIFY
 
 labs/transport.py               # ✅ KEEP - Required by mcp/
 labs/mcp_stdio.py               # ✅ KEEP - Required by mcp/client.py
 ```
 
 **Rationale**: Working MCP infrastructure we confirmed is solid
+
+**CRITICAL**: `labs/mcp/` is proven working infrastructure - any modifications risk breaking it
 
 ### Shared Infrastructure
 ```bash
@@ -102,35 +138,44 @@ labs/.env.example               # ✅ KEEP - Configuration template
 
 ### MCP Server
 ```bash
-mcp/__init__.py                 # ✅ KEEP
-mcp/core.py                     # ✅ KEEP
+mcp/__init__.py                 # ✅ KEEP - UNTOUCHED
+mcp/core.py                     # ✅ KEEP - UNTOUCHED
 ```
 
 **Rationale**: Protocol core infrastructure
 
+**CRITICAL**: Do not modify these files
+
 ### Tests - MCP Only
 ```bash
 tests/conftest.py               # ✅ KEEP - Pytest config
-tests/test_mcp.py               # ✅ KEEP - MCP client tests
-tests/test_mcp_validator.py     # ✅ KEEP - Validation tests
-tests/test_mcp_schema_pull.py   # ✅ KEEP - Schema fetching tests
-tests/test_socket.py            # ✅ KEEP - Socket transport tests
-tests/test_tcp.py               # ✅ KEEP - TCP transport tests
+tests/test_mcp.py               # ✅ KEEP - UNTOUCHED - MCP client tests
+tests/test_mcp_validator.py     # ✅ KEEP - UNTOUCHED - Validation tests
+tests/test_mcp_schema_pull.py   # ✅ KEEP - UNTOUCHED - Schema fetching tests
+tests/test_socket.py            # ✅ KEEP - UNTOUCHED - Socket transport tests
+tests/test_tcp.py               # ✅ KEEP - UNTOUCHED - TCP transport tests
 ```
 
 **Rationale**: Prove MCP infrastructure works
 
+**CRITICAL**: Do not modify these test files - they verify working infrastructure
+
 ### Documentation
 ```bash
-docs/                           # ✅ KEEP - Entire directory (updated for v2)
-meta/                           # ✅ KEEP - Entire directory
+docs/                           # ✅ KEEP - Entire directory UNTOUCHED
+meta/                           # ✅ KEEP - Entire directory UNTOUCHED
   archived/archive-v0.3.6a.zip  # Archive is safe
   prompts/                      # Standup templates
-  schemas/                      # Reference (MCP is authority)
+  schemas/                      # ⚠️ REFERENCE ONLY - MCP is authority, do not add files here
   output/                       # Logs
 ```
 
 **Rationale**: Documentation and context preservation
+
+**CRITICAL**: 
+- Do NOT add schema files to `meta/schemas/` - MCP is the only schema authority
+- Do NOT modify existing files in docs/ or meta/prompts/
+- Logs in meta/output/ can accumulate but don't modify structure
 
 ### Root Infrastructure
 ```bash
@@ -167,6 +212,10 @@ __version__ = "2.0.0"
 __all__ = []
 ```
 
+**Rationale**: Remove deleted module imports, mark as v2
+
+**NOTE**: This is a complete rewrite, not a modification
+
 ### `requirements.txt`
 **Current**: Has Azure SDK, Gemini SDK, Anthropic SDK, many dependencies
 
@@ -185,8 +234,21 @@ pytest>=8.3.0
 pytest-asyncio>=0.24.0
 ```
 
+**Rationale**: Remove external generator dependencies until needed in v2
+
+**NOTE**: Complete rewrite of file
+
 ### `README.md`
 **Update**: Rewrite for v2 architecture (keep file, update content)
+
+**NOTE**: Complete content rewrite - document minimal MCP-only foundation
+
+**Key sections to include**:
+- Status: Under reconstruction
+- Architecture: MCP client only
+- What's preserved: MCP infrastructure
+- What's removed: Generators, agents, etc.
+- Next steps: Follow CLEANUP_PLAN.md → standup_template.json
 
 ### `.github/workflows/ci.yml`
 **Current**:
@@ -203,7 +265,38 @@ pytest-asyncio>=0.24.0
 
 **Rationale**: Only run MCP infrastructure tests (deleted tests will fail)
 
+**NOTE**: Modify only the test command line, leave rest of CI config untouched
+
 ---
+
+## ⚠️ CRITICAL CONSTRAINTS
+
+### DO NOT MODIFY
+- **`labs/mcp/` directory** - Entire directory stays untouched
+- **`mcp/` directory** - Entire directory stays untouched  
+- **Test files** - `test_mcp*.py`, `test_socket.py`, `test_tcp.py` stay untouched
+- **`labs/transport.py`** - Required by mcp/, keep as-is
+- **`labs/mcp_stdio.py`** - Required by mcp/client.py, keep as-is
+- **`labs/logging.py`** - Keep as-is
+- **`labs/core.py`** - Keep as-is
+- **`docs/` directory** - Keep all files as-is
+- **`meta/prompts/` directory** - Keep all files as-is
+- **Existing schema files** in `meta/schemas/` - Don't add new ones
+
+### DO NOT ADD
+- **Schema files to `meta/schemas/`** - MCP is the ONLY schema authority
+- **Any new dependencies** to requirements.txt beyond the minimal list
+- **Any new code** - this is deletion only
+
+### ONLY DELETE
+- Directories listed in DELETE section
+- Files listed in DELETE section
+
+### ONLY UPDATE (Complete Rewrites)
+- `labs/__init__.py` - Rewrite to minimal v2
+- `requirements.txt` - Rewrite to minimal deps
+- `README.md` - Rewrite for v2 status
+- `.github/workflows/ci.yml` - Update test command only
 
 ## Verification Before Execution
 
@@ -214,12 +307,13 @@ pytest-asyncio>=0.24.0
 - [ ] No uncommitted work we care about
 
 ### Post-Removal Checks
-- [ ] `labs/mcp/` directory intact
-- [ ] `labs/transport.py` exists
-- [ ] `labs/mcp_stdio.py` exists
-- [ ] `mcp/core.py` exists
-- [ ] MCP tests exist: `ls tests/test_mcp*.py`
+- [ ] `labs/mcp/` directory intact and unmodified
+- [ ] `labs/transport.py` exists and unmodified
+- [ ] `labs/mcp_stdio.py` exists and unmodified
+- [ ] `mcp/core.py` exists and unmodified
+- [ ] MCP tests exist and unmodified: `ls tests/test_mcp*.py`
 - [ ] Can run: `pytest tests/test_mcp.py --collect-only` (tests discovered)
+- [ ] NO new schema files in `meta/schemas/` beyond what existed
 
 ---
 
@@ -305,6 +399,10 @@ EOF
 ```bash
 pytest tests/test_mcp.py --collect-only
 # Should show test collection without errors
+
+# Verify no schema files were added
+find meta/schemas -name "*.json" -type f
+# Should only show files that existed before cleanup (if any)
 ```
 
 ### Step 9: Git Status Check
@@ -386,4 +484,24 @@ unzip /path/to/meta/archived/archive-v0.3.6a.zip -d recovery
 
 **Status**: ✅ CONFIRMED - READY TO EXECUTE
 **Decisions**: All removals confirmed - complete clean slate for v2
-**Next**: Execute cleanup steps 1-8, verify MCP tests, commit minimal foundation
+**Next**: Execute cleanup steps 1-9, verify MCP tests, commit minimal foundation
+
+---
+
+## 🔍 Pre-Execution Validation Checklist
+
+Before running cleanup, verify:
+- [ ] You understand: `labs/mcp/` stays completely untouched
+- [ ] You understand: NO schema files will be added to `meta/schemas/`
+- [ ] You understand: Only DELETE and 4 REWRITES - no other modifications
+- [ ] Archive verified: `ls -lh meta/archived/archive-v0.3.6a.zip` (~15MB)
+- [ ] On correct branch: `git branch` shows `dce-reset-dev`
+
+After execution, verify:
+- [ ] `git diff labs/mcp/` shows NO changes
+- [ ] `git diff mcp/` shows NO changes
+- [ ] `git diff tests/test_mcp.py` shows NO changes
+- [ ] `find meta/schemas -name "*.json" -type f` shows NO files (currently empty)
+- [ ] `pytest tests/test_mcp.py --collect-only` succeeds
+
+If ANY of the above fail, STOP and review what went wrong.
