@@ -69,7 +69,7 @@ bundle = load_schema_bundle(version="0.7.3")
 - ✅ Inline resolution (embeds all `$ref` dependencies)
 - ✅ Strict mode validation (fail-fast)
 - ✅ Batch validation (up to 50 assets)
-- ✅ TCP transport (`tcp://localhost:3000`)
+- ✅ TCP transport (`tcp://localhost:8765`)
 - ✅ Telemetry logging (structured JSONL)
 
 **Files**:
@@ -92,7 +92,7 @@ labs/mcp/tcp_client.py    # TCP transport to MCP server
 labs/transport.py          # Connection management utilities
 ```
 
-**MCP Endpoint**: `tcp://localhost:3000` (required, no fallback)
+**MCP Endpoint**: `tcp://localhost:8765` (required, no fallback)
 
 If MCP is unavailable, the client raises `MCPUnavailableError` immediately.  
 This ensures infrastructure failures are visible and addressed, not silently bypassed.
@@ -856,7 +856,7 @@ MCPUnavailableError  # MCP server unreachable (TCP connection failed)
 | `LABS_SCHEMA_VERSION` | Target schema version | `"0.7.4"` | ✅ |
 | `LABS_SCHEMA_RESOLUTION` | Resolution mode | `"inline"` | ✅ (forced) |
 | `LABS_MCP_LOG_PATH` | MCP telemetry path | `meta/output/labs/mcp.jsonl` | ❌ |
-| `MCP_ENDPOINT` | MCP server TCP endpoint | `tcp://localhost:3000` | ✅ (required) |
+| `MCP_ENDPOINT` | MCP server TCP endpoint | `tcp://localhost:8765` | ✅ (required) |
 | `MCP_MAX_BATCH` | Validation batch limit | `50` | ❌ |
 
 **Critical**: `MCP_ENDPOINT` must be a valid TCP endpoint. No fallback transport is supported.  
@@ -870,7 +870,7 @@ If the MCP server is unavailable, all validation operations will fail immediatel
 # .env.0_7_3 (example)
 LABS_SCHEMA_VERSION=0.7.3
 LABS_SCHEMA_RESOLUTION=inline
-MCP_ENDPOINT=tcp://localhost:3000
+MCP_ENDPOINT=tcp://localhost:8765
 LABS_MCP_LOG_PATH=meta/output/labs/mcp.jsonl
 
 # Optional: Azure OpenAI (if LLM generator used)
@@ -972,7 +972,7 @@ log_jsonl("meta/output/labs/generation.jsonl", telemetry_record)
 | **Schema** | MCP serves version | `fetch_schema(version=X)` returns `ok: True` |
 | | Inline resolution | Descriptor has `resolution: "inline"` |
 | | No local schemas | `find meta/schemas -name "*.json"` returns empty |
-| | MCP endpoint | MCP server running at `tcp://localhost:3000` |
+| | MCP endpoint | MCP server running at `tcp://localhost:8765` |
 | **Tests** | Infrastructure tests | `tests/v{VERSION}/test_schema_fetch.py` passes |
 | | Validation tests | `tests/v{VERSION}/test_validation.py` passes |
 | | Generator tests | `tests/v{VERSION}/test_generator.py` passes (if generator exists) |
@@ -1346,7 +1346,7 @@ Telemetry records in `meta/output/labs/v{VERSION}_generation.jsonl`:
 - **Fail-fast** infrastructure failures (no fallbacks, no silent errors)
 
 **Next Steps**:
-1. Ensure MCP server running at `tcp://localhost:3000`
+1. Ensure MCP server running at `tcp://localhost:8765`
 2. Follow `meta/prompts/standup_template.json` for 0.7.3 standup
 3. Implement TDD flow: test → generator → validate
 4. Keep telemetry separate from MCP schema contract
@@ -1440,7 +1440,8 @@ pytest tests/v0_7_3/ -v
 
 ```bash
 # Check MCP server (TCP endpoint required)
-curl -X POST http://localhost:3000/schema -d '{"name":"synesthetic-asset","version":"0.7.3","resolution":"inline"}'
+# Note: MCP uses JSON-RPC over raw TCP, not HTTP
+echo '{"jsonrpc":"2.0","id":1,"method":"list_schemas"}' | nc localhost 8765
 
 # If MCP unavailable, all Labs operations will fail with MCPUnavailableError
 # This is INTENTIONAL - infrastructure failures must be fixed, not bypassed
