@@ -10,6 +10,9 @@ help:
 	@echo "  make mcp-schema       - Fetch schema bundle (raw JSON-RPC)"
 	@echo "  make mcp-validate     - Test Labs MCP client (Python)"
 	@echo ""
+	@echo "Version 0.7.3 Standup:"
+	@echo "  make test-v0.7.3      - Run v0.7.3 validation tests (Phase 1)"
+	@echo ""
 	@echo "Testing:"
 	@echo "  make test             - Run full pytest suite"
 	@echo "  make test-mcp         - Run MCP-specific tests only"
@@ -57,6 +60,10 @@ test:
 # Run only MCP-related tests
 test-mcp:
 	pytest -v tests/test_mcp*.py tests/test_tcp.py tests/test_socket.py
+
+# Run version-specific tests
+test-v0.7.3:
+	pytest -v tests/v0_7_3/
 
 # Clean Python cache files
 clean:
