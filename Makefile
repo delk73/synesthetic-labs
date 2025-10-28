@@ -65,6 +65,10 @@ test-mcp:
 test-v0.7.3:
 	pytest -v tests/v0_7_3/
 
+# Run all tests (infrastructure + versions)
+test-all:
+	pytest -v
+
 # Clean Python cache files
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

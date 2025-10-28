@@ -2,11 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dce-reset-dev ]
   pull_request:
 
 jobs:
-  test:
+  test-mcp-infrastructure:
+    name: MCP Infrastructure Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,5 +17,24 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Run tests
+      - name: Run MCP infrastructure tests
         run: pytest tests/test_mcp*.py tests/test_labs_mcp_modes.py tests/test_socket.py tests/test_tcp.py -v
+
+  test-v0_7_3:
+    name: Schema Version 0.7.3 Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run v0.7.3 tests
+        run: pytest tests/v0_7_3/ -v
+        env:
+          LABS_SCHEMA_VERSION: "0.7.3"
+          LABS_SCHEMA_RESOLUTION: "inline"
+          MCP_ENDPOINT: "tcp://localhost:8765"
+
