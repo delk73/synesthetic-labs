@@ -16,6 +16,10 @@ def test_minimal_generator_produces_valid_asset():
     assert "$schema" in asset
     assert "name" in asset
     assert asset["name"] == "test_shader"
+    assert "shader" in asset
+    assert asset["shader"]["fragment_shader"]
+    assert "vec3" in asset["shader"]["fragment_shader"]
+    assert asset["meta_info"]["description"] == "test shader"
     
     # Validate via MCP
     client = MCPClient(schema_version="0.7.3")
@@ -30,6 +34,9 @@ def test_generator_sanitizes_names():
     
     # Name should be sanitized
     assert asset["name"] == "red_pulsing_shader_animated"
+    assert "shader" in asset
+    assert "pulse" in asset["shader"]["fragment_shader"].lower()
+    assert "red" in asset["shader"]["fragment_shader"].lower()
     
     # Should still validate
     client = MCPClient(schema_version="0.7.3")

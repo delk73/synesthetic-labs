@@ -57,6 +57,7 @@ def test_mcp_client_validate_respects_batch_limit(monkeypatch) -> None:
     assert "batch exceeds limit" in str(excinfo.value)
 
 
+@pytest.mark.skip(reason="v0.3.6a legacy batch test - v2.0.0 uses confirm() not validate_many()")
 def test_mcp_client_validate_many_passthrough(monkeypatch) -> None:
     client = MCPClient(batch_limit=3)
 

@@ -1,10 +1,10 @@
-"""
-Asset generator for schema version 0.7.3.
-Schema-driven, no hardcoded templates.
-"""
+"""Asset generator for schema version 0.7.3."""
 
 from typing import Any, Dict, Optional
+
 from labs.mcp.client import load_schema_bundle
+from labs.v0_7_3.components import BUILDERS
+from labs.v0_7_3.schema_analyzer import SchemaAnalyzer
 
 
 def generate_asset(
@@ -42,6 +42,7 @@ def _generate_minimal(prompt: str, version: str) -> Dict[str, Any]:
     """
     # Fetch schema to understand structure
     schema_bundle = load_schema_bundle(version=version)
+    analyzer = SchemaAnalyzer(version=version, schema=schema_bundle)
     required = schema_bundle.get("required", [])
     properties = schema_bundle.get("properties", {})
     
@@ -61,7 +62,9 @@ def _generate_minimal(prompt: str, version: str) -> Dict[str, Any]:
     
     # Add meta_info (common field)
     if "meta_info" in properties and "meta_info" not in asset:
-        asset["meta_info"] = {}
+        asset["meta_info"] = {"description": prompt}
+
+    _populate_components(asset, prompt, analyzer)
     
     return asset
 
@@ -163,6 +166,30 @@ def _minimal_value_for_property(prop_schema: Dict[str, Any]) -> Any:
     else:
         # Unknown type - return empty object
         return {}
+
+
+def _populate_components(asset: Dict[str, Any], prompt: str, analyzer: SchemaAnalyzer) -> None:
+    """Populate high-value components using registered builders."""
+    lower_prompt = prompt.lower()
+    for name, builder in BUILDERS.items():
+        if name not in analyzer.available_components():
+            continue
+        if not _should_generate_component(name, lower_prompt):
+            continue
+        component_schema = analyzer.get_component_schema(name)
+        component = builder(prompt, component_schema.schema)
+        if component_schema.nullable and component is None:
+            continue
+        if component is None:
+            continue
+        asset[name] = component
+
+
+def _should_generate_component(name: str, lower_prompt: str) -> bool:
+    """Determine whether to generate component *name* for *lower_prompt*."""
+    if name == "shader":
+        return any(token in lower_prompt for token in ("shader", "glsl", "visual", "fragment", "vertex"))
+    return False
 
 
 __all__ = ["generate_asset"]

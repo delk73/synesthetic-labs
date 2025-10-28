@@ -29,6 +29,8 @@ def test_complete_generation_flow():
     assert "$schema" in asset
     assert "0.7.3" in asset["$schema"]
     assert asset["name"] == "test_shader"
+    assert "shader" in asset
+    assert "fragcolor" in asset["shader"]["fragment_shader"].lower()
     
     # Step 5: Verify asset is pure (no telemetry)
     assert "trace_id" not in asset

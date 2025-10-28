@@ -29,6 +29,7 @@ help:
 	@echo "Testing:"
 	@echo "  make test             - Run full pytest suite"
 	@echo "  make test-mcp         - Run MCP-specific tests only"
+	@echo "  make preflight        - Run all checks before git push"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean            - Remove __pycache__ and .pyc files"
@@ -104,7 +105,7 @@ test:
 
 # Run only MCP-related tests
 test-mcp:
-	pytest -v tests/test_mcp*.py tests/test_tcp.py tests/test_socket.py
+	pytest -v tests/test_tcp.py tests/test_socket.py tests/test_labs_mcp_modes.py
 
 # Run version-specific tests
 test-v0.7.3:
@@ -113,6 +114,35 @@ test-v0.7.3:
 # Run all tests (infrastructure + versions)
 test-all:
 	pytest -v
+
+# === Preflight Checks ===
+
+# Pre-push validation suite
+preflight:
+	@echo "========================================"
+	@echo "   Synesthetic Labs Preflight Checks"
+	@echo "========================================"
+	@echo ""
+	@echo "1/5 Checking MCP connectivity..."
+	@$(MAKE) mcp-check
+	@echo ""
+	@echo "2/5 Running MCP infrastructure tests..."
+	@pytest tests/test_tcp.py tests/test_socket.py tests/test_labs_mcp_modes.py -q
+	@echo ""
+	@echo "3/5 Running v0.7.3 tests..."
+	@pytest tests/v0_7_3/ -q
+	@echo ""
+	@echo "4/5 Testing asset generation..."
+	@python3 -m labs.v0_7_3.cli "preflight test" > /dev/null && echo "✓ Generator working"
+	@echo ""
+	@echo "5/5 Checking for stray __pycache__..."
+	@$(MAKE) clean > /dev/null
+	@echo ""
+	@echo "========================================"
+	@echo "✅ All preflight checks passed!"
+	@echo "========================================"
+	@echo ""
+	@echo "Ready to push. Run: git push origin dce-reset-dev"
 
 # Clean Python cache files
 clean:
