@@ -369,5 +369,3 @@ touch labs/v0_7_3/components/__init__.py
 # 5. Verify
 make generate P='red shader'  # Should have shader content now
 ```
-
-Ready to proceed with Phase 7a?
