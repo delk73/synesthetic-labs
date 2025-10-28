@@ -1,8 +1,21 @@
 .PHONY: help mcp-check mcp-list mcp-schema mcp-validate test clean
 
+# Ensure Make is run from repository root
+MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+LABS_DIR := $(MAKEFILE_DIR)
+
+# Cross-platform netcat (nc -w on Linux, nc -G on macOS/BSD)
+NC := $(shell command -v nc 2>/dev/null || echo "nc-not-found")
+NC_TIMEOUT_FLAG := $(shell nc -h 2>&1 | grep -q '\-w' && echo '-w' || echo '-G')
+
 # Default target
 help:
 	@echo "Synesthetic Labs - MCP Verification Targets"
+	@echo ""
+	@echo "Asset Generation (v0.7.3):"
+	@echo "  make generate P='prompt'     - Generate asset from prompt"
+	@echo "  make generate P='prompt' O=file.json - Save to file"
+	@echo "  make generate-llm P='prompt' - Generate with Azure OpenAI"
 	@echo ""
 	@echo "MCP Health & Discovery:"
 	@echo "  make mcp-check        - Check if MCP server is reachable (raw TCP)"
@@ -24,29 +37,61 @@ help:
 	@echo "  MCP_HOST              - MCP server host (default: 127.0.0.1)"
 	@echo "  MCP_PORT              - MCP server port (default: 8765)"
 	@echo "  SCHEMA_VERSION        - Schema version (default: 0.7.3)"
+	@echo "  P                     - Prompt for generation"
+	@echo "  O                     - Output file (optional)"
 
 # MCP server host/port (override with: make mcp-check MCP_HOST=synesthetic-mcp-serve-1)
 MCP_HOST ?= 127.0.0.1
 MCP_PORT ?= 8765
 SCHEMA_VERSION ?= 0.7.3
 
+# Asset generation defaults
+P ?= minimal test asset
+O ?=
+
+# === Asset Generation ===
+
+# Generate asset (minimal, no LLM)
+generate:
+	@if [ -z "$(O)" ]; then \
+		python3 -m labs.v0_7_3.cli "$(P)"; \
+	else \
+		python3 -m labs.v0_7_3.cli "$(P)" -o "$(O)"; \
+		echo "✓ Saved to $(O)"; \
+	fi
+
+# Generate asset with LLM (Azure OpenAI)
+generate-llm:
+	@if [ -z "$(O)" ]; then \
+		python3 -m labs.v0_7_3.cli "$(P)" --llm; \
+	else \
+		python3 -m labs.v0_7_3.cli "$(P)" --llm -o "$(O)"; \
+		echo "✓ Saved to $(O)"; \
+	fi
+
+# Generate with telemetry logging
+generate-log:
+	@python3 -m labs.v0_7_3.cli "$(P)" --log
+
+# === MCP Health Checks ===
+
 # Check if MCP server is reachable
 mcp-check:
 	@echo "Checking MCP server at $(MCP_HOST):$(MCP_PORT)..."
-	@echo '{"jsonrpc":"2.0","id":1,"method":"list_schemas"}' | nc -w 2 $(MCP_HOST) $(MCP_PORT) > /dev/null 2>&1 \
+	@echo '{"jsonrpc":"2.0","id":1,"method":"list_schemas"}' | $(NC) $(NC_TIMEOUT_FLAG) 2 $(MCP_HOST) $(MCP_PORT) > /dev/null 2>&1 \
 		&& echo "✓ MCP server is responding" \
 		|| (echo "✗ MCP server unreachable - is it running?" && exit 1)
 
 # List available schemas
 mcp-list:
 	@echo "Fetching schema list from $(MCP_HOST):$(MCP_PORT)..."
-	@echo '{"jsonrpc":"2.0","id":1,"method":"list_schemas"}' | nc -w 2 $(MCP_HOST) $(MCP_PORT) | python3 -m json.tool
+	@echo '{"jsonrpc":"2.0","id":1,"method":"list_schemas"}' | $(NC) $(NC_TIMEOUT_FLAG) 2 $(MCP_HOST) $(MCP_PORT) | python3 -m json.tool 2>/dev/null || echo "✗ Invalid JSON response"
 
 # Fetch schema with inline resolution
 mcp-schema:
 	@echo "Fetching schema: synesthetic-asset version $(SCHEMA_VERSION) (inline resolution)"
 	@echo '{"jsonrpc":"2.0","id":2,"method":"get_schema","params":{"name":"synesthetic-asset","version":"$(SCHEMA_VERSION)","resolution":"inline"}}' \
-		| nc -w 2 $(MCP_HOST) $(MCP_PORT) | python3 -m json.tool
+		| $(NC) $(NC_TIMEOUT_FLAG) 2 $(MCP_HOST) $(MCP_PORT) | python3 -m json.tool 2>/dev/null || echo "✗ Invalid JSON response"
 
 # Test MCP validation endpoint (with Python - uses Labs MCP client)
 mcp-validate:
