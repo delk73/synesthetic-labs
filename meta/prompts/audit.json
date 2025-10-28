@@ -1,87 +1,94 @@
 {
-  "id": "labs-spec-v0.3.7-audit-r1",
+  "id": "labs-spec-v2.0.0-audit-r1",
   "type": "codex_audit_prompt",
-  "description": "Audit Synesthetic Labs v0.3.7 implementation against schema-bundle generation spec (0.7.3 lock, inline MCP resolution, template removal).",
+  "description": "Audit Synesthetic Labs v2.0.0 implementation against version-agnostic standup spec (MCP-driven, TCP-only, namespace isolation, TDD).",
   "input": {
-    "spec_version": "v0.3.7",
-    "spec_ref": "docs/labs_spec.md#synesthetic-labs--spec-v0.3.7-schema-bundle-generation--0-7-3-lock",
+    "spec_version": "v2.0.0",
+    "spec_ref": "docs/labs_spec.md#synesthetic-labs--specification-v2.0.0",
     "target_output": {
-      "files": ["meta/output/labs_state.md", "AGENTS.md"],
+      "files": ["meta/output/labs_state.md"],
       "format": "markdown",
       "must_write": true
     },
     "rules_source": "docs/labs_spec.md",
-    "ruleset": "schema-bundle generation loop, MCP inline schema caching, assembler/component schema mapping, Azure schema-binding, strict validation confirmation, structured logging"
+    "ruleset": "version-agnostic foundation, MCP schema authority, telemetry separation, TDD, TCP-only transport, namespace isolation"
   },
   "checks": [
     {
-      "id": "env-preload-v0.3.7",
-      "expect": "dotenv preload of Azure vars LABS_SCHEMA_VERSION, LABS_SCHEMA_RESOLUTION=inline, LABS_FAIL_FAST, LABS_EXTERNAL_ENGINE, LABS_LEGACY_TEMPLATES, AZURE_OPENAI_*; CLI flag precedence respected",
-      "files": ["labs/cli.py", "requirements.txt"],
-      "patterns": ["load_dotenv", "LABS_SCHEMA_VERSION", "LABS_SCHEMA_RESOLUTION", "LABS_FAIL_FAST", "LABS_EXTERNAL_ENGINE", "LABS_LEGACY_TEMPLATES", "AZURE_OPENAI_ENDPOINT", "python-dotenv"]
+      "id": "mcp-infrastructure-v2.0.0",
+      "expect": "MCPClient stable, proven infrastructure - TCP-only transport at tcp://localhost:8765, inline resolution forced, no stdio fallback",
+      "files": ["labs/mcp/client.py", "labs/mcp/tcp_client.py", "labs/mcp/exceptions.py"],
+      "patterns": ["class MCPClient", "TcpMCPValidator", "tcp://localhost:8765", "resolution=\"inline\"", "MCPUnavailableError", "not", "mcp_stdio"]
     },
     {
-      "id": "mcp-schema-bundle-fetch-v0.3.7",
-      "expect": "MCPClient.fetch_schema(..., resolution='inline') retrieves SynestheticAsset 0.7.3 and writes cached bundle to meta/schemas/SynestheticAsset_0_7_3.json",
-      "files": ["labs/mcp/client.py", "tests/test_mcp_schema_bundle.py"],
-      "patterns": ["fetch_schema", "resolution=\"inline\"", "\"0.7.3\"", "meta/schemas/SynestheticAsset_0_7_3.json", "write_text", "json.dump"]
+      "id": "schema-authority-v2.0.0",
+      "expect": "MCP is sole schema authority - fetch_schema() at runtime, load_schema_bundle() returns inline bundle, NO local schema storage in meta/schemas/",
+      "files": ["labs/mcp/client.py", "tests/test_mcp.py"],
+      "patterns": ["fetch_schema", "load_schema_bundle", "resolution='inline'", "get_schema_from_mcp", "not", "meta/schemas"]
     },
     {
-      "id": "schema-bundle-loader-v0.3.7",
-      "expect": "load_schema_bundle() helper returns cached inline schema bundle as JSON dict; fetches if missing",
-      "files": ["labs/mcp/client.py", "tests/test_mcp_schema_bundle.py"],
-      "patterns": ["def load_schema_bundle", "Path", "exists", "fetch_schema", "json.load"]
+      "id": "version-namespace-isolation-v2.0.0",
+      "expect": "Schema versions isolated in labs/v{VERSION}/ and tests/v{VERSION}/ namespaces - no cross-version imports",
+      "files": ["labs/", "tests/"],
+      "patterns": ["labs/v0_7_3/", "tests/v0_7_3/", "__init__.py", "not", "from labs.v0_7_3", "not", "from labs.v0_7_4"]
     },
     {
-      "id": "assembler-bundle-injection-v0.3.7",
-      "expect": "AssetAssembler accepts schema_bundle argument and passes subschema nodes to component factories (shader, tone, haptic, control, modulation)",
-      "files": ["labs/generator/assembler.py", "tests/test_assembler_bundle.py"],
-      "patterns": ["class AssetAssembler", "schema_bundle", "subschema", "factory", "component"]
+      "id": "telemetry-separation-v2.0.0",
+      "expect": "Telemetry separate from validation contract - assets sent to MCP contain ONLY schema fields, telemetry wraps validated assets",
+      "files": ["labs/mcp/client.py", "tests/test_mcp.py"],
+      "patterns": ["confirm", "strict=True", "validate", "not", "trace_id", "not", "engine", "not", "deployment"]
     },
     {
-      "id": "component-schema-builders-v0.3.7",
-      "expect": "Component builders derive payloads from subschema (required, enum, properties, additionalProperties) instead of static dicts",
-      "files": ["labs/generator/components/", "tests/test_component_builders.py"],
-      "patterns": ["required", "enum", "properties", "additionalProperties", "infer_default_for_type"]
+      "id": "tdd-validation-tests-v2.0.0",
+      "expect": "Test-driven development - validation tests written FIRST, validate against live MCP (not mocks)",
+      "files": ["tests/v0_7_3/test_validation.py"],
+      "patterns": ["def test_", "MCPClient", "confirm", "strict=True", "assert result[\"ok\"]", "not", "@patch", "not", "mock"]
     },
     {
-      "id": "azure-schema-binding-v0.3.7",
-      "expect": "AzureOpenAIGenerator uses json_schema response_format with strict=True and injected MCP inline schema 0.7.3",
-      "files": ["labs/generator/external.py", "tests/test_external_generator.py"],
-      "patterns": ["AzureOpenAI", "response_format", "json_schema", "\"strict\": True", "\"0.7.3\"", "load_schema_bundle"]
+      "id": "tcp-transport-only-v2.0.0",
+      "expect": "TCP transport only - MCP_ENDPOINT=tcp://localhost:8765 required, no stdio fallback, MCPUnavailableError on connection failure",
+      "files": ["labs/mcp/tcp_client.py", "docs/labs_spec.md"],
+      "patterns": ["tcp://localhost:8765", "MCPUnavailableError", "socket.create_connection", "not", "stdio", "not", "fallback"]
     },
     {
-      "id": "validation-confirmation-v0.3.7",
-      "expect": "MCPClient.confirm(asset, strict=True) used post-generation; no normalization, _normalize, or _fill_empty_sections calls present",
-      "files": ["labs/mcp/client.py", "labs/cli.py", "tests/test_validation_strict.py"],
-      "patterns": ["confirm", "strict=True", "not in", "_normalize", "_fill_empty_sections"]
+      "id": "environment-config-v2.0.0",
+      "expect": "Version-specific .env.{VERSION} files - LABS_SCHEMA_VERSION, MCP_ENDPOINT, LABS_SCHEMA_RESOLUTION=inline (forced)",
+      "files": [".env.0_7_3", "labs/mcp/client.py"],
+      "patterns": ["LABS_SCHEMA_VERSION", "MCP_ENDPOINT=tcp://localhost:8765", "LABS_SCHEMA_RESOLUTION", "_normalise_resolution", "forcing inline"]
     },
     {
-      "id": "critic-alignment-v0.3.7",
-      "expect": "CriticAgent gates any legacy field injection or review rules based on schema bundle; disabled by default",
-      "files": ["labs/critic/", "tests/test_critic_alignment.py"],
-      "patterns": ["CriticAgent", "schema_bundle", "legacy", "if", "LABS_LEGACY_TEMPLATES"]
+      "id": "makefile-verification-v2.0.0",
+      "expect": "Makefile targets for MCP verification - mcp-check, mcp-list, mcp-schema, mcp-validate, test-v0.7.3",
+      "files": ["Makefile"],
+      "patterns": ["mcp-check", "mcp-list", "mcp-schema", "mcp-validate", "test-v0.7.3", "nc localhost 8765", "pytest tests/v0_7_3"]
     },
     {
-      "id": "regression-test-v0.3.7",
-      "expect": "tests/test_generator_schema.py executes GeneratorAgent.propose(prompt) then MCPClient.confirm(strict=True); fails on bundle drift",
-      "files": ["tests/test_generator_schema.py"],
-      "patterns": ["GeneratorAgent", "propose", "confirm", "strict=True", "assert"]
+      "id": "spec-ssot-v2.0.0",
+      "expect": "labs_spec.md v2.0.0 is SSOT - version-agnostic foundation, 7-phase standup process, architectural principles, exit criteria",
+      "files": ["docs/labs_spec.md"],
+      "patterns": ["version: v2.0.0", "status: authoritative-ssot", "Phase 1:", "Phase 2:", "Phase 3:", "Exit Criteria", "Architectural Principles"]
     },
     {
-      "id": "structured-logging-v0.3.7",
-      "expect": "Structured logs include engine, schema_id, schema_version ('0.7.3'), schema_resolution='inline', deployment, trace_id, validation_status",
-      "files": ["labs/logging.py", "labs/generator/external.py"],
-      "patterns": ["external.jsonl", "json.dumps", "schema_id", "\"0.7.3\"", "schema_resolution", "\"inline\"", "trace_id", "validation_status"]
+      "id": "cleanup-complete-v2.0.0",
+      "expect": "v0.3.6a cleanup complete - labs/generator/, labs/agents/, labs/experimental/, labs/cli.py deleted; only MCP infrastructure remains",
+      "files": ["labs/"],
+      "patterns": ["not", "labs/generator", "not", "labs/agents", "not", "labs/experimental", "not", "labs/cli.py", "labs/mcp/", "labs/logging.py", "labs/core.py"]
     }
   ],
   "report": {
-    "sections": ["Summary of repo state", "Alignment (Rule → Status → Evidence)", "Top gaps & fixes", "Recommendations"],
-    "status_values": ["Present", "Missing", "Divergent", "Deferred"]
+    "sections": [
+      "Summary: v2.0.0 foundation state and readiness",
+      "Architecture: Alignment with v2.0.0 principles",
+      "Phase 1 Status: Test infrastructure for v0_7_3",
+      "Next Steps: Phase 2-6 standup roadmap",
+      "Gaps & Recommendations"
+    ],
+    "status_values": ["✅ Present", "❌ Missing", "⚠️ Divergent", "⏳ In Progress"]
   },
   "exit_criteria": [
-    "meta/output/labs_state.md non-empty",
-    "AGENTS.md overwritten (non-empty)",
-    "Every rule has a Present/Missing/Divergent/Deferred status with ≤3 evidence lines"
+    "meta/output/labs_state.md written with v2.0.0 assessment",
+    "Every architectural principle has ✅/❌/⚠️/⏳ status",
+    "Phase 1 completion verified (tests/v0_7_3/ exists and passing)",
+    "Clear roadmap for Phase 2-6 provided"
   ]
 }
