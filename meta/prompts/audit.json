@@ -1,7 +1,7 @@
 {
-  "id": "labs-spec-v2.0.0-audit-r1",
+  "id": "labs-spec-v2.0.0-audit-r2",
   "type": "codex_audit_prompt",
-  "description": "Audit Synesthetic Labs v2.0.0 implementation against version-agnostic standup spec (MCP-driven, TCP-only, namespace isolation, TDD).",
+  "description": "Post-implementation audit of Synesthetic Labs v2.0.0 Phases 1-6 completion (v0.7.3 standup) - verify all architectural principles and exit criteria met.",
   "input": {
     "spec_version": "v2.0.0",
     "spec_ref": "docs/labs_spec.md#synesthetic-labs--specification-v2.0.0",
@@ -69,6 +69,42 @@
       "patterns": ["version: v2.0.0", "status: authoritative-ssot", "Phase 1:", "Phase 2:", "Phase 3:", "Exit Criteria", "Architectural Principles"]
     },
     {
+      "id": "phase1-tests-complete-v2.0.0",
+      "expect": "Phase 1 complete - tests/v0_7_3/ exists with test_validation.py (4 tests), test_generator.py (5 tests), test_telemetry.py (6 tests), test_integration.py (8 tests)",
+      "files": ["tests/v0_7_3/test_validation.py", "tests/v0_7_3/test_generator.py", "tests/v0_7_3/test_telemetry.py", "tests/v0_7_3/test_integration.py"],
+      "patterns": ["def test_", "pytest", "assert", "MCPClient", "23 tests total"]
+    },
+    {
+      "id": "phase2-schema-integration-v2.0.0",
+      "expect": "Phase 2 complete - MCP serves 0.7.3 schema, inline resolution working, schema bundle loaded successfully",
+      "files": ["tests/v0_7_3/test_validation.py"],
+      "patterns": ["test_mcp_serves_schema", "test_inline_resolution", "assert schema", "assert result['ok']"]
+    },
+    {
+      "id": "phase3-generator-complete-v2.0.0",
+      "expect": "Phase 3 complete - labs/v0_7_3/generator.py with generate_asset(), minimal generation working, Azure OpenAI structure present",
+      "files": ["labs/v0_7_3/generator.py", "tests/v0_7_3/test_generator.py"],
+      "patterns": ["def generate_asset", "AZURE_OPENAI_ENDPOINT", "test_minimal_generation", "test_azure_structure"]
+    },
+    {
+      "id": "phase4-telemetry-complete-v2.0.0",
+      "expect": "Phase 4 complete - labs/v0_7_3/telemetry.py with wrap_with_telemetry(), separation validated, JSONL logging working",
+      "files": ["labs/v0_7_3/telemetry.py", "tests/v0_7_3/test_telemetry.py"],
+      "patterns": ["def wrap_with_telemetry", "trace_id", "test_separation", "test_jsonl_logging"]
+    },
+    {
+      "id": "phase5-ci-complete-v2.0.0",
+      "expect": "Phase 5 complete - .github/workflows/ci.yml with test-v0_7_3 job, MCP infrastructure tests, version-specific test isolation",
+      "files": [".github/workflows/ci.yml"],
+      "patterns": ["test-v0_7_3", "pytest tests/v0_7_3", "test-mcp", "strategy", "matrix"]
+    },
+    {
+      "id": "phase6-docs-complete-v2.0.0",
+      "expect": "Phase 6 complete - labs/v0_7_3/README.md, labs/v0_7_3/cli.py, Makefile with generate/test targets",
+      "files": ["labs/v0_7_3/README.md", "labs/v0_7_3/cli.py", "Makefile"],
+      "patterns": ["## API Reference", "def main", "argparse", "generate:", "test-v0.7.3:"]
+    },
+    {
       "id": "cleanup-complete-v2.0.0",
       "expect": "v0.3.6a cleanup complete - labs/generator/, labs/agents/, labs/experimental/, labs/cli.py deleted; only MCP infrastructure remains",
       "files": ["labs/"],
@@ -77,18 +113,26 @@
   ],
   "report": {
     "sections": [
-      "Summary: v2.0.0 foundation state and readiness",
-      "Architecture: Alignment with v2.0.0 principles",
-      "Phase 1 Status: Test infrastructure for v0_7_3",
-      "Next Steps: Phase 2-6 standup roadmap",
-      "Gaps & Recommendations"
+      "Summary: Phases 1-6 completion status for v0.7.3",
+      "Architecture: Compliance with v2.0.0 principles",
+      "Phase 1: Test infrastructure (tests/v0_7_3/)",
+      "Phase 2: Schema integration (MCP authority)",
+      "Phase 3: Generator implementation (minimal + Azure structure)",
+      "Phase 4: Telemetry layer (separation validated)",
+      "Phase 5: CI integration (GitHub Actions)",
+      "Phase 6: Documentation (README, CLI, Makefile)",
+      "Test Results: Pass rate and coverage",
+      "Known Limitations: Minimal asset generation (Phase 7 gap)",
+      "Recommendations: Phase 7 component builders needed"
     ],
-    "status_values": ["✅ Present", "❌ Missing", "⚠️ Divergent", "⏳ In Progress"]
+    "status_values": ["✅ Complete", "❌ Missing", "⚠️ Partial", "⏳ In Progress"]
   },
   "exit_criteria": [
-    "meta/output/labs_state.md written with v2.0.0 assessment",
-    "Every architectural principle has ✅/❌/⚠️/⏳ status",
-    "Phase 1 completion verified (tests/v0_7_3/ exists and passing)",
-    "Clear roadmap for Phase 2-6 provided"
+    "meta/output/labs_state.md written with Phases 1-6 completion assessment",
+    "Every architectural principle verified with ✅/❌/⚠️ status",
+    "All 6 phases validated against spec exit criteria",
+    "Test pass rate reported (22/23 expected)",
+    "Phase 7 gap identified (minimal assets, no component content)",
+    "Recommendations provided for Phase 7 implementation"
   ]
 }
