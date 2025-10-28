@@ -90,39 +90,40 @@ class SchemaAnalyzer:
             if entry.get("type") == "null":
                 nullable = True
                 continue
-            fragment = self._resolve_fragment(entry)
+            fragment = self._resolve_node(entry, root=self._root)
             if resolved is None:
                 resolved = fragment
             else:
                 resolved = self._merge_all_of(resolved, fragment)
 
         if resolved is None:
-            resolved = self._resolve_fragment(candidate)
+            resolved = self._resolve_node(candidate, root=self._root)
 
         if not isinstance(resolved, Mapping):
             raise TypeError("resolved schema must be a mapping")
 
-        return copy.deepcopy(resolved), nullable
+        return resolved, nullable
 
-    def _resolve_fragment(self, fragment: Mapping[str, Any]) -> JsonDict:
-        ref = fragment.get("$ref")
-        if isinstance(ref, str):
-            return self._resolve_ref(ref)
-        if "allOf" in fragment:
-            combined: JsonDict | None = None
-            for entry in fragment["allOf"]:
-                if not isinstance(entry, Mapping):
+    def _resolve_node(self, node: Any, *, root: Mapping[str, Any]) -> Any:
+        if isinstance(node, Mapping):
+            ref = node.get("$ref")
+            if isinstance(ref, str):
+                target, target_root = self._resolve_ref_with_root(ref, root)
+                return self._resolve_node(target, root=target_root)
+            resolved: Dict[str, Any] = {}
+            for key, value in node.items():
+                if key == "$ref":
                     continue
-                resolved = self._resolve_fragment(entry)
-                combined = resolved if combined is None else self._merge_all_of(combined, resolved)
-            if combined is None:
-                raise ValueError("unable to resolve allOf fragment")
-            return combined
-        return copy.deepcopy(fragment)
+                resolved[key] = self._resolve_node(value, root=root)
+            return resolved
+        if isinstance(node, list):
+            return [self._resolve_node(item, root=root) for item in node]
+        return copy.deepcopy(node)
 
-    def _resolve_ref(self, ref: str) -> JsonDict:
+    def _resolve_ref_with_root(self, ref: str, root: Mapping[str, Any]) -> Tuple[JsonDict, Mapping[str, Any]]:
         if ref.startswith("#"):
-            return self._resolve_local_ref(ref)
+            fragment = self._resolve_pointer(root, ref)
+            return fragment, root
         parsed = urlparse(ref)
         if not parsed.path:
             raise ValueError(f"unsupported schema reference: {ref}")
@@ -131,15 +132,26 @@ class SchemaAnalyzer:
             raise ValueError(f"schema filename missing in reference: {ref}")
         if schema_name.endswith(".schema.json"):
             schema_name = schema_name[: -len(".schema.json")]
-        return load_schema_bundle(schema_name=schema_name, version=self._version)
+        remote = load_schema_bundle(schema_name=schema_name, version=self._version)
+        fragment = parsed.fragment
+        if fragment:
+            pointer = f"#{fragment if fragment.startswith('/') else '/' + fragment}"
+            resolved = self._resolve_pointer(remote, pointer)
+        else:
+            resolved = remote
+        return resolved, remote
 
     def _resolve_local_ref(self, pointer: str) -> JsonDict:
+        return self._resolve_pointer(self._root, pointer)
+
+    @staticmethod
+    def _resolve_pointer(root: Mapping[str, Any], pointer: str) -> JsonDict:
         if pointer == "#" or pointer == "":
-            return copy.deepcopy(self._root)
+            return copy.deepcopy(root)
         if pointer.startswith("#/"):
             pointer = pointer[2:]
         tokens = [token.replace("~1", "/").replace("~0", "~") for token in pointer.split("/") if token]
-        target: Any = self._root
+        target: Any = root
         for token in tokens:
             if isinstance(target, Mapping):
                 target = target.get(token)

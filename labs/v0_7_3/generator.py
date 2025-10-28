@@ -4,6 +4,8 @@ from typing import Any, Dict, Optional
 
 from labs.mcp.client import load_schema_bundle
 from labs.v0_7_3.components import BUILDERS
+from labs.v0_7_3.llm import llm_decompose_prompt, llm_generate_component
+from labs.v0_7_3.prompt_parser import PromptSemantics, parse_prompt
 from labs.v0_7_3.schema_analyzer import SchemaAnalyzer
 
 
@@ -74,54 +76,128 @@ def _generate_with_azure(prompt: str, version: str) -> Dict[str, Any]:
     Generate asset via Azure OpenAI with structured output.
     Schema bundle injected as constraint.
     """
-    import os
-    from openai import AzureOpenAI
     import json
-    
+    import os
+
+    from openai import AzureOpenAI
+
+    semantics = parse_prompt(prompt)
     # Check credentials
     if not os.getenv("AZURE_OPENAI_API_KEY"):
         raise ValueError("AZURE_OPENAI_API_KEY not set - cannot use Azure LLM")
-    
+
     # Fetch live schema from MCP
     schema_bundle = load_schema_bundle(version=version)
-    
+    analyzer = SchemaAnalyzer(version=version, schema=schema_bundle)
+    required = schema_bundle.get("required", [])
+    properties = schema_bundle.get("properties", {})
+
     # Initialize Azure client
     client = AzureOpenAI(
         api_key=os.getenv("AZURE_OPENAI_API_KEY"),
         azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
         api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
     )
-    
+    model_name = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
     # Format version for schema name (underscores, not dots)
     schema_name = f"SynestheticAsset_{version.replace('.', '_')}"
-    
-    # Generate with structured output
+
+    # Base asset structure
+    asset: Dict[str, Any] = {
+        "$schema": f"https://delk73.github.io/synesthetic-schemas/schema/{version}/synesthetic-asset.schema.json"
+    }
+    for field in required:
+        if field == "name":
+            asset["name"] = _sanitize_name(prompt)
+        elif field in properties:
+            asset[field] = _minimal_value_for_property(properties[field])
+    if "meta_info" in properties:
+        asset.setdefault("meta_info", {"description": prompt, "source": "azure"})
+
+    # Stage 1: semantic decomposition
+    try:
+        plan = llm_decompose_prompt(client, model=model_name, prompt=prompt)
+    except Exception as exc:  # pragma: no cover - network error fallback
+        plan = {
+            "modality": semantics.modality,
+            "primary_component": {
+                "type": semantics.modality,
+                "characteristics": list(semantics.tags),
+            },
+            "suggested_tags": list(semantics.tags),
+            "constraints": semantics.to_dict(),
+            "fallback_reason": str(exc),
+        }
+
+    # Stage 2: component-oriented generation with fallback builders
+    for name, builder in BUILDERS.items():
+        if name not in analyzer.available_components():
+            continue
+        component_schema = analyzer.get_component_schema(name)
+        candidate: Any = None
+        try:
+            candidate = llm_generate_component(
+                client,
+                model=model_name,
+                component_name=name,
+                subschema=component_schema.schema,
+                prompt=prompt,
+                plan=plan,
+                fallback_semantics=semantics,
+            )
+        except Exception:  # pragma: no cover - azure fallback
+            candidate = None
+
+        if candidate is None or candidate == {}:
+            candidate = builder(prompt, component_schema.schema, semantics=semantics)
+
+        # Ensure component is present even if nullable
+        if candidate is None:
+            continue
+        asset[name] = candidate
+
+    # LLM may add extra hints for meta info
+    if "meta_info" in asset and isinstance(asset["meta_info"], dict):
+        meta = asset["meta_info"]
+        tags = set(meta.get("tags", []))
+        for tag in plan.get("suggested_tags", []):
+            if isinstance(tag, str):
+                tags.add(tag)
+        if tags:
+            meta["tags"] = sorted(tags)
+        asset["meta_info"] = meta
+
+    # Validate via Azure structured output if requested
     response = client.chat.completions.create(
-        model=os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini"),
+        model=model_name,
         messages=[
             {
                 "role": "system",
-                "content": "You are a synesthetic asset generator. Generate JSON conforming to the schema."
+                "content": (
+                    "You ensure the provided synesthetic asset matches the schema. "
+                    "Return a corrected asset if needed."
+                ),
             },
             {
                 "role": "user",
-                "content": prompt
-            }
+                "content": json.dumps(asset, indent=2),
+            },
         ],
         response_format={
             "type": "json_schema",
             "json_schema": {
                 "name": schema_name,
                 "schema": schema_bundle,
-                "strict": True
-            }
+                "strict": True,
+            },
         },
-        temperature=0  # Deterministic
+        temperature=0,
     )
-    
-    # Parse generated JSON
-    asset = json.loads(response.choices[0].message.content)
-    return asset
+
+    final_asset = json.loads(response.choices[0].message.content or "{}")
+    if not isinstance(final_asset, dict):
+        raise ValueError("Azure validation response must be a JSON object")
+    return final_asset
 
 
 def _sanitize_name(prompt: str) -> str:
@@ -170,14 +246,15 @@ def _minimal_value_for_property(prop_schema: Dict[str, Any]) -> Any:
 
 def _populate_components(asset: Dict[str, Any], prompt: str, analyzer: SchemaAnalyzer) -> None:
     """Populate high-value components using registered builders."""
-    lower_prompt = prompt.lower()
+    semantics = parse_prompt(prompt)
+
     for name, builder in BUILDERS.items():
         if name not in analyzer.available_components():
             continue
-        if not _should_generate_component(name, lower_prompt):
+        if not _should_generate_component(name, semantics):
             continue
         component_schema = analyzer.get_component_schema(name)
-        component = builder(prompt, component_schema.schema)
+        component = builder(prompt, component_schema.schema, semantics=semantics)
         if component_schema.nullable and component is None:
             continue
         if component is None:
@@ -185,10 +262,20 @@ def _populate_components(asset: Dict[str, Any], prompt: str, analyzer: SchemaAna
         asset[name] = component
 
 
-def _should_generate_component(name: str, lower_prompt: str) -> bool:
-    """Determine whether to generate component *name* for *lower_prompt*."""
+def _should_generate_component(name: str, semantics: PromptSemantics) -> bool:
+    """Determine whether to generate component *name* for parsed *semantics*."""
     if name == "shader":
-        return any(token in lower_prompt for token in ("shader", "glsl", "visual", "fragment", "vertex"))
+        return True
+    if name == "tone":
+        return semantics.modality in {"tone", "modulation"} or semantics.frequency_hz is not None
+    if name == "haptic":
+        return semantics.modality == "haptic" or "vibration" in semantics.raw.lower()
+    if name == "control":
+        return True
+    if name == "modulations":
+        return semantics.tempo_bpm is not None or "pulse" in semantics.effects or "heartbeat" in semantics.raw.lower()
+    if name == "rule_bundle":
+        return semantics.tempo_bpm is not None or semantics.effects != ()
     return False
 
 

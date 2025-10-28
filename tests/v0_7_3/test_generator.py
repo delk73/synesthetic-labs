@@ -44,6 +44,25 @@ def test_generator_sanitizes_names():
     assert result["ok"] is True
 
 
+def test_generator_populates_multimodal_components():
+    """Generator populates tone, haptic, control, and modulations when requested."""
+    prompt = "red pulsing shader with 60 BPM heartbeat rhythm, ambient tone at 440Hz and haptic vibration"
+    asset = generate_asset(prompt, use_llm=False)
+
+    assert "tone" in asset
+    assert asset["tone"]["synth"]["type"].startswith("Tone.")
+    assert "haptic" in asset
+    assert asset["haptic"]["device"]["options"]
+    assert "control" in asset
+    assert "modulations" in asset
+    assert isinstance(asset["modulations"], list)
+    assert asset["modulations"][0]["frequency"] > 0
+
+    client = MCPClient(schema_version="0.7.3")
+    result = client.confirm(asset, strict=True)
+    assert result["ok"] is True
+
+
 def test_generator_includes_schema_field():
     """Generated assets include $schema field."""
     asset = generate_asset("test", use_llm=False)

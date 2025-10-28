@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, Sequence, Tuple
 
+from labs.v0_7_3.prompt_parser import PromptSemantics, parse_prompt
+
 
 ColorVector = Tuple[float, float, float]
 
@@ -46,7 +48,12 @@ void main() {
 """
 
 
-def build_shader(prompt: str, subschema: Dict[str, Any]) -> Dict[str, Any]:
+def build_shader(
+    prompt: str,
+    subschema: Dict[str, Any],
+    *,
+    semantics: PromptSemantics | None = None,
+) -> Dict[str, Any]:
     """
     Generate a shader component that conforms to the provided *subschema*.
 
@@ -61,9 +68,11 @@ def build_shader(prompt: str, subschema: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(properties, dict):
         properties = {}
 
-    color_name, color_vec = _extract_dominant_color(prompt)
-    effect = _infer_effect(prompt)
-    tags = _derive_tags(prompt, color_name, effect)
+    semantics = semantics or parse_prompt(prompt)
+
+    color_name, color_vec = _extract_dominant_color(semantics)
+    effect = _infer_effect(semantics)
+    tags = _derive_tags(prompt, semantics, color_name, effect)
 
     shader: Dict[str, Any] = {}
 
@@ -80,9 +89,16 @@ def build_shader(prompt: str, subschema: Dict[str, Any]) -> Dict[str, Any]:
         shader["description"] = _build_description(prompt, color_name, effect)
 
     if "meta_info" in properties:
-        meta_info: Dict[str, Any] = {"source_prompt": prompt}
+        meta_info: Dict[str, Any] = {
+            "source_prompt": prompt,
+            "tags": list(tags) if tags else [],
+        }
+        if semantics.mood:
+            meta_info["mood"] = semantics.mood
+        if semantics.intensity:
+            meta_info["intensity"] = semantics.intensity
         if tags:
-            meta_info["tags"] = tags
+            meta_info["tags"] = list(tags)
         shader["meta_info"] = meta_info
 
     if "uniforms" in properties:
@@ -103,24 +119,34 @@ def build_shader(prompt: str, subschema: Dict[str, Any]) -> Dict[str, Any]:
 
 # Internal helpers -----------------------------------------------------
 
-def _extract_dominant_color(prompt: str) -> Tuple[str | None, ColorVector]:
-    lowered = prompt.lower()
+def _extract_dominant_color(semantics: PromptSemantics) -> Tuple[str | None, ColorVector]:
+    for name in semantics.colors:
+        if name in _COLOR_TABLE:
+            return name, _COLOR_TABLE[name]
+    lowered = semantics.raw.lower()
     for name, vector in _COLOR_TABLE.items():
         if name in lowered:
             return name, vector
     return None, (0.8, 0.8, 0.8)
 
 
-def _infer_effect(prompt: str) -> str:
-    lowered = prompt.lower()
+def _infer_effect(semantics: PromptSemantics) -> str:
+    if semantics.effects:
+        return semantics.effects[0]
+    lowered = semantics.raw.lower()
     for keyword, effect in _EFFECT_KEYWORDS.items():
         if keyword in lowered:
             return effect
     return "static"
 
 
-def _derive_tags(prompt: str, color: str | None, effect: str) -> Sequence[str]:
-    tags = []
+def _derive_tags(
+    prompt: str,
+    semantics: PromptSemantics,
+    color: str | None,
+    effect: str,
+) -> Sequence[str]:
+    tags = list(semantics.tags)
     if color:
         tags.append(color)
     if effect != "static":
@@ -130,7 +156,13 @@ def _derive_tags(prompt: str, color: str | None, effect: str) -> Sequence[str]:
     if "glsl" in prompt.lower():
         tags.append("glsl")
     seen = set()
-    return [tag for tag in tags if not (tag in seen or seen.add(tag))]
+    unique = []
+    for tag in tags:
+        if tag in seen:
+            continue
+        seen.add(tag)
+        unique.append(tag)
+    return unique
 
 
 _NAME_SANITISER = re.compile(r"[^a-z0-9_]+")

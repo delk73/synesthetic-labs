@@ -1,0 +1,135 @@
+"""Azure OpenAI helpers for component-oriented generation (schema v0.7.3)."""
+
+from __future__ import annotations
+
+import json
+from typing import Any, Dict, Mapping, Optional
+
+from labs.v0_7_3.prompt_parser import PromptSemantics, parse_prompt
+
+PromptPlan = Dict[str, Any]
+
+_DECOMPOSITION_SCHEMA: Dict[str, Any] = {
+    "name": "SynestheticPromptPlan",
+    "schema": {
+        "type": "object",
+        "properties": {
+            "modality": {
+                "type": "string",
+                "enum": ["shader", "tone", "haptic", "control", "mixed"],
+            },
+            "primary_component": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string"},
+                    "characteristics": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": ["type", "characteristics"],
+            },
+            "suggested_tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "default": [],
+            },
+            "constraints": {
+                "type": "object",
+                "additionalProperties": True,
+                "default": {},
+            },
+        },
+        "required": ["modality", "primary_component", "suggested_tags"],
+    },
+}
+
+
+def llm_decompose_prompt(
+    client: Any,
+    *,
+    model: str,
+    prompt: str,
+) -> PromptPlan:
+    """Request semantic decomposition for *prompt* via Azure OpenAI."""
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You analyse creative prompts for synesthetic assets and propose "
+                    "component characteristics and constraints."
+                ),
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": _DECOMPOSITION_SCHEMA,
+        },
+        temperature=0,
+    )
+    payload = response.choices[0].message.content or "{}"
+    plan = json.loads(payload)
+    if not isinstance(plan, dict):
+        raise ValueError("LLM decomposition payload must be a JSON object")
+    return plan
+
+
+def llm_generate_component(
+    client: Any,
+    *,
+    model: str,
+    component_name: str,
+    subschema: Mapping[str, Any],
+    prompt: str,
+    plan: PromptPlan,
+    fallback_semantics: Optional[PromptSemantics] = None,
+) -> Dict[str, Any]:
+    """Call Azure OpenAI to generate a component matching *subschema*."""
+    schema_name = f"Synesthetic_{component_name.title().replace('_', '')}"
+    semantics = fallback_semantics or parse_prompt(prompt)
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You generate structured component JSON for synesthetic assets. "
+                "Strictly follow the provided JSON schema."
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "prompt": prompt,
+                    "component": component_name,
+                    "plan": plan,
+                    "semantics": semantics.to_dict(),
+                },
+                indent=2,
+            ),
+        },
+    ]
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        response_format={
+            "type": "json_schema",
+            "json_schema": {"name": schema_name, "schema": subschema},
+        },
+        temperature=0.2,
+    )
+    payload = response.choices[0].message.content or "{}"
+    data = json.loads(payload)
+    if not isinstance(data, dict) and not isinstance(data, list):
+        raise ValueError("LLM component response must be a JSON object or array")
+    return data
+
+
+__all__ = ["PromptPlan", "llm_decompose_prompt", "llm_generate_component"]
