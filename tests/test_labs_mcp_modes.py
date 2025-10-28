@@ -57,24 +57,6 @@ def test_mcp_client_validate_respects_batch_limit(monkeypatch) -> None:
     assert "batch exceeds limit" in str(excinfo.value)
 
 
-@pytest.mark.skip(reason="v0.3.6a legacy batch test - v2.0.0 uses confirm() not validate_many()")
-def test_mcp_client_validate_many_passthrough(monkeypatch) -> None:
-    client = MCPClient(batch_limit=3)
-
-    def fake_validate_many(payload: List[dict], *, strict: bool = True) -> List[dict]:
-        return [
-            {"ok": True, "item": entry.get("asset_id") or entry.get("name")}
-            for entry in payload
-        ]
-
-    monkeypatch.setattr("mcp.core.validate_many", fake_validate_many)
-
-    assets = [_dummy_asset("alpha"), _dummy_asset("beta")]
-    results = client.validate(assets, strict=True)
-    items = [item["item"] for item in results]
-    assert items == ["alpha", "beta"] or items == ["Asset alpha", "Asset beta"]
-
-
 def test_mcp_client_confirm_strict_failure(monkeypatch) -> None:
     client = MCPClient()
 
