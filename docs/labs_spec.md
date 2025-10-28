@@ -69,8 +69,7 @@ bundle = load_schema_bundle(version="0.7.3")
 - ✅ Inline resolution (embeds all `$ref` dependencies)
 - ✅ Strict mode validation (fail-fast)
 - ✅ Batch validation (up to 50 assets)
-- ✅ TCP transport (primary, `localhost:3000`)
-- ✅ Stdio transport (fallback)
+- ✅ TCP transport (`tcp://localhost:3000`)
 - ✅ Telemetry logging (structured JSONL)
 
 **Files**:
@@ -78,7 +77,7 @@ bundle = load_schema_bundle(version="0.7.3")
 labs/mcp/
 ├── client.py          # Main MCPClient class, load_schema_bundle()
 ├── validate.py        # Local validation logic
-├── tcp_client.py      # TCP transport
+├── tcp_client.py      # TCP transport implementation
 ├── socket_main.py     # Socket helpers
 ├── exceptions.py      # MCPClientError, MCPValidationError, MCPUnavailableError
 └── __main__.py        # CLI entry point
@@ -86,16 +85,24 @@ labs/mcp/
 
 ### 1.2 · Transport Layer
 
+**TCP Only** - Service-oriented architecture requires reliable network transport.
+
 ```
-labs/transport.py      # Connection management utilities
-labs/mcp_stdio.py      # Stdio transport, build_validator_from_env()
+labs/mcp/tcp_client.py    # TCP transport to MCP server
+labs/transport.py          # Connection management utilities
 ```
+
+**MCP Endpoint**: `tcp://localhost:3000` (required, no fallback)
+
+If MCP is unavailable, the client raises `MCPUnavailableError` immediately.  
+This ensures infrastructure failures are visible and addressed, not silently bypassed.
 
 ### 1.3 · Shared Utilities
 
 ```
 labs/logging.py        # log_jsonl(), structured logging
 labs/core.py           # Path utilities, generic helpers
+labs/transport.py      # Connection management
 labs/__init__.py       # Version: "2.0.0", minimal exports
 ```
 
@@ -822,12 +829,13 @@ client.record_event("custom_event", field1="value1", field2="value2")
 ```python
 MCPClientError       # Base error for all MCP client failures
 MCPValidationError   # Validation failed (strict mode)
-MCPUnavailableError  # MCP server unreachable
+MCPUnavailableError  # MCP server unreachable (TCP connection failed)
 ```
 
-**Transports**:
-- **TCP** (primary): `tcp://localhost:3000`
-- **Stdio** (fallback): Process pipe
+**Transport**:
+- **TCP only**: `tcp://localhost:3000` (required, no fallback)
+- Connection failure raises `MCPUnavailableError` immediately
+- Ensures infrastructure problems are visible and addressed
 
 **Resolution Modes** (forced to `inline`):
 
@@ -846,10 +854,13 @@ MCPUnavailableError  # MCP server unreachable
 | Variable | Purpose | Default | Required |
 |----------|---------|---------|----------|
 | `LABS_SCHEMA_VERSION` | Target schema version | `"0.7.4"` | ✅ |
-| `LABS_SCHEMA_RESOLUTION` | Resolution mode | `"inline"` | ✅ |
+| `LABS_SCHEMA_RESOLUTION` | Resolution mode | `"inline"` | ✅ (forced) |
 | `LABS_MCP_LOG_PATH` | MCP telemetry path | `meta/output/labs/mcp.jsonl` | ❌ |
-| `MCP_ENDPOINT` | MCP server URI | `tcp://localhost:3000` | ✅ |
+| `MCP_ENDPOINT` | MCP server TCP endpoint | `tcp://localhost:3000` | ✅ (required) |
 | `MCP_MAX_BATCH` | Validation batch limit | `50` | ❌ |
+
+**Critical**: `MCP_ENDPOINT` must be a valid TCP endpoint. No fallback transport is supported.  
+If the MCP server is unavailable, all validation operations will fail immediately with `MCPUnavailableError`.
 
 ### 5.2 · Version-Specific Configuration
 
@@ -961,6 +972,7 @@ log_jsonl("meta/output/labs/generation.jsonl", telemetry_record)
 | **Schema** | MCP serves version | `fetch_schema(version=X)` returns `ok: True` |
 | | Inline resolution | Descriptor has `resolution: "inline"` |
 | | No local schemas | `find meta/schemas -name "*.json"` returns empty |
+| | MCP endpoint | MCP server running at `tcp://localhost:3000` |
 | **Tests** | Infrastructure tests | `tests/v{VERSION}/test_schema_fetch.py` passes |
 | | Validation tests | `tests/v{VERSION}/test_validation.py` passes |
 | | Generator tests | `tests/v{VERSION}/test_generator.py` passes (if generator exists) |
@@ -1323,19 +1335,21 @@ Telemetry records in `meta/output/labs/v{VERSION}_generation.jsonl`:
 ## 12 · Summary & Quick Reference
 
 **Current State**:
-- ✅ MCP infrastructure proven and stable
+- ✅ MCP infrastructure proven and stable (TCP-only transport)
 - ✅ v0.3.6a code archived and removed
 - ✅ Clean foundation for version-specific standups
 
 **Architecture**:
-- **MCP = Schema authority** (runtime fetch, inline resolution)
+- **MCP = Schema authority** (runtime fetch via TCP, inline resolution)
 - **Labs = Generator + telemetry** (wraps validated assets)
 - **No mixing** of validation contract and operational metadata
+- **Fail-fast** infrastructure failures (no fallbacks, no silent errors)
 
 **Next Steps**:
-1. Follow `meta/prompts/standup_template.json` for 0.7.3 standup
-2. Implement TDD flow: test → generator → validate
-3. Keep telemetry separate from MCP schema contract
+1. Ensure MCP server running at `tcp://localhost:3000`
+2. Follow `meta/prompts/standup_template.json` for 0.7.3 standup
+3. Implement TDD flow: test → generator → validate
+4. Keep telemetry separate from MCP schema contract
 ### 12.1 · Current State (v2.0.0)
 
 ```
@@ -1424,8 +1438,13 @@ python -c "from labs.mcp.client import MCPClient; import json; asset = json.load
 # Run version tests
 pytest tests/v0_7_3/ -v
 
-# Check MCP server
+```bash
+# Check MCP server (TCP endpoint required)
 curl -X POST http://localhost:3000/schema -d '{"name":"synesthetic-asset","version":"0.7.3","resolution":"inline"}'
+
+# If MCP unavailable, all Labs operations will fail with MCPUnavailableError
+# This is INTENTIONAL - infrastructure failures must be fixed, not bypassed
+```
 ```
 
 ### 12.6 · Next Actions
