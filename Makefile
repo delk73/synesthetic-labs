@@ -142,7 +142,6 @@ preflight:
 	@echo "✅ All preflight checks passed!"
 	@echo "========================================"
 	@echo ""
-	@echo "Ready to push. Run: git push origin dce-reset-dev"
 
 # Clean Python cache files
 clean:
