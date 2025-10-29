@@ -11,7 +11,12 @@ import pytest
 
 from labs.mcp.client import MCPClient
 from labs.v0_7_3.generator import generate_asset
-from labs.v0_7_3.llm import StrictGenerationError, generate_strict_component
+from labs.v0_7_3.llm import (
+    STRICT_COMPONENTS,
+    StrictGenerationError,
+    generate_strict_component,
+    llm_generate_component_strict,
+)
 from labs.v0_7_3.schema_analyzer import SchemaAnalyzer
 
 
@@ -61,6 +66,29 @@ def test_generate_strict_component_invalid_json() -> None:
             azure,
             model="test-model",
             component_name="shader",
+            subschema=schema,
+            prompt="minimal shader",
+        )
+
+
+def test_llm_generate_component_strict_scope_enforcement() -> None:
+    schema = SchemaAnalyzer(version="0.7.3").get_component_schema("shader").schema
+    azure = _FakeAzure(json.dumps({"fragment_shader": "void main(){}"}))
+
+    payload = llm_generate_component_strict(
+        azure,
+        model="test-model",
+        component_name="shader",
+        subschema=schema,
+        prompt="minimal shader",
+    )
+    assert payload["fragment_shader"].startswith("void")
+
+    with pytest.raises(ValueError):
+        llm_generate_component_strict(
+            azure,
+            model="test-model",
+            component_name="tone",
             subschema=schema,
             prompt="minimal shader",
         )

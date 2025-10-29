@@ -107,4 +107,22 @@ def generate_asset_strict(client, azure, model, version, prompt, component):
 - `labs/v0_7_3/llm.py` exposes `generate_strict_component()` plus `StrictGenerationError`, providing a deterministic strict-mode wrapper that logs only component, schema hash, and status.
 - `labs/v0_7_3/generator.py` routes `use_llm=True` + `engine="azure"` through `_generate_strict_with_azure()`; there is no builder fallback, so strict-mode failures bubble up as `StrictGenerationError` or `MCPValidationError`.
 
+#### Manual Verification Checklist
+
+1. Export Azure credentials: `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, and optionally `AZURE_OPENAI_API_VERSION`.
+2. Ensure the MCP TCP server is reachable (`make mcp-check`).
+3. Generate a strict component directly:
+
+    ```bash
+    make generate-strict-component COMPONENT=shader P="Minimal control shader"
+    ```
+
+    The helper wraps `python -m labs.v0_7_3.strict_cli`, which:
+    - Fetches the inline schema via TCP MCP.
+    - Builds the component-specific subschema with `SchemaAnalyzer`.
+    - Calls `AzureOpenAI.chat.completions.create` with `temperature=0.0`, `seed=0`, and `response_format=json_schema`.
+    - Validates the component-wrapped asset via `MCPClient.confirm(...)`.
+4. Swap `COMPONENT` for `control` or `modulation` to exercise other Phase 8 targets.
+5. Use `-o component.json` to persist the payload for inspection.
+
 ```

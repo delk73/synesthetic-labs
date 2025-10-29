@@ -10,6 +10,8 @@ from typing import Dict, Mapping
 
 logger = logging.getLogger(__name__)
 
+STRICT_COMPONENTS = frozenset({"control", "modulation", "shader"})
+
 
 class StrictGenerationError(RuntimeError):
     """Raised when strict-mode generation fails."""
@@ -91,4 +93,32 @@ def generate_strict_component(
     return payload
 
 
-__all__ = ["StrictGenerationError", "generate_strict_component"]
+def llm_generate_component_strict(
+    client,
+    *,
+    model: str,
+    component_name: str,
+    subschema: Mapping[str, object],
+    prompt: str,
+) -> Dict[str, object]:
+    """Public alias for strict-mode generation limited to Phase 8 components."""
+
+    if component_name not in STRICT_COMPONENTS:
+        raise ValueError(
+            f"Component '{component_name}' is outside strict-mode scope: {sorted(STRICT_COMPONENTS)}"
+        )
+    return generate_strict_component(
+        client,
+        model=model,
+        component_name=component_name,
+        subschema=subschema,
+        prompt=prompt,
+    )
+
+
+__all__ = [
+    "STRICT_COMPONENTS",
+    "StrictGenerationError",
+    "generate_strict_component",
+    "llm_generate_component_strict",
+]

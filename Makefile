@@ -49,6 +49,7 @@ SCHEMA_VERSION ?= 0.7.3
 # Asset generation defaults
 P ?= minimal test asset
 O ?=
+COMPONENT ?= shader
 
 # === Asset Generation ===
 
@@ -68,6 +69,15 @@ generate-llm:
 	else \
 		python3 -m labs.v0_7_3.cli "$(P)" --llm -o "$(O)"; \
 		echo "✓ Saved to $(O)"; \
+	fi
+
+# Generate a strict-mode component only (Phase 8 scope)
+generate-strict-component:
+	@if [ -z "$(O)" ]; then \
+		python3 -m labs.v0_7_3.strict_cli "$(P)" --component "$(COMPONENT)"; \
+	else \
+		python3 -m labs.v0_7_3.strict_cli "$(P)" --component "$(COMPONENT)" -o "$(O)"; \
+		echo "✓ Saved component to $(O)"; \
 	fi
 
 # Generate with telemetry logging
