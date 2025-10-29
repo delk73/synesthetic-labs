@@ -1,5 +1,10 @@
 .PHONY: help mcp-check mcp-list mcp-schema mcp-validate test clean
 
+ifneq (,$(wildcard .env))
+include .env
+export $(shell sed -n 's/^\([^#=[:space:]]\+\)=.*/\1/p' .env)
+endif
+
 # Ensure Make is run from repository root
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 LABS_DIR := $(MAKEFILE_DIR)
