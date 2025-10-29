@@ -13,6 +13,8 @@ from labs.mcp.tcp_client import TcpMCPValidator
 from labs.mcp_stdio import build_validator_from_env, resolve_mcp_endpoint
 from labs.transport import MAX_PAYLOAD_BYTES, decode_payload, read_message, write_message
 
+pytestmark = pytest.mark.requires_real_tcp
+
 
 def _start_tcp_server(handler) -> tuple[threading.Thread, int, List[BaseException]]:
     ready = threading.Event()

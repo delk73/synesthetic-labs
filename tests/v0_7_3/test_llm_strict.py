@@ -1,125 +1,95 @@
-"""
-Strict mode routing and Azure pass-through tests for schema v0.7.3.
-"""
+"""Strict mode tests for schema v0.7.3 (hard mode)."""
 
-import os
-from typing import Dict
+from __future__ import annotations
+
+import json
+import sys
+import types
+from typing import Any
 
 import pytest
 
-from labs.mcp.client import load_schema_bundle
-from labs.v0_7_3.llm import (
-    AZURE_STRICT_ALLOW,
-    AZURE_STRICT_BLOCK,
-    llm_generate_component_strict,
-    supports_azure_strict,
-)
+from labs.mcp.client import MCPClient
+from labs.v0_7_3.generator import generate_asset
+from labs.v0_7_3.llm import StrictGenerationError, generate_strict_component
 from labs.v0_7_3.schema_analyzer import SchemaAnalyzer
 
-AZ_CREDS = all(
-    os.getenv(env_var)
-    for env_var in ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT")
-)
+
+class _FakeAzure:
+    class _Response:
+        def __init__(self, content: str) -> None:
+            message = types.SimpleNamespace(content=content)
+            self.choices = [types.SimpleNamespace(message=message)]
+
+    class _Completions:
+        def __init__(self, payload: str) -> None:
+            self._payload = payload
+
+        def create(self, **_: Any) -> "_FakeAzure._Response":
+            return _FakeAzure._Response(self._payload)
+
+    class _Chat:
+        def __init__(self, payload: str) -> None:
+            self.completions = _FakeAzure._Completions(payload)
+
+    def __init__(self, payload: str) -> None:
+        self.chat = _FakeAzure._Chat(payload)
 
 
-def _load_component_schema(component: str) -> Dict:
-    schema_bundle = load_schema_bundle(version="0.7.3")
-    analyzer = SchemaAnalyzer(version="0.7.3", schema=schema_bundle)
-    return analyzer.get_component_schema(component).schema
+def test_generate_strict_component_success() -> None:
+    schema = SchemaAnalyzer(version="0.7.3").get_component_schema("shader").schema
+    payload = json.dumps({"fragment_shader": "void main(){}"})
+    azure = _FakeAzure(payload)
 
-
-def _strict_test_plan(component: str) -> Dict:
-    return {
-        "modality": component,
-        "primary_component": {
-            "type": component,
-            "characteristics": [],
-        },
-        "suggested_tags": [],
-        "constraints": {},
-    }
-
-
-def test_strict_eligibility():
-    assert AZURE_STRICT_ALLOW == {"shader", "modulation"}
-    assert AZURE_STRICT_BLOCK == {"control", "tone", "haptic"}
-    assert supports_azure_strict("shader")
-    assert supports_azure_strict("modulation")
-    assert not supports_azure_strict("control")
-    assert not supports_azure_strict("tone")
-    assert not supports_azure_strict("haptic")
-
-
-@pytest.fixture
-def azure_client():
-    pytest.importorskip("openai", reason="openai not installed")
-    if not AZ_CREDS:
-        pytest.skip("Azure creds required")
-    from openai import AzureOpenAI
-
-    return AzureOpenAI(
-        api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
-    )
-
-
-@pytest.mark.skipif(not AZ_CREDS, reason="Azure creds required")
-def test_strict_shader_modulation_pass_or_fallback(azure_client):
-    model = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
-
-    shader_schema = _load_component_schema("shader")
-    shader_result = llm_generate_component_strict(
-        azure_client,
-        model=model,
-        component_name="shader",
-        subschema=shader_schema,
-        prompt="neon blue pulsating shader",
-        plan=_strict_test_plan("shader"),
-    )
-    assert isinstance(shader_result, dict)
-    assert shader_result == {} or bool(shader_result)
-
-    modulation_schema = _load_component_schema("modulation")
-    modulation_result = llm_generate_component_strict(
-        azure_client,
-        model=model,
-        component_name="modulation",
-        subschema=modulation_schema,
-        prompt="neon blue pulsating shader",
-        plan=_strict_test_plan("modulation"),
-    )
-    assert isinstance(modulation_result, dict)
-    assert modulation_result == {} or bool(modulation_result)
-
-
-@pytest.mark.skipif(not AZ_CREDS, reason="Azure creds required")
-def test_strict_shader_determinism(azure_client):
-    schema = _load_component_schema("shader")
-    plan = _strict_test_plan("shader")
-    model = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
-
-    result_one = llm_generate_component_strict(
-        azure_client,
-        model=model,
+    result = generate_strict_component(
+        azure,
+        model="test-model",
         component_name="shader",
         subschema=schema,
-        prompt="monochrome waveform shader",
-        plan=plan,
-    )
-    result_two = llm_generate_component_strict(
-        azure_client,
-        model=model,
-        component_name="shader",
-        subschema=schema,
-        prompt="monochrome waveform shader",
-        plan=plan,
+        prompt="minimal shader",
     )
 
-    assert isinstance(result_one, dict)
-    assert isinstance(result_two, dict)
-    assert result_one == result_two
+    assert result == {"fragment_shader": "void main(){}"}
 
 
-def test_control_never_uses_strict():
-    assert not supports_azure_strict("control")
+def test_generate_strict_component_invalid_json() -> None:
+    schema = SchemaAnalyzer(version="0.7.3").get_component_schema("shader").schema
+    azure = _FakeAzure("not-json")
+
+    with pytest.raises(StrictGenerationError):
+        generate_strict_component(
+            azure,
+            model="test-model",
+            component_name="shader",
+            subschema=schema,
+            prompt="minimal shader",
+        )
+
+
+def test_generate_asset_strict(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = json.dumps(
+        {
+            "fragment_shader": "void main(){}",
+            "vertex_shader": "void main(){}",
+        }
+    )
+
+    class _StubAzure(_FakeAzure):
+        pass
+
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "stub-key")
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://stub.example.com")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "stub-model")
+
+    stub_module = types.SimpleNamespace(AzureOpenAI=lambda **_: _StubAzure(payload))
+    monkeypatch.setitem(sys.modules, "openai", stub_module)
+
+    asset = generate_asset("strict shader", use_llm=True, engine="azure")
+
+    assert asset["name"] == "strict_shader"
+    assert "shader" in asset
+    assert asset["shader"]["fragment_shader"].startswith("void")
+
+    client = MCPClient(schema_version="0.7.3")
+    result = client.confirm(asset, strict=True)
+    assert result["ok"] is True

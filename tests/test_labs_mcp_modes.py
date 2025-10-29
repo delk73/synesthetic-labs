@@ -60,10 +60,10 @@ def test_mcp_client_validate_respects_batch_limit(monkeypatch) -> None:
 def test_mcp_client_confirm_strict_failure(monkeypatch) -> None:
     client = MCPClient()
 
-    def failing_validate_many(payload, *, strict: bool = True):
-        return {"ok": False, "items": [{"ok": False, "reason": "broken"}]}
+    def failing_validate(self, asset):
+        return {"ok": False, "reason": "broken"}
 
-    monkeypatch.setattr("mcp.core.validate_many", failing_validate_many)
+    monkeypatch.setattr("labs.mcp.client.TcpMCPValidator.validate", failing_validate, raising=False)
 
     with pytest.raises(MCPValidationError) as excinfo:
         client.confirm(_dummy_asset("bad"), strict=True)

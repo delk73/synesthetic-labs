@@ -7,13 +7,11 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
-
-from mcp import core as mcp_core
+from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Tuple
 
 from labs.logging import log_jsonl
 from labs.mcp.exceptions import MCPUnavailableError
-from labs.mcp.tcp_client import get_schema_from_mcp
+from labs.mcp.tcp_client import TcpMCPValidator, get_schema_from_mcp
 
 JsonDict = Dict[str, Any]
 
@@ -49,6 +47,7 @@ class MCPClient:
         batch_limit: Optional[int] = None,
         telemetry_path: Optional[str] = None,
         event_hook: Optional[Callable[[JsonDict], None]] = None,
+        tcp_validator: Optional[TcpMCPValidator] = None,
     ) -> None:
         self.schema_name = schema_name or _DEFAULT_SCHEMA_NAME
         self._requested_version = schema_version or os.getenv(
@@ -61,7 +60,7 @@ class MCPClient:
         self._event_hook = event_hook
         self._descriptor_cache: Dict[Tuple[str, str, str], JsonDict] = {}
         self._descriptor: Optional[JsonDict] = None
-        self._transport_validator: Union[Callable[[MutableMapping[str, Any]], Dict[str, Any]], bool, None] = None
+        self._tcp_validator = tcp_validator
         self._lock = threading.RLock()
 
     @staticmethod
@@ -172,34 +171,19 @@ class MCPClient:
 
         prepared_batch = [self._prepare_asset_for_validation(item) for item in batch]
 
-        transport_validator = self._resolve_transport_validator()
-        results: Optional[List[JsonDict]] = None
+        validator = self._require_tcp_validator()
+        results: List[JsonDict] = []
 
-        if callable(transport_validator):
-            responses: List[JsonDict] = []
-            for asset in prepared_batch:
-                try:
-                    response = transport_validator(asset)
-                except MCPUnavailableError as exc:
-                    _LOGGER.debug("Transport validator unavailable during batch validation: %s", exc)
-                    self._transport_validator = False
-                    responses = []
-                    break
-                except Exception as exc:  # pragma: no cover - defensive fallback
-                    _LOGGER.warning("Unexpected MCP transport validation error: %s", exc)
-                    self._transport_validator = False
-                    responses = []
-                    break
-                if isinstance(response, Mapping):
-                    responses.append(dict(response))
-                else:
-                    responses.append({"ok": False, "reason": "invalid_mcp_response"})
-            if responses:
-                results = responses
-
-        if results is None:
-            payload = mcp_core.validate_many(prepared_batch, strict=strict)
-            results = self._normalise_validation_payload(payload)
+        for asset in prepared_batch:
+            try:
+                response = validator.validate(asset)
+            except MCPUnavailableError:
+                raise
+            except Exception as exc:  # pragma: no cover - defensive guard
+                raise MCPUnavailableError(f"MCP validation failed: {exc}") from exc
+            if not isinstance(response, Mapping):
+                raise MCPUnavailableError("Invalid MCP response payload")
+            results.append(dict(response))
         self._emit_event(
             {
                 "event": "schema_validated",
@@ -234,44 +218,22 @@ class MCPClient:
                 version=version,
                 resolution=resolution,
             )
-        except MCPUnavailableError as exc:
-            _LOGGER.debug("TCP MCP unavailable for schema fetch (%s); falling back to local", exc)
+        except MCPUnavailableError:
+            raise
         except Exception as exc:  # pragma: no cover - unexpected transport failure
-            _LOGGER.warning("Unexpected MCP error during schema fetch: %s", exc)
-
-        if not response:
-            response = mcp_core.get_schema(name, version=version, resolution=resolution)
+            raise MCPUnavailableError(f"MCP schema fetch failed: {exc}") from exc
 
         if not isinstance(response, Mapping):
-            raise MCPClientError("MCP schema response must be a mapping")
-        if response.get("ok") is False:
+            raise MCPUnavailableError("MCP schema response must be a mapping")
+        if response.get("ok") is not True:
             reason = response.get("reason", "schema_unavailable")
-            if version and isinstance(reason, str) and "schema_not_found" in reason:
-                fallback = mcp_core.get_schema(name, resolution=resolution)
-                if not isinstance(fallback, Mapping) or not fallback.get("ok"):
-                    raise MCPClientError(f"MCP schema unavailable: {reason}")
-                _LOGGER.debug(
-                    "Schema version %s unavailable; falling back to %s",
-                    version,
-                    fallback.get("version"),
-                )
-                response = fallback
-            else:
-                raise MCPClientError(f"MCP schema unavailable: {reason}")
+            raise MCPUnavailableError(f"MCP schema unavailable: {reason}")
 
         schema = response.get("schema")
         if not isinstance(schema, Mapping):
-            raise MCPClientError("MCP schema payload missing 'schema'")
+            raise MCPUnavailableError("MCP schema payload missing 'schema'")
 
-        source_version = response.get("version") or version
-        requested_version = response.get("requested_version")
-        resolved_version = requested_version or source_version or version
-
-        schema_id = schema.get("$id")
-        if requested_version and isinstance(requested_version, str) and requested_version.strip():
-            schema_id = f"https://synesthetic.dev/schemas/{requested_version}/synesthetic-asset.schema.json"
-        elif not isinstance(schema_id, str) or not schema_id.strip():
-            schema_id = f"https://synesthetic.dev/schemas/{resolved_version}/synesthetic-asset.schema.json"
+        resolved_version = response.get("version") or version or self._requested_version
 
         descriptor: JsonDict = {
             "ok": True,
@@ -279,29 +241,13 @@ class MCPClient:
             "version": resolved_version,
             "path": response.get("path"),
             "schema": copy.deepcopy(schema),
-            "schema_id": schema_id,
             "resolution": resolution,
             "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
         }
-        if requested_version:
-            descriptor["requested_version"] = requested_version
-        if source_version and source_version != resolved_version:
-            descriptor["source_version"] = source_version
-        schema_copy = descriptor.get("schema")
-        if requested_version and isinstance(schema_copy, MutableMapping):
-            schema_copy["$id"] = schema_id
+        schema_id = schema.get("$id")
+        if isinstance(schema_id, str) and schema_id.strip():
+            descriptor["schema_id"] = schema_id
         return descriptor
-
-    @staticmethod
-    def _normalise_validation_payload(payload: Any) -> List[JsonDict]:
-        if isinstance(payload, list):
-            return [copy.deepcopy(entry) for entry in payload if isinstance(entry, Mapping)]
-        if isinstance(payload, Mapping):
-            items = payload.get("items")
-            if isinstance(items, list):
-                return [copy.deepcopy(entry) for entry in items if isinstance(entry, Mapping)]
-            return [copy.deepcopy(payload)]
-        raise MCPClientError("Unexpected MCP validation response payload")
 
     def _emit_event(self, record: JsonDict) -> None:
         if not record:
@@ -328,24 +274,24 @@ class MCPClient:
         payload.update(fields)
         self._emit_event(payload)
 
-    def _resolve_transport_validator(self) -> Optional[Callable[[MutableMapping[str, Any]], Dict[str, Any]]]:
-        cached = self._transport_validator
-        if cached is False:
-            return None
-        if callable(cached):
-            return cached
-        try:
-            from labs.mcp_stdio import build_validator_from_env  # local import to avoid cycles
-        except ImportError:
-            self._transport_validator = False
-            return None
-        try:
-            validator = build_validator_from_env()
-        except MCPUnavailableError:
-            self._transport_validator = False
-            return None
-        self._transport_validator = validator
-        return validator
+    def _require_tcp_validator(self) -> TcpMCPValidator:
+        with self._lock:
+            if self._tcp_validator is None:
+                host = os.getenv("MCP_HOST", "127.0.0.1").strip()
+                port_raw = os.getenv("MCP_PORT", "8765").strip()
+                timeout_raw = os.getenv("MCP_TIMEOUT", "10.0").strip()
+                if not host:
+                    raise MCPUnavailableError("MCP_HOST is required for TCP transport")
+                try:
+                    port = int(port_raw)
+                except ValueError as exc:  # pragma: no cover - defensive
+                    raise MCPUnavailableError("MCP_PORT must be an integer") from exc
+                try:
+                    timeout = float(timeout_raw)
+                except ValueError as exc:  # pragma: no cover - defensive
+                    raise MCPUnavailableError("MCP_TIMEOUT must be numeric") from exc
+                self._tcp_validator = TcpMCPValidator(host, port, timeout=timeout)
+            return self._tcp_validator
 
     def _prepare_asset_for_validation(self, asset: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
         payload = copy.deepcopy(asset)

@@ -1,14 +1,13 @@
 """Asset generator for schema version 0.7.3."""
 
+from __future__ import annotations
+
 from typing import Any, Dict, Optional
 
 from labs.mcp.client import MCPClient, load_schema_bundle
+from labs.mcp.exceptions import MCPUnavailableError
 from labs.v0_7_3.components import BUILDERS
-from labs.v0_7_3.llm import (
-    llm_decompose_prompt,
-    llm_generate_component_strict,
-    supports_azure_strict,
-)
+from labs.v0_7_3.llm import generate_strict_component
 from labs.v0_7_3.prompt_parser import PromptSemantics, parse_prompt
 from labs.v0_7_3.schema_analyzer import SchemaAnalyzer
 
@@ -33,12 +32,10 @@ def generate_asset(
         Generated asset (MCP-validated structure)
     """
     if use_llm:
-        if engine == "azure":
-            return _generate_with_azure(prompt, version)
-        else:
+        if engine != "azure":
             raise ValueError(f"Unsupported LLM engine: {engine}")
-    else:
-        return _generate_minimal(prompt, version)
+        return _generate_strict_with_azure(prompt, version)
+    return _generate_minimal(prompt, version)
 
 
 def _generate_minimal(prompt: str, version: str) -> Dict[str, Any]:
@@ -54,7 +51,10 @@ def _generate_minimal(prompt: str, version: str) -> Dict[str, Any]:
     
     # Build minimal valid asset
     asset: Dict[str, Any] = {
-        "$schema": f"https://delk73.github.io/synesthetic-schemas/schema/{version}/synesthetic-asset.schema.json"
+        "$schema": schema_bundle.get(
+            "$id",
+            f"https://schemas.synesthetic-labs.ai/mcp/{version}/synesthetic-asset.schema.json",
+        )
     }
     
     # Add required fields
@@ -75,108 +75,51 @@ def _generate_minimal(prompt: str, version: str) -> Dict[str, Any]:
     return asset
 
 
-def _generate_with_azure(prompt: str, version: str) -> Dict[str, Any]:
-    """
-    Generate asset via Azure OpenAI with structured output.
-    Schema bundle injected as constraint.
-    """
+def _generate_strict_with_azure(prompt: str, version: str, *, component: str = "shader") -> Dict[str, Any]:
+    """Generate an asset using Azure strict-mode generation for a single component."""
+
     import os
 
     from openai import AzureOpenAI
 
-    semantics = parse_prompt(prompt)
-    # Check credentials
     if not os.getenv("AZURE_OPENAI_API_KEY"):
-        raise ValueError("AZURE_OPENAI_API_KEY not set - cannot use Azure LLM")
+        raise ValueError("AZURE_OPENAI_API_KEY not set - cannot use Azure strict mode")
 
-    # Fetch live schema from MCP
-    schema_bundle = load_schema_bundle(version=version)
-    analyzer = SchemaAnalyzer(version=version, schema=schema_bundle)
-    required = schema_bundle.get("required", [])
-    properties = schema_bundle.get("properties", {})
+    client = MCPClient(schema_version=version)
+    descriptor = client.fetch_schema("synesthetic-asset", version=version)
+    schema = descriptor.get("schema")
+    if not isinstance(schema, dict):
+        raise MCPUnavailableError("MCP did not return an inline schema bundle")
 
-    # Initialize Azure client
-    client = AzureOpenAI(
+    analyzer = SchemaAnalyzer(version=version, schema=schema)
+    component_schema = analyzer.get_component_schema(component)
+
+    azure = AzureOpenAI(
         api_key=os.getenv("AZURE_OPENAI_API_KEY"),
         azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
     )
     model_name = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
-    # Format version for schema name (underscores, not dots)
-    schema_name = f"SynestheticAsset_{version.replace('.', '_')}"
 
-    # Base asset structure
+    strict_payload = generate_strict_component(
+        azure,
+        model=model_name,
+        component_name=component,
+        subschema=component_schema.schema,
+        prompt=prompt,
+    )
+
+    schema_id = descriptor.get("schema_id") or schema.get("$id")
+    if not isinstance(schema_id, str) or not schema_id:
+        schema_id = f"https://schemas.synesthetic-labs.ai/mcp/{version}/synesthetic-asset.schema.json"
+
     asset: Dict[str, Any] = {
-        "$schema": f"https://delk73.github.io/synesthetic-schemas/schema/{version}/synesthetic-asset.schema.json"
+        "$schema": schema_id,
+        "name": _sanitize_name(prompt),
+        component: strict_payload,
     }
-    for field in required:
-        if field == "name":
-            asset["name"] = _sanitize_name(prompt)
-        elif field in properties:
-            asset[field] = _minimal_value_for_property(properties[field])
-    if "meta_info" in properties:
-        asset.setdefault("meta_info", {"description": prompt, "source": "azure"})
 
-    # Stage 1: semantic decomposition
-    try:
-        plan = llm_decompose_prompt(client, model=model_name, prompt=prompt)
-    except Exception as exc:  # pragma: no cover - network error fallback
-        plan = {
-            "modality": semantics.modality,
-            "primary_component": {
-                "type": semantics.modality,
-                "characteristics": list(semantics.tags),
-            },
-            "suggested_tags": list(semantics.tags),
-            "constraints": semantics.to_dict(),
-            "fallback_reason": str(exc),
-        }
-
-    # Stage 2: component-oriented generation with fallback builders
-    for name, builder in BUILDERS.items():
-        if name not in analyzer.available_components():
-            continue
-        component_schema = analyzer.get_component_schema(name)
-        candidate: Any = None
-        if supports_azure_strict(name):
-            try:
-                candidate = llm_generate_component_strict(
-                    client,
-                    model=model_name,
-                    component_name=name,
-                    subschema=component_schema.schema,
-                    prompt=prompt,
-                    plan=plan,
-                )
-            except Exception:  # pragma: no cover - azure fallback
-                candidate = {}
-        else:
-            candidate = builder(prompt, component_schema.schema, semantics=semantics)
-
-        if candidate is None or candidate == {}:
-            candidate = builder(prompt, component_schema.schema, semantics=semantics)
-
-        # Ensure component is present even if nullable
-        if candidate is None:
-            continue
-        asset[name] = candidate
-
-    # LLM may add extra hints for meta info
-    if "meta_info" in asset and isinstance(asset["meta_info"], dict):
-        meta = asset["meta_info"]
-        tags = set(meta.get("tags", []))
-        for tag in plan.get("suggested_tags", []):
-            if isinstance(tag, str):
-                tags.add(tag)
-        if tags:
-            meta["tags"] = sorted(tags)
-        asset["meta_info"] = meta
-
-    # Validate via Azure structured output if requested
-    mcp_client = MCPClient(schema_version=version)
-    validation = mcp_client.confirm(asset, strict=True)
-    if not validation.get("ok"):
-        raise ValueError(f"MCP validation failed: {validation}")
+    client.confirm(asset, strict=True)
 
     return asset
 

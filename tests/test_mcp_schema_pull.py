@@ -1,30 +1,19 @@
-import os
-import sys
+import pytest
 
-def test_mcp_schema_pull(monkeypatch):
-    """
-    Verify that Labs can import MCP and pull schemas via core.get_schema.
-    """
+from labs.mcp.client import MCPClient
+from labs.mcp.exceptions import MCPUnavailableError
 
-    # Point at backend schemas
-    monkeypatch.setenv("SYN_SCHEMAS_DIR", "/home/dce/src/sdfk-backend/meta/schemas")
 
-    # Ensure backend repo is importable
-    if "/home/dce/src/sdfk-backend" not in sys.path:
-        sys.path.insert(0, "/home/dce/src/sdfk-backend")
+@pytest.mark.no_mcp_stub
+def test_mcp_fetch_requires_tcp(monkeypatch):
+    """TCP fetch failures must bubble up without falling back to local schemas."""
 
-    from mcp.core import get_schema, list_schemas
+    def failing_fetch(*args, **kwargs):  # pragma: no cover - intentional failure path
+        raise MCPUnavailableError("tcp_offline")
 
-    result = list_schemas()
-    assert result["ok"], f"list_schemas failed: {result}"
+    monkeypatch.setattr("labs.mcp.client.get_schema_from_mcp", failing_fetch)
 
-    schema = get_schema("synesthetic-asset")
-    assert schema["ok"], f"get_schema failed: {schema}"
+    client = MCPClient(schema_version="0.7.3")
 
-    print("Schema version:", schema["version"])
-    print("Schema $id:", schema["schema"].get("$id"))
-
-    # Basic structural checks
-    s = schema["schema"]
-    assert "properties" in s, "Schema missing 'properties'"
-    assert "shader" in s["properties"], "Schema missing 'shader' property"
+    with pytest.raises(MCPUnavailableError):
+        client.fetch_schema("synesthetic-asset", version="0.7.3")
