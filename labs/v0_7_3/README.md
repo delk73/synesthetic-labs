@@ -87,6 +87,14 @@ tests/v0_7_3/
 4. **TCP-Only**: Reliable service transport, no fallbacks
 5. **Fail-Fast**: Strict validation raises `MCPValidationError` immediately
 
+### Azure Strict Mode (Phase 8)
+
+- Shader and modulation components route through Azure `json_schema` strict mode with MCP subschemas passed through untouched.
+- Control, tone, and haptic stay on builder paths until their schemas become Azure-strict-compatible.
+- Strict requests are deterministic (`temperature=0`, `max_output_tokens=2048`, fixed `seed` where supported).
+- Any strict failure triggers an immediate builder fallback followed by MCP validation.
+- Logging for strict mode captures only component name and schema hash to avoid schema leakage.
+
 ## Environment Setup
 
 ```bash

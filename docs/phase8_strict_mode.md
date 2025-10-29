@@ -137,12 +137,12 @@ def test_strict_shader_determinism():
 
 ## Implementation Checklist
 
-* [ ] Add `AZURE_STRICT_ALLOW/BLOCK` + `supports_azure_strict()`.
-* [ ] Rework `llm_generate_component_strict()` to **pure pass-through** (no `_ensure_strict_schema`, no analyzer).
-* [ ] Update generator routing to honor `supports_azure_strict()` and fallback rules.
-* [ ] Prune Phase 8 tests to **remove** mutation/deref assertions; add routing/determinism/E2E tests.
-* [ ] Verify MCP validation passes for assets produced when strict returns content and when fallback is used.
-* [ ] Update README/Phase log to document **no-mutation** policy for strict mode.
+- [x] Add `AZURE_STRICT_ALLOW/BLOCK` + `supports_azure_strict()`.
+- [x] Rework `llm_generate_component_strict()` to **pure pass-through** (no `_ensure_strict_schema`, no analyzer).
+- [x] Update generator routing to honor `supports_azure_strict()` and fallback rules.
+- [x] Prune Phase 8 tests to **remove** mutation/deref assertions; add routing/determinism/E2E tests.
+- [x] Verify MCP validation passes for assets produced when strict returns content and when fallback is used.
+- [x] Update README/Phase log to document **no-mutation** policy for strict mode.
 
 ## Non-Goals
 

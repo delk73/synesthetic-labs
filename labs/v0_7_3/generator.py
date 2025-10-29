@@ -2,9 +2,13 @@
 
 from typing import Any, Dict, Optional
 
-from labs.mcp.client import load_schema_bundle
+from labs.mcp.client import MCPClient, load_schema_bundle
 from labs.v0_7_3.components import BUILDERS
-from labs.v0_7_3.llm import llm_decompose_prompt, llm_generate_component
+from labs.v0_7_3.llm import (
+    llm_decompose_prompt,
+    llm_generate_component_strict,
+    supports_azure_strict,
+)
 from labs.v0_7_3.prompt_parser import PromptSemantics, parse_prompt
 from labs.v0_7_3.schema_analyzer import SchemaAnalyzer
 
@@ -76,7 +80,6 @@ def _generate_with_azure(prompt: str, version: str) -> Dict[str, Any]:
     Generate asset via Azure OpenAI with structured output.
     Schema bundle injected as constraint.
     """
-    import json
     import os
 
     from openai import AzureOpenAI
@@ -135,18 +138,20 @@ def _generate_with_azure(prompt: str, version: str) -> Dict[str, Any]:
             continue
         component_schema = analyzer.get_component_schema(name)
         candidate: Any = None
-        try:
-            candidate = llm_generate_component(
-                client,
-                model=model_name,
-                component_name=name,
-                subschema=component_schema.schema,
-                prompt=prompt,
-                plan=plan,
-                fallback_semantics=semantics,
-            )
-        except Exception:  # pragma: no cover - azure fallback
-            candidate = None
+        if supports_azure_strict(name):
+            try:
+                candidate = llm_generate_component_strict(
+                    client,
+                    model=model_name,
+                    component_name=name,
+                    subschema=component_schema.schema,
+                    prompt=prompt,
+                    plan=plan,
+                )
+            except Exception:  # pragma: no cover - azure fallback
+                candidate = {}
+        else:
+            candidate = builder(prompt, component_schema.schema, semantics=semantics)
 
         if candidate is None or candidate == {}:
             candidate = builder(prompt, component_schema.schema, semantics=semantics)
@@ -168,36 +173,12 @@ def _generate_with_azure(prompt: str, version: str) -> Dict[str, Any]:
         asset["meta_info"] = meta
 
     # Validate via Azure structured output if requested
-    response = client.chat.completions.create(
-        model=model_name,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You ensure the provided synesthetic asset matches the schema. "
-                    "Return a corrected asset if needed."
-                ),
-            },
-            {
-                "role": "user",
-                "content": json.dumps(asset, indent=2),
-            },
-        ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema_name,
-                "schema": schema_bundle,
-                "strict": True,
-            },
-        },
-        temperature=0,
-    )
+    mcp_client = MCPClient(schema_version=version)
+    validation = mcp_client.confirm(asset, strict=True)
+    if not validation.get("ok"):
+        raise ValueError(f"MCP validation failed: {validation}")
 
-    final_asset = json.loads(response.choices[0].message.content or "{}")
-    if not isinstance(final_asset, dict):
-        raise ValueError("Azure validation response must be a JSON object")
-    return final_asset
+    return asset
 
 
 def _sanitize_name(prompt: str) -> str:

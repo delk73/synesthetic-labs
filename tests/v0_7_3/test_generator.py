@@ -3,9 +3,17 @@ Generator tests for schema version 0.7.3.
 Tests that generated assets pass MCP validation.
 """
 
+import importlib.util
+import os
+
 import pytest
 from labs.v0_7_3.generator import generate_asset
 from labs.mcp.client import MCPClient
+
+OPENAI_AVAILABLE = importlib.util.find_spec("openai") is not None
+AZURE_ENV_READY = OPENAI_AVAILABLE and all(
+    os.getenv(env_var) for env_var in ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT")
+)
 
 
 def test_minimal_generator_produces_valid_asset():
@@ -72,14 +80,9 @@ def test_generator_includes_schema_field():
     assert "synesthetic-asset.schema.json" in asset["$schema"]
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("openai", reason="openai not installed"),
-    reason="OpenAI package not available"
-)
+@pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OpenAI package not available")
 def test_azure_generator_requires_credentials():
     """Azure generator raises error if credentials missing."""
-    import os
-    
     # Save original
     original = os.environ.get("AZURE_OPENAI_API_KEY")
     
@@ -96,17 +99,9 @@ def test_azure_generator_requires_credentials():
             os.environ["AZURE_OPENAI_API_KEY"] = original
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("openai", reason="openai not installed"),
-    reason="OpenAI package not available"
-)
-def test_azure_generator_validates():
-    """Azure-generated assets pass MCP validation."""
-    import os
-    
-    if not os.getenv("AZURE_OPENAI_API_KEY"):
-        pytest.skip("Azure credentials not available")
-    
+@pytest.mark.skipif(not AZURE_ENV_READY, reason="Azure creds required for strict path")
+def test_generate_asset_e2e_validates():
+    """Azure strict path yields MCP-validated assets end-to-end."""
     asset = generate_asset(
         "red pulsing shader",
         use_llm=True,
@@ -118,4 +113,4 @@ def test_azure_generator_validates():
     result = client.confirm(asset, strict=True)
     
     assert result["ok"] is True
-    assert asset["name"]  # Has content
+    assert asset["name"]
