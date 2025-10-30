@@ -95,12 +95,15 @@ def test_llm_generate_component_strict_scope_enforcement() -> None:
 
 
 def test_generate_asset_strict(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload = json.dumps(
-        {
-            "fragment_shader": "void main(){}",
-            "vertex_shader": "void main(){}",
-        }
-    )
+    payload = json.dumps({
+        "name": "strict_shader_stub",
+        "fragment_shader": "void main(){}",
+        "vertex_shader": "void main(){}",
+        "meta_info": None,
+        "uniforms": [],
+        "input_parameters": [],
+    })
+
 
     class _StubAzure(_FakeAzure):
         pass

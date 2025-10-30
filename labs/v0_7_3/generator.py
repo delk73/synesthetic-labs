@@ -66,9 +66,7 @@ def _generate_minimal(prompt: str, version: str) -> Dict[str, Any]:
             # Add minimal valid value for required field
             asset[field] = _minimal_value_for_property(properties[field])
     
-    # Add meta_info (common field)
-    if "meta_info" in properties and "meta_info" not in asset:
-        asset["meta_info"] = {"description": prompt}
+    # meta_info is optional; leave unset to avoid schema-specific coupling
 
     _populate_components(asset, prompt, analyzer)
     

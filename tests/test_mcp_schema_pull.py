@@ -1,10 +1,7 @@
-import pytest
-
 from labs.mcp.client import MCPClient
 from labs.mcp.exceptions import MCPUnavailableError
 
 
-@pytest.mark.no_mcp_stub
 def test_mcp_fetch_requires_tcp(monkeypatch):
     """TCP fetch failures must bubble up without falling back to local schemas."""
 

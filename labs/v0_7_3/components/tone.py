@@ -79,16 +79,7 @@ def build_tone(
 
     if "meta_info" in properties:
         tags = append_tags(semantics.tags, semantics.colors)
-        meta: Dict[str, Any] = {
-            "category": "audio",
-            "complexity": "moderate",
-            "tags": tags,
-        }
-        if semantics.mood:
-            meta["mood"] = semantics.mood
-        if semantics.tempo_bpm:
-            meta["tempo_bpm"] = semantics.tempo_bpm
-        tone["meta_info"] = meta
+        tone["meta_info"] = {"tags": tags}
 
     if "description" in properties:
         tone["description"] = f"Tone derived from prompt '{prompt}'."

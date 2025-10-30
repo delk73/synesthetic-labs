@@ -89,17 +89,7 @@ def build_shader(
         shader["description"] = _build_description(prompt, color_name, effect)
 
     if "meta_info" in properties:
-        meta_info: Dict[str, Any] = {
-            "source_prompt": prompt,
-            "tags": list(tags) if tags else [],
-        }
-        if semantics.mood:
-            meta_info["mood"] = semantics.mood
-        if semantics.intensity:
-            meta_info["intensity"] = semantics.intensity
-        if tags:
-            meta_info["tags"] = list(tags)
-        shader["meta_info"] = meta_info
+        shader["meta_info"] = {"tags": list(tags)}
 
     if "uniforms" in properties:
         shader["uniforms"] = [

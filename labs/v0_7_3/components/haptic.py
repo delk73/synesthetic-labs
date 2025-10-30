@@ -49,11 +49,7 @@ def build_haptic(
 
     if "meta_info" in properties:
         tags = append_tags(semantics.tags, ("haptic",))
-        meta: Dict[str, Any] = {
-            "tags": tags,
-            "intensity": semantics.intensity or "balanced",
-        }
-        haptic["meta_info"] = meta
+        haptic["meta_info"] = {"tags": tags}
 
     return haptic
 
