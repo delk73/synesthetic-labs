@@ -53,6 +53,7 @@ def build_shader(
     subschema: Dict[str, Any],
     *,
     semantics: PromptSemantics | None = None,
+    metadata: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """
     Generate a shader component that conforms to the provided *subschema*.
@@ -89,7 +90,13 @@ def build_shader(
         shader["description"] = _build_description(prompt, color_name, effect)
 
     if "meta_info" in properties:
-        shader["meta_info"] = {"tags": list(tags)}
+        meta_tags = list(tags) or ["shader"]
+        complexity = "dynamic" if effect != "static" else "baseline"
+        shader["meta_info"] = {
+            "category": "visual",
+            "complexity": complexity,
+            "tags": meta_tags,
+        }
 
     if "uniforms" in properties:
         shader["uniforms"] = [

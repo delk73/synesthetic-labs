@@ -99,7 +99,6 @@ def test_azure_generator_requires_credentials():
 
 
 @pytest.mark.skipif(not AZURE_ENV_READY, reason="Azure creds required for strict path")
-@pytest.mark.xfail(reason="Awaiting MCP schema update for strict InputParameter options")
 def test_generate_asset_e2e_validates():
     """Azure strict path yields MCP-validated assets end-to-end."""
     asset = generate_asset(

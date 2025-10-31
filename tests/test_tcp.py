@@ -104,7 +104,6 @@ def test_build_validator_from_env_tcp(monkeypatch) -> None:
     except PermissionError:
         pytest.skip("TCP sockets are not permitted in this sandbox")
 
-    monkeypatch.setenv("MCP_ENDPOINT", "tcp")
     monkeypatch.setenv("MCP_HOST", "127.0.0.1")
     monkeypatch.setenv("MCP_PORT", str(port))
 
@@ -161,7 +160,6 @@ def test_build_validator_from_env_defaults_to_tcp(monkeypatch) -> None:
     except PermissionError:
         pytest.skip("TCP sockets are not permitted in this sandbox")
 
-    monkeypatch.delenv("MCP_ENDPOINT", raising=False)
     monkeypatch.setenv("MCP_HOST", "127.0.0.1")
     monkeypatch.setenv("MCP_PORT", str(port))
 
@@ -174,17 +172,7 @@ def test_build_validator_from_env_defaults_to_tcp(monkeypatch) -> None:
     assert response == {"status": "ok", "endpoint": "tcp-default"}
 
 
-def test_resolve_mcp_endpoint_unset_defaults_to_tcp(monkeypatch) -> None:
-    monkeypatch.delenv("MCP_ENDPOINT", raising=False)
-
-    endpoint = resolve_mcp_endpoint()
-
-    assert endpoint == "tcp"
-
-
-def test_resolve_mcp_endpoint_invalid_defaults_to_tcp(monkeypatch) -> None:
-    monkeypatch.setenv("MCP_ENDPOINT", "bogus")
-
+def test_resolve_mcp_endpoint_returns_tcp() -> None:
     endpoint = resolve_mcp_endpoint()
 
     assert endpoint == "tcp"

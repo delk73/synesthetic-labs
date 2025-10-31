@@ -45,6 +45,40 @@ class SchemaAnalyzer:
         """Return the component property names exposed by the asset schema."""
         return tuple(sorted(self._properties.keys()))
 
+    def describe_component(self, name: str) -> Dict[str, Any]:
+        """
+        Return lightweight metadata describing the resolved schema for *name*.
+
+        The metadata includes the ``required`` list, the top-level properties
+        mapping, and lookup tables for enum/const values discovered within the
+        schema tree. The enum/const tables are keyed by property path using dot
+        notation (e.g. ``device.type``).
+        """
+        component = self.get_component_schema(name)
+        schema = component.schema
+        properties = schema.get("properties", {})
+        required = tuple(schema.get("required", ()))
+        enums: Dict[str, list] = {}
+        consts: Dict[str, Any] = {}
+        self._collect_scalar_metadata(schema, path=(), enums=enums, consts=consts)
+        return {
+            "required": required,
+            "properties": copy.deepcopy(properties) if isinstance(properties, Mapping) else {},
+            "enums": enums,
+            "consts": consts,
+        }
+
+    def strict_component_schema(self, name: str) -> JsonDict:
+        """
+        Return a copy of the component schema with all object properties marked
+        as required. Azure strict JSON schema enforcement expects every object
+        to specify a ``required`` array that enumerates each declared property.
+        """
+        schema = self.get_component_schema(name).schema
+        strict_schema = copy.deepcopy(schema)
+        self._enforce_required_fields(strict_schema)
+        return strict_schema
+
     def get_component_schema(self, name: str) -> ComponentSchema:
         """Return the resolved schema for *name* inside the asset bundle."""
         if not name or not isinstance(name, str):
@@ -67,6 +101,20 @@ class SchemaAnalyzer:
         )
         self._component_cache[name] = copy.deepcopy(component)
         return component
+
+    def resolve_def(self, ref: str) -> JsonDict:
+        """
+        Resolve a local ``$ref`` pointer such as ``#/ $defs/Example``.
+
+        Only intra-bundle references are currently supported. Unknown or
+        malformed references raise ValueError to surface schema issues to
+        callers.
+        """
+        if not isinstance(ref, str) or not ref:
+            raise ValueError("ref must be a non-empty string")
+        if ref.startswith("#/") or ref == "#":
+            return self._resolve_local_ref(ref)
+        raise ValueError(f"unsupported ref: {ref}")
 
     # Internal helpers -------------------------------------------------
 
@@ -120,6 +168,74 @@ class SchemaAnalyzer:
             return [self._resolve_node(item, root=root) for item in node]
         return copy.deepcopy(node)
 
+    def _collect_scalar_metadata(
+        self,
+        node: Any,
+        *,
+        path: Tuple[str, ...],
+        enums: Dict[str, list],
+        consts: Dict[str, Any],
+    ) -> None:
+        """Traverse *node* capturing enum/const leaves keyed by dotted paths."""
+        if isinstance(node, Mapping):
+            if "const" in node:
+                key = ".".join(path)
+                consts[key] = copy.deepcopy(node["const"])
+            if "enum" in node:
+                key = ".".join(path)
+                value = node.get("enum")
+                if isinstance(value, list):
+                    enums[key] = copy.deepcopy(value)
+            for branch_key in ("allOf", "anyOf", "oneOf"):
+                branch = node.get(branch_key)
+                if isinstance(branch, list):
+                    for entry in branch:
+                        self._collect_scalar_metadata(entry, path=path, enums=enums, consts=consts)
+            props = node.get("properties")
+            if isinstance(props, Mapping):
+                for prop_name, prop_schema in props.items():
+                    self._collect_scalar_metadata(
+                        prop_schema,
+                        path=(*path, prop_name),
+                        enums=enums,
+                        consts=consts,
+                    )
+            items = node.get("items")
+            if isinstance(items, list):
+                for index, item_schema in enumerate(items):
+                    self._collect_scalar_metadata(
+                        item_schema,
+                        path=(*path, f"[{index}]"),
+                        enums=enums,
+                        consts=consts,
+                    )
+            elif isinstance(items, Mapping):
+                self._collect_scalar_metadata(
+                    items,
+                    path=(*path, "[]"),
+                    enums=enums,
+                    consts=consts,
+                )
+            defs = node.get("$defs")
+            if isinstance(defs, Mapping):
+                for def_name, def_schema in defs.items():
+                    self._collect_scalar_metadata(
+                        def_schema,
+                        path=(*path, f"$defs.{def_name}"),
+                        enums=enums,
+                        consts=consts,
+                    )
+            # If a ref escaped resolution (shouldn't happen) try to resolve now
+            ref = node.get("$ref")
+            if isinstance(ref, str):
+                resolved = self.resolve_def(ref)
+                self._collect_scalar_metadata(
+                    resolved,
+                    path=path,
+                    enums=enums,
+                    consts=consts,
+                )
+
     def _resolve_ref_with_root(self, ref: str, root: Mapping[str, Any]) -> Tuple[JsonDict, Mapping[str, Any]]:
         if ref.startswith("#"):
             fragment = self._resolve_pointer(root, ref)
@@ -165,8 +281,6 @@ class SchemaAnalyzer:
                 target = target[index]
             else:
                 raise ValueError(f"unable to resolve pointer '{pointer}'")
-        if not isinstance(target, Mapping):
-            raise TypeError(f"pointer '{pointer}' did not resolve to a mapping")
         return copy.deepcopy(target)
 
     @staticmethod
@@ -184,6 +298,36 @@ class SchemaAnalyzer:
                 else:
                     merged[key] = copy.deepcopy(value)
         return merged
+
+    def _enforce_required_fields(self, node: Any) -> None:
+        """Recursively ensure objects declare every property in ``required``."""
+        if isinstance(node, Mapping):
+            properties = node.get("properties")
+            if isinstance(properties, Mapping) and properties:
+                explicit_required = node.get("required")
+                required_set = {key for key in properties.keys()}
+                if isinstance(explicit_required, list):
+                    required_set.update(str(item) for item in explicit_required)
+                node["required"] = sorted(required_set)
+            for key in ("properties", "$defs"):
+                nested = node.get(key)
+                if isinstance(nested, Mapping):
+                    for child in nested.values():
+                        self._enforce_required_fields(child)
+            for branch_key in ("allOf", "anyOf", "oneOf"):
+                branch = node.get(branch_key)
+                if isinstance(branch, list):
+                    for child in branch:
+                        self._enforce_required_fields(child)
+            items = node.get("items")
+            if isinstance(items, list):
+                for child in items:
+                    self._enforce_required_fields(child)
+            elif isinstance(items, Mapping):
+                self._enforce_required_fields(items)
+        elif isinstance(node, list):
+            for entry in node:
+                self._enforce_required_fields(entry)
 
 
 __all__ = ["ComponentSchema", "SchemaAnalyzer"]

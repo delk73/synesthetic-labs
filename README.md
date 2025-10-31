@@ -29,4 +29,4 @@ The repository is under reconstruction for the v2 reset. All generator and agent
 2. Use `meta/prompts/standup_template.json` when planning the v2 standup work.
 3. Extend the MCP test suite as new functionality comes online.
 
-Run `pytest tests/test_mcp*.py tests/test_labs_mcp_modes.py tests/test_socket.py tests/test_tcp.py -v` to verify the preserved MCP surface.
+Run `pytest tests/test_mcp*.py tests/test_labs_mcp_modes.py tests/test_tcp.py -v` to verify the preserved MCP surface.

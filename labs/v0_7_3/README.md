@@ -104,7 +104,8 @@ source .env.0_7_3
 # Or set manually
 export LABS_SCHEMA_VERSION=0.7.3
 export LABS_SCHEMA_RESOLUTION=inline
-export MCP_ENDPOINT=tcp://localhost:8765
+export MCP_HOST=127.0.0.1
+export MCP_PORT=8765
 ```
 
 ### Optional: Azure OpenAI

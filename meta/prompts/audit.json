@@ -46,15 +46,15 @@
     },
     {
       "id": "tcp-transport-only-v2.0.0",
-      "expect": "TCP transport only - MCP_ENDPOINT=tcp://localhost:8765 required, no stdio fallback, MCPUnavailableError on connection failure",
+      "expect": "TCP transport only - MCP_HOST/MCP_PORT required, no stdio or socket fallback, MCPUnavailableError on connection failure",
       "files": ["labs/mcp/tcp_client.py", "docs/labs_spec.md"],
-      "patterns": ["tcp://localhost:8765", "MCPUnavailableError", "socket.create_connection", "not", "stdio", "not", "fallback"]
+      "patterns": ["MCP_HOST", "MCP_PORT", "MCPUnavailableError", "socket.create_connection", "not", "stdio", "not", "socket"]
     },
     {
       "id": "environment-config-v2.0.0",
-      "expect": "Version-specific .env.{VERSION} files - LABS_SCHEMA_VERSION, MCP_ENDPOINT, LABS_SCHEMA_RESOLUTION=inline (forced)",
+      "expect": "Version-specific .env.{VERSION} files - LABS_SCHEMA_VERSION, MCP_HOST, MCP_PORT, LABS_SCHEMA_RESOLUTION=inline (forced)",
       "files": [".env.0_7_3", "labs/mcp/client.py"],
-      "patterns": ["LABS_SCHEMA_VERSION", "MCP_ENDPOINT=tcp://localhost:8765", "LABS_SCHEMA_RESOLUTION", "_normalise_resolution", "forcing inline"]
+      "patterns": ["LABS_SCHEMA_VERSION", "MCP_HOST", "MCP_PORT", "LABS_SCHEMA_RESOLUTION", "_normalise_resolution", "forcing inline"]
     },
     {
       "id": "makefile-verification-v2.0.0",

@@ -19,7 +19,7 @@ def test_minimal_valid_asset_passes_mcp():
     asset = {
         "$schema": "https://delk73.github.io/synesthetic-schemas/schema/0.7.3/synesthetic-asset.schema.json",
         "name": "minimal_test",
-        "meta_info": {}
+        "meta_info": None,
     }
     
     client = MCPClient(schema_version="0.7.3")

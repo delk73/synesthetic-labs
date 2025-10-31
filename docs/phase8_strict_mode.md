@@ -107,6 +107,8 @@ def generate_asset_strict(client, azure, model, version, prompt, component):
 - `labs/v0_7_3/llm.py` exposes `generate_strict_component()` plus `StrictGenerationError`, providing a deterministic strict-mode wrapper that logs only component, schema hash, and status.
 - `labs/v0_7_3/generator.py` routes `use_llm=True` + `engine="azure"` through `_generate_strict_with_azure()`; there is no builder fallback, so strict-mode failures bubble up as `StrictGenerationError` or `MCPValidationError`.
 
+> TODO: Reintroduce alternate MCP transports (socket/stdio) once a formal proposal and test strategy are in place.
+
 #### Manual Verification Checklist
 
 1. Export Azure credentials: `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, and optionally `AZURE_OPENAI_API_VERSION`.

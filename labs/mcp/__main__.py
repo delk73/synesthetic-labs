@@ -1,19 +1,12 @@
-"""Launcher for Synesthetic Labs MCP adapters."""
+"""Placeholder CLI for MCP adapters.
+
+TCP is the only supported transport; use :mod:`labs.mcp_stdio` helpers directly.
+"""
 
 from __future__ import annotations
 
-import os
-from typing import List, Optional
-
-from labs.mcp.socket_main import main as socket_main
-from labs.mcp_stub import main as stdio_main
-
-
-def main(argv: Optional[List[str]] = None) -> int:
-    endpoint = os.getenv("MCP_ENDPOINT", "stdio").strip().lower()
-    if endpoint == "socket":
-        return socket_main(argv)
-    return stdio_main(argv)
+def main(argv=None) -> int:
+    raise SystemExit("MCP CLI entrypoint is deprecated; use TCP via labs.mcp_stdio.")
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -120,7 +120,7 @@ test:
 
 # Run only MCP-related tests
 test-mcp:
-	pytest -v tests/test_tcp.py tests/test_socket.py tests/test_labs_mcp_modes.py
+	pytest -v tests/test_tcp.py tests/test_labs_mcp_modes.py
 
 # Run version-specific tests
 test-v0.7.3:
@@ -142,7 +142,7 @@ preflight:
 	@$(MAKE) mcp-check
 	@echo ""
 	@echo "2/5 Running MCP infrastructure tests..."
-	@pytest tests/test_tcp.py tests/test_socket.py tests/test_labs_mcp_modes.py -q
+	@pytest tests/test_tcp.py tests/test_labs_mcp_modes.py -q
 	@echo ""
 	@echo "3/5 Running v0.7.3 tests..."
 	@pytest tests/v0_7_3/ -q

@@ -91,6 +91,7 @@ def _generate_strict_with_azure(prompt: str, version: str, *, component: str = "
 
     analyzer = SchemaAnalyzer(version=version, schema=schema)
     component_schema = analyzer.get_component_schema(component)
+    strict_schema = analyzer.strict_component_schema(component)
 
     azure = AzureOpenAI(
         api_key=os.getenv("AZURE_OPENAI_API_KEY"),
@@ -103,7 +104,7 @@ def _generate_strict_with_azure(prompt: str, version: str, *, component: str = "
         azure,
         model=model_name,
         component_name=component,
-        subschema=component_schema.schema,
+        subschema=strict_schema,
         prompt=prompt,
     )
 
@@ -176,7 +177,13 @@ def _populate_components(asset: Dict[str, Any], prompt: str, analyzer: SchemaAna
         if not _should_generate_component(name, semantics):
             continue
         component_schema = analyzer.get_component_schema(name)
-        component = builder(prompt, component_schema.schema, semantics=semantics)
+        metadata = analyzer.describe_component(name)
+        component = builder(
+            prompt,
+            component_schema.schema,
+            semantics=semantics,
+            metadata=metadata,
+        )
         if component_schema.nullable and component is None:
             continue
         if component is None:

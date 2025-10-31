@@ -11,11 +11,18 @@ def test_tone_builder_generates_synth():
     analyzer = SchemaAnalyzer(version="0.7.3")
     component = analyzer.get_component_schema("tone")
 
-    tone = build_tone("ambient tone at 440Hz with gentle swell", component.schema)
+    metadata = analyzer.describe_component("tone")
+    tone = build_tone(
+        "ambient tone at 440Hz with gentle swell",
+        component.schema,
+        metadata=metadata,
+    )
 
     assert tone["synth"]["type"].startswith("Tone.")
     assert tone["synth"]["options"]["oscillator"]["type"]
-    assert tone["patterns"][0]["options"]["notes"]
+    pattern = tone["patterns"][0]["options"]
+    assert pattern["values"]
+    assert pattern["interval"]
     assert tone["input_parameters"][0]["path"].startswith("synth.")
 
     validator = Draft202012Validator(component.schema)

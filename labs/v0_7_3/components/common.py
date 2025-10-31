@@ -101,6 +101,11 @@ def append_tags(base: Iterable[str], extras: Iterable[str]) -> List[str]:
     return merged
 
 
+def value_with_unit(value: float | int | str, unit: str) -> dict:
+    """Return a schema-compliant value/unit mapping."""
+    return {"value": value, "unit": unit}
+
+
 def envelope_from_intensity(
     semantics: PromptSemantics,
     *,
@@ -143,4 +148,5 @@ __all__ = [
     "radians_from_tempo",
     "sanitize_identifier",
     "tempo_from_semantics",
+    "value_with_unit",
 ]

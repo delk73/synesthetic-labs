@@ -11,10 +11,17 @@ def test_haptic_builder_generates_device():
     analyzer = SchemaAnalyzer(version="0.7.3")
     component = analyzer.get_component_schema("haptic")
 
-    haptic = build_haptic("vibration vest pattern with strong pulses", component.schema)
+    metadata = analyzer.describe_component("haptic")
+    haptic = build_haptic(
+        "vibration vest pattern with strong pulses",
+        component.schema,
+        metadata=metadata,
+    )
 
-    assert haptic["device"]["type"] in {"vest", "generic"}
-    assert "intensity" in haptic["device"]["options"]
+    assert haptic["device"]["type"] == "generic"
+    options = haptic["device"]["options"]
+    assert "maxIntensity" in options
+    assert "defaultDuration" in options
     assert haptic["input_parameters"][0]["parameter"] == "intensity"
 
     validator = Draft202012Validator(component.schema)

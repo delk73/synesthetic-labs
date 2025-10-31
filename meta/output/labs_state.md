@@ -46,7 +46,7 @@ Failed: 0
 - `labs/mcp/client.py`: MCPClient class with TCP-only transport
 - `labs/mcp/tcp_client.py`: TcpMCPValidator with socket.create_connection
 - `labs/mcp/exceptions.py`: MCPUnavailableError for connection failures
-- `.env.0_7_3`: MCP_ENDPOINT=tcp://localhost:8765
+- `.env.0_7_3`: MCP_HOST=127.0.0.1 / MCP_PORT=8765
 
 **Verification**:
 ```python
@@ -156,7 +156,7 @@ def test_schema_bundle_loads()                 # Inline bundle
 
 **Evidence**:
 - `labs/mcp/tcp_client.py`: TcpMCPValidator with socket.create_connection
-- `.env.0_7_3`: MCP_ENDPOINT=tcp://localhost:8765
+- `.env.0_7_3`: MCP_HOST=127.0.0.1 / MCP_PORT=8765
 - MCPUnavailableError raised on connection failure
 - No stdio fallback in client code
 
@@ -177,7 +177,7 @@ except (socket.timeout, ConnectionRefusedError, ConnectionResetError, OSError) a
 **Evidence**:
 - `.env.0_7_3` exists with version-specific configuration
 - LABS_SCHEMA_VERSION=0.7.3
-- MCP_ENDPOINT=tcp://localhost:8765
+- MCP_HOST=127.0.0.1 / MCP_PORT=8765
 - LABS_SCHEMA_RESOLUTION=inline (forced by client)
 
 **Configuration**:
@@ -185,7 +185,6 @@ except (socket.timeout, ConnectionRefusedError, ConnectionResetError, OSError) a
 # .env.0_7_3
 LABS_SCHEMA_VERSION=0.7.3
 LABS_SCHEMA_RESOLUTION=inline
-MCP_ENDPOINT=tcp://localhost:8765
 MCP_HOST=127.0.0.1
 MCP_PORT=8765
 ```

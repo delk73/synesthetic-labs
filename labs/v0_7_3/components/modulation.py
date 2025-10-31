@@ -19,6 +19,7 @@ def build_modulations(
     subschema: Dict[str, Any],
     *,
     semantics: PromptSemantics | None = None,
+    metadata: Dict[str, Any] | None = None,
 ) -> List[Dict[str, Any]]:
     """Generate temporal modulations aligned with prompt tempo."""
     semantics = ensure_semantics(prompt, semantics)

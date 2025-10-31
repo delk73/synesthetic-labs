@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Protocol, runtime_checkable
+from typing import Any, Dict, Mapping, Protocol, runtime_checkable
 
 from labs.v0_7_3.prompt_parser import PromptSemantics
 
@@ -24,6 +24,7 @@ class Builder(Protocol):
         subschema: Dict[str, Any],
         *,
         semantics: PromptSemantics | None = None,
+        metadata: Mapping[str, Any] | None = None,
     ) -> Any:
         ...
 

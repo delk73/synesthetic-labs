@@ -20,6 +20,7 @@ def build_control(
     subschema: Dict[str, Any],
     *,
     semantics: PromptSemantics | None = None,
+    metadata: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Generate control mappings that adjust shader and tone behaviour."""
     semantics = ensure_semantics(prompt, semantics)
@@ -36,6 +37,8 @@ def build_control(
 
     if "meta_info" in properties:
         control["meta_info"] = {
+            "category": "interaction",
+            "complexity": "moderate",
             "tags": append_tags(semantics.tags, ("control", "interaction")),
         }
 

@@ -78,9 +78,8 @@ labs/mcp/
 ├── client.py          # Main MCPClient class, load_schema_bundle()
 ├── validate.py        # Local validation logic
 ├── tcp_client.py      # TCP transport implementation
-├── socket_main.py     # Socket helpers
 ├── exceptions.py      # MCPClientError, MCPValidationError, MCPUnavailableError
-└── __main__.py        # CLI entry point
+└── __main__.py        # Deprecated CLI placeholder
 ```
 
 ### 1.2 · Transport Layer
@@ -114,11 +113,10 @@ tests/test_mcp.py              # MCP client tests
 tests/test_mcp_validator.py    # Validation tests
 tests/test_mcp_schema_pull.py  # Schema fetching tests
 tests/test_labs_mcp_modes.py   # Resolution mode tests
-tests/test_socket.py           # Socket transport tests
 tests/test_tcp.py              # TCP transport tests
 ```
 
-**27 tests total** - 21 passing (infrastructure solid), 6 failures (URL config, non-blocking)  
+**26 tests total** - 21 passing (infrastructure solid), 5 failures (URL config, non-blocking)  
 
 ---
 
@@ -678,7 +676,8 @@ def log_generation(
 LABS_SCHEMA_VERSION={VERSION}
 LABS_SCHEMA_RESOLUTION=inline
 LABS_MCP_LOG_PATH=meta/output/labs/mcp.jsonl
-MCP_ENDPOINT=tcp://localhost:3000
+MCP_HOST=127.0.0.1
+MCP_PORT=3000
 
 # Optional: LLM credentials
 # AZURE_OPENAI_ENDPOINT=...
@@ -856,10 +855,11 @@ MCPUnavailableError  # MCP server unreachable (TCP connection failed)
 | `LABS_SCHEMA_VERSION` | Target schema version | `"0.7.4"` | ✅ |
 | `LABS_SCHEMA_RESOLUTION` | Resolution mode | `"inline"` | ✅ (forced) |
 | `LABS_MCP_LOG_PATH` | MCP telemetry path | `meta/output/labs/mcp.jsonl` | ❌ |
-| `MCP_ENDPOINT` | MCP server TCP endpoint | `tcp://localhost:8765` | ✅ (required) |
+| `MCP_HOST` | MCP server host | `127.0.0.1` | ✅ |
+| `MCP_PORT` | MCP server port | `8765` | ✅ |
 | `MCP_MAX_BATCH` | Validation batch limit | `50` | ❌ |
 
-**Critical**: `MCP_ENDPOINT` must be a valid TCP endpoint. No fallback transport is supported.  
+**Critical**: `MCP_HOST`/`MCP_PORT` must target a reachable TCP adapter. No alternate transports are supported.  
 If the MCP server is unavailable, all validation operations will fail immediately with `MCPUnavailableError`.
 
 ### 5.2 · Version-Specific Configuration
@@ -870,8 +870,9 @@ If the MCP server is unavailable, all validation operations will fail immediatel
 # .env.0_7_3 (example)
 LABS_SCHEMA_VERSION=0.7.3
 LABS_SCHEMA_RESOLUTION=inline
-MCP_ENDPOINT=tcp://localhost:8765
 LABS_MCP_LOG_PATH=meta/output/labs/mcp.jsonl
+MCP_HOST=127.0.0.1
+MCP_PORT=8765
 
 # Optional: Azure OpenAI (if LLM generator used)
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
@@ -1169,15 +1170,14 @@ else:
 
 ## 9 · Current Test Coverage (v2.0.0 Foundation)
 
-**Existing Tests** (27 tests, 21 passing):
+**Existing Tests** (26 tests, 21 passing):
 - ✅ `tests/test_mcp.py` - MCP client validation flows
 - ✅ `tests/test_mcp_validator.py` - Schema validation logic
 - ✅ `tests/test_mcp_schema_pull.py` - Schema fetching
 - ✅ `tests/test_labs_mcp_modes.py` - Resolution mode handling
-- ✅ `tests/test_socket.py` - Socket transport
 - ✅ `tests/test_tcp.py` - TCP transport
 
-**Test Failures** (6 failures - URL config issues, not structural):
+**Test Failures** (5 failures - URL config issues, not structural):
 - Schema URL domain mismatches (fixture vs system)
 - Pre-existing issues, not cleanup-related
 

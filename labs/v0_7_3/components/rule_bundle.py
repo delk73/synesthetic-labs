@@ -14,6 +14,7 @@ def build_rule_bundle(
     subschema: Dict[str, Any],
     *,
     semantics: PromptSemantics | None = None,
+    metadata: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Generate a minimal rule bundle linking modulation to shader tempo."""
     semantics = ensure_semantics(prompt, semantics)
@@ -37,8 +38,9 @@ def build_rule_bundle(
 
     if "meta_info" in properties:
         bundle["meta_info"] = {
+            "category": "automation",
+            "complexity": "baseline",
             "tags": append_tags(semantics.tags, ("rule", "automation")),
-            "tempo_reference": tempo_from_semantics(semantics),
         }
 
     return bundle
@@ -52,21 +54,21 @@ def _build_rules(name: str, semantics: PromptSemantics) -> List[Dict[str, Any]]:
     return [
         {
             "id": rule_id,
-            "expr": {
-                "op": ">",
-                "left": {"path": "modulations[0].amplitude"},
-                "right": amplitude_threshold,
-            },
-            "target": "shader.uniforms.u_time",
+            "expr": f"modulations[0].amplitude > {amplitude_threshold}",
+            "execution": "realtime",
             "trigger": {
                 "type": "tempo",
                 "bpm": tempo,
-                "condition": "external >= prompt",
+                "source": "prompt",
             },
             "effects": [
                 {
-                    "type": "scale",
-                    "value": 1.1,
+                    "channel": "shader",
+                    "target": "uniforms.u_time",
+                    "op": "scale",
+                    "value": {
+                        "factor": 1.1,
+                    },
                 }
             ],
         }
